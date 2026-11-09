@@ -123,8 +123,17 @@ public struct ArrowGeometry: Sendable {
             let (startPoint, endPoint) = (startHandle, endHandle)
             let partStart = startSide.map { (point: startPoint, normal: Optional($0.normal)) }
             let partEnd = endSide.map { (point: endPoint, normal: Optional($0.normal)) }
-            var s = partStart ?? Self.levelAnchor(of: arrow.start, in: startShape, handle: startPoint, toward: partEnd?.point ?? endPoint)
-            var e = partEnd ?? Self.levelAnchor(of: arrow.end, in: endShape, handle: endPoint, toward: s.point)
+            // An end at a shape as a whole, joined to a row of a shape whose span across overlaps its own (one above the other), comes
+            // in at the side that row leaves by, as two rows are sided together: the line runs round the shapes' one side, not back
+            // along the row's own shape.
+            func together(with side: PartSide?, _ other: BoundShape?, _ shape: BoundShape?) -> CGPoint? {
+                guard let side, let other, let shape, other.restBounds.minX < shape.restBounds.maxX, shape.restBounds.minX < other.restBounds.maxX else { return nil }
+                return side.normal
+            }
+            var s = partStart ?? Self.levelAnchor(of: arrow.start, in: startShape, handle: startPoint, toward: partEnd?.point ?? endPoint,
+                                                  preferring: together(with: endSide, endShape, startShape))
+            var e = partEnd ?? Self.levelAnchor(of: arrow.end, in: endShape, handle: endPoint, toward: s.point,
+                                                preferring: together(with: startSide, startShape, endShape))
             // Fanned ends: each comes in at an angle of its own (a marked one also a little apart along its side).
             if let fan = spread.startFan { s = Self.fanned(s, by: fan, count: spread.startFanCount, marked: markReach.start > 0, part: startPart) }
             if let fan = spread.endFan { e = Self.fanned(e, by: fan, count: spread.endFanCount, marked: markReach.end > 0, part: endPart) }
@@ -288,11 +297,13 @@ public struct ArrowGeometry: Sendable {
     /// way (the curve comes straight at it); an end bound to a shape as a whole the entry facing `other` its kind gives (a
     /// table's first row), else the side of its bounds a line from its anchor to `other` leaves by, at that side's middle (on
     /// the outline, for a shape that isn't a box), or for a precise or exact binding where that line leaves the outline.
+    /// `preferring`: the way out an entry takes when the other end's row is sided with it (`ArrowGeometry.init`), if it has one.
     private static func levelAnchor(of terminal: ArrowTerminal, in shape: BoundShape?, handle: CGPoint,
-                                    toward other: CGPoint) -> (point: CGPoint, normal: CGPoint?) {
+                                    toward other: CGPoint, preferring: CGPoint? = nil) -> (point: CGPoint, normal: CGPoint?) {
         guard let shape, let binding = terminal.binding else { return (handle, nil) }
         let isAimed = binding.isPrecise || binding.isExact
-        if !isAimed, let entry = shape.entries.max(by: { $0.normal.dot(other - $0.point) < $1.normal.dot(other - $1.point) }) {
+        if !isAimed, let entry = preferring.flatMap({ way in shape.entries.first { $0.normal == way } })
+            ?? shape.entries.max(by: { $0.normal.dot(other - $0.point) < $1.normal.dot(other - $1.point) }) {
             return (entry.point, entry.normal)
         }
         let bounds = shape.bounds

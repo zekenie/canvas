@@ -1766,6 +1766,11 @@ public final class CanvasEditor {
         didSet { setNeedsDisplay() }
     }
 
+    /// Whether any shape of the board shown is drawn as part of another (`ShapeGeometry.isHidden`: a bundle's member arrow), as far
+    /// as the shapes laid out so far say. False where nothing is, so what only matters for such shapes (Selection's taking a hidden
+    /// pick with its unit) costs nothing there, and asks no plugin.
+    public var hasHiddenShapes: Bool { !shapeIndex.hidden.isEmpty }
+
     /// The front-most shape under a world point, of those `include` accepts. Only shapes near the
     /// point are asked (see `ShapeDefinition.hitMargin`).
     public func shape(at point: CGPoint, where include: (AnyShapeRecord) -> Bool = { _ in true }) -> ShapeID? {

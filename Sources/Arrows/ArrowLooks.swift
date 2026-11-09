@@ -205,11 +205,16 @@ extension ArrowDefinition {
     }
 
     /// How an arrow's bundle answer draws it (`ConnectionBundle`): its slot's bow, its fans, the rows it comes in at; nil for none.
-    static func spread(of bundle: ConnectionBundle?) -> ArrowSpread? {
+    /// An arrow imprecise at both ends is one of a pair that `ArrowConnections.pairBend` bowed apart when it was made (the later
+    /// one holds a bend of its own, whose sign a slot's bow could cancel), so it takes no slot's bow: its own bend is its slot.
+    static func spread(of bundle: ConnectionBundle?, for arrow: Arrow) -> ArrowSpread? {
         guard let bundle, !bundle.isPlain else { return nil }
         var spread = ArrowSpread()
-        spread.bend = CGFloat(bundle.slotOffset) * ArrowStyle.slotSpacing
-        spread.slotShift = CGFloat(bundle.slotOffset) * ArrowStyle.slotEndShift
+        let paired = [arrow.start, arrow.end].allSatisfy { $0.binding.map { !$0.isPrecise } ?? false }
+        if !paired {
+            spread.bend = CGFloat(bundle.slotOffset) * ArrowStyle.slotSpacing
+            spread.slotShift = CGFloat(bundle.slotOffset) * ArrowStyle.slotEndShift
+        }
         if let fan = bundle.fan(at: .start) { (spread.startFan, spread.startFanCount) = (CGFloat(fan.spread), fan.count) }
         if let fan = bundle.fan(at: .end) { (spread.endFan, spread.endFanCount) = (CGFloat(fan.spread), fan.count) }
         spread.startEntry = bundle.entries[.start]

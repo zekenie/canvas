@@ -82,6 +82,22 @@ import TestKit
         expect(Set(answers.asked) == [ids[1], ids[2]], "only the members laid out again: \(answers.asked)")
         expectEqual(b.h.editor.shapeContext.geometry(of: ids[1])?.isHidden, false, "drawn again on its own")
     },
+    test("an arrow bound to rows is laid out again only when what it reads changes: a commit to a shape it doesn't read leaves it kept") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        _ = b.h.editor.shapeContext.geometry(of: id)
+        answers.asked = []
+        // Another shape added and one moved: nothing the arrow's ends read.
+        b.h.add(Roster(CGRect(x: 900, y: 900, width: 200, height: 80), rows: [RosterRow(name: "far")]))
+        b.h.editor.transact("Move") { tx in tx.update(b.right) { $0.box = $0.box?.offsetBy(dx: 0, dy: 0) } }
+        _ = b.h.editor.shapeContext.geometry(of: id)
+        expectEqual(answers.asked, [], "kept: it asked its bundle again for nothing")
+        // A change to a shape it reads lays it out again.
+        b.h.editor.transact("Resize") { tx in tx.update(b.right) { $0.box = $0.box?.offsetBy(dx: 0, dy: 20) } }
+        _ = b.h.editor.shapeContext.geometry(of: id)
+        expectEqual(answers.asked, [id], "laid out again, once")
+    },
     test("arrows with the same two ends bow apart by a slot each, their middles a slot apart; the bend handle still puts the middle where it is dragged") {
         let answers = BundleAnswers()
         let b = try bundleBoard(answers)
@@ -96,6 +112,51 @@ import TestKit
         expect(a.middle.distance(to: c.middle) >= 30 && a.middle.distance(to: c.middle) < 40, "\(a.middle) and \(c.middle)")
         expect(a.start.distance(to: c.start) >= 5, "they leave the row apart: \(a.start), \(c.start)")
         expectClose((a.middle - a.bendOrigin).dot(a.bendAxis), 0, within: 1e-6)  // the bend is measured from where the slot puts the middle
+    },
+    test("an arrow imprecise at both ends takes no slot's bow: the later of a pair holds a bend of its own, which a slot's could cancel") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        // Two arrows between the shapes as wholes, the second bent apart when it was made (`ArrowConnections.pairBend`).
+        let one = b.h.add(Arrow(start: b.whole(b.left), end: b.whole(b.right)))
+        let two = b.h.add(Arrow(start: b.whole(b.left), end: b.whole(b.right), bend: -34))
+        let apart = try b.geometry(one).middle.distance(to: b.geometry(two).middle)
+        answers.answers = [one: ConnectionBundle(slot: 0, slots: 2), two: ConnectionBundle(slot: 1, slots: 2)]
+        b.h.editor.connectionBundlesDidChange([one, two])
+        let after = try b.geometry(one).middle.distance(to: b.geometry(two).middle)
+        expectClose(after, apart, within: 1e-6)
+        expect(after >= 30, "still a pair bend apart, not cancelled to \(after)")
+    },
+    test("bending a slotted arrow keeps its bow: its middle is under the pointer while dragged and after the release") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let one = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        let two = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        answers.answers = [one: ConnectionBundle(slot: 0, slots: 2), two: ConnectionBundle(slot: 1, slots: 2)]
+        b.h.editor.connectionBundlesDidChange([one, two])
+        let first = try b.geometry(two)
+        let (origin, axis) = (first.middle, first.bendAxis)
+        b.h.editor.selection = two
+        b.h.press(at: b.h.view(origin))
+        b.h.drag(to: b.h.view(origin + axis * 8))
+        b.h.drag(to: b.h.view(origin + axis * 20))
+        let held = try b.geometry(two)
+        expect(held.middle.distance(to: origin + axis * 20) < 1, "under the pointer while dragged: \(held.middle) against \(origin + axis * 20)")
+        b.h.release()
+        let after = try b.geometry(two)
+        expect(after.middle.distance(to: origin + axis * 20) < 1, "and where it was let go: \(after.middle) against \(origin + axis * 20)")
+    },
+    test("freeing an end of a slotted arrow keeps the line where it is drawn, bowed apart from its pair") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let one = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        let two = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        answers.answers = [one: ConnectionBundle(slot: 0, slots: 2), two: ConnectionBundle(slot: 1, slots: 2)]
+        b.h.editor.connectionBundlesDidChange([one, two])
+        let drawn = try b.geometry(two)
+        // The shape it ends at deleted: the end is let go where it is drawn.
+        b.h.editor.deleteShapes([b.right])
+        guard case .free(let point)? = b.arrow(two)?.end else { return expect(false, "the end is free") }
+        expect(point.distance(to: drawn.visiblePoint(at: .end)) < 1e-6, "\(point) against \(drawn.visiblePoint(at: .end))")
     },
     test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart; their labels slide to their starts") {
         let answers = BundleAnswers()
@@ -117,6 +178,21 @@ import TestKit
             let label = try require(b.h.editor.arrowLabelFrame(of: id))
             expect(label.midX < middles[index].midX - 20, "slid toward its start: \(label) from \(middles[index])")
         }
+    },
+    test("an end at a shape as a whole, joined to a row of a shape above it whose span overlaps, comes in at the side that row leaves by, not back along it") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        // Below the left shape, from x 250 to 450: its left side is nearer the row's right side than its right is, so a line
+        // aimed at the nearer side would turn back along the row's own shape.
+        let rows = ["one", "two"].map { RosterRow(name: $0) }
+        let below = b.h.add(Roster(CGRect(x: 250, y: 400, width: 200, height: 80), rows: rows))
+        let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.whole(below)))
+        answers.answers[id] = ConnectionBundle(entries: [.end: rows[0].id])
+        b.h.editor.connectionBundlesDidChange([id])
+        let geometry = try b.geometry(id)
+        expect(geometry.inward(at: .end).x > 0, "comes in at the right side, as the row leaves by it: \(geometry.inward(at: .end))")
+        let cubic = try require(geometry.levelBody)
+        expect(cubic.end.x > 450, "right of the shape it enters: \(cubic.end)")
     },
     test("an end at a shape as a whole comes in at the row the answer names") {
         let answers = BundleAnswers()

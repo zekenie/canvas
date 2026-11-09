@@ -37,29 +37,44 @@ private enum Standing: Hashable {
     var line: Int? { if case .line(_, let line) = self { line } else { nil } }
 }
 
-/// The connections at shapes written as lines, and how each is drawn among those sharing its path.
+/// The connections at shapes written as lines, and how each is drawn among those sharing its path, on every board of the file
+/// a layout reads (the board shown, and any other read for `canvas draw --on`, a capture or a preview): a board is read when
+/// it is first asked, and kept until a commit reaches it.
 @MainActor
 final class RowBundles {
     unowned let editor: CanvasEditor
     private var following: TopologyFollowing?
-    /// Each shape written as lines worked out, with what it says of each connection at it, and the bundles it found, each
-    /// lead's connections, the lead first.
-    private var partials: [ShapeID: Partial] = [:]
+    /// What is worked out of each board read.
+    private var states: [BoardID: BoardState] = [:]
+
+    /// One board's bundles.
+    private final class BoardState {
+        let board: BoardID
+        /// Each shape written as lines worked out, with what it says of each connection at it, and the bundles it found, each
+        /// lead's connections, the lead first.
+        var partials: [ShapeID: Partial] = [:]
+        /// The shapes worked out that each connection is at.
+        var shapesOf: [ShapeID: [ShapeID]] = [:]
+        /// Each connection's answer, its ends' partials joined; none for a connection drawn as ever.
+        var answers: [ShapeID: ConnectionBundle] = [:]
+        /// Each bundle's connections, its lead first: what a press on any of them selects.
+        var bundles: [ShapeID: [ShapeID]] = [:]
+        /// The shapes at connections' far ends whose boxes a shape's entry rows were read from, by that shape: when one moves
+        /// the shape is worked out again.
+        var readers: [ShapeID: Set<ShapeID>] = [:]
+        /// The shapes written as lines to work out again once the change being delivered has settled.
+        var dirty: Set<ShapeID> = []
+        var flushAsked = false
+
+        init(board: BoardID) { self.board = board }
+    }
+
     private struct Partial {
         var answers: [ShapeID: ConnectionBundle] = [:]
         var bundles: [ShapeID: [ShapeID]] = [:]
+        /// The shapes whose boxes this was read from.
+        var reads: Set<ShapeID> = []
     }
-    /// The shapes worked out that each connection is at.
-    private var shapesOf: [ShapeID: [ShapeID]] = [:]
-    /// Each connection's answer, its ends' partials joined; none for a connection drawn as ever.
-    private var answers: [ShapeID: ConnectionBundle] = [:]
-    /// Each bundle's connections, its lead first: what a press on any of them selects.
-    private var bundles: [ShapeID: [ShapeID]] = [:]
-    /// The shapes written as lines to work out again once the change being delivered has settled.
-    private var dirty: Set<ShapeID> = []
-    private var flushAsked = false
-    /// Whether the board shown has been read: until it is, the first ask reads it.
-    private var built = false
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -70,20 +85,46 @@ final class RowBundles {
 
     // MARK: Asking
 
+    /// The board's shapes as they are committed: the editor's own for the board shown.
+    private func document(of board: BoardID) -> CanvasDocument { board == editor.board ? editor.document : editor.file[board] }
+
+    /// What is worked out of `board`, read the first time it is asked; nil for a board that can't be shown.
+    private func state(of board: BoardID) -> BoardState? {
+        if let known = states[board] { return known }
+        guard editor.canShow(board) else { return nil }
+        let state = BoardState(board: board)
+        states[board] = state
+        let registry = editor.registry
+        let shapes = document(of: board).shapes.lazy.filter { registry.lineRows(of: $0.kind) != nil }.map(\.id)
+        let touched = work(Set(shapes), in: state)
+        for id in touched { join(id, in: state) }
+        return state
+    }
+
     /// The answer for a connection as `reading` lays it out: mid-transaction, the committed one unless the transaction changed it.
     func answer(for record: AnyShapeRecord, in reading: LayoutReading) -> ConnectionBundle? {
-        if !built { build() }
-        guard !answers.isEmpty, let answer = answers[record.id] else { return nil }
-        if !reading.isCommitted, reading.isChanged(record.id) { return nil }
+        guard let board = reading.board(containing: record.id), let state = state(of: board),
+              !state.answers.isEmpty, let answer = state.answers[record.id] else { return nil }
+        // Mid-transaction, a connection the transaction changed keeps its answer while its ends are where they were (a bend
+        // dragged keeps its slot's bow, and a pill typed in stays on its line); re-aimed, it is drawn as ever until the commit.
+        if !reading.isCommitted, reading.isChanged(record.id) {
+            guard let committed = document(of: board)[record.id], endsOf(committed) == endsOf(record) else { return nil }
+        }
         return answer
+    }
+
+    /// Where a connection's two ends are, as its record says them: its literal connection edges' ends.
+    private func endsOf(_ record: AnyShapeRecord) -> [Edge] {
+        editor.registry.edges(of: record).filter(\.isConnection)
     }
 
     /// The shapes `id` is selected with: its bundle's, lead first; nil for a connection in none.
     func unit(of id: ShapeID) -> [ShapeID]? {
-        guard !bundles.isEmpty, let answer = answers[id] else { return nil }
+        guard let board = editor.file.board(containing: id), let state = state(of: board),
+              !state.bundles.isEmpty, let answer = state.answers[id] else { return nil }
         switch answer.role {
-        case .lead: return bundles[id]
-        case .member(let lead): return bundles[lead]
+        case .lead: return state.bundles[id]
+        case .member(let lead): return state.bundles[lead]
         case .alone: return nil
         }
     }
@@ -98,103 +139,127 @@ final class RowBundles {
         }
     }
 
-    /// Works out again the shapes written as lines among `ids`, once what changed has settled.
+    /// Works out again the shapes written as lines among `ids` (and those that read where an id is), once what changed has
+    /// settled; only on the boards read.
     private func mark(_ ids: some Sequence<ShapeID>) {
-        guard built else { return }
-        let registry = editor.registry, document = editor.document
-        var any = false
-        for id in ids where !dirty.contains(id) {
-            guard partials[id] != nil || document[id].map({ registry.lineRows(of: $0.kind) != nil }) == true else { continue }
-            dirty.insert(id)
-            any = true
+        guard !states.isEmpty else { return }
+        let registry = editor.registry, ids = Array(ids)
+        for state in states.values {
+            let document = document(of: state.board)
+            var marked: Set<ShapeID> = []
+            for id in ids {
+                if let readers = state.readers[id] { marked.formUnion(readers) }
+                if state.partials[id] != nil || document[id].map({ registry.lineRows(of: $0.kind) != nil }) == true { marked.insert(id) }
+            }
+            guard !marked.isEmpty else { continue }
+            state.dirty.formUnion(marked)
+            guard !state.flushAsked else { continue }
+            state.flushAsked = true
+            let board = state.board
+            editor.onceSettled { [weak self] in self?.flush(board) }
         }
-        guard any, !flushAsked else { return }
-        flushAsked = true
-        editor.onceSettled { [weak self] in self?.flush() }
     }
 
     private func rebuildLater() {
-        guard built else { return }
+        guard !states.isEmpty else { return }
         editor.onceSettled { [weak self] in
             guard let self else { return }
-            let before = Set(answers.keys)
-            built = false
-            build()
-            editor.connectionBundlesDidChange(before.union(answers.keys))
+            let boards = Array(states.keys)
+            var before = Set<ShapeID>()
+            for state in states.values { before.formUnion(state.answers.keys) }
+            states = [:]
+            var after = before
+            for board in boards { if let state = state(of: board) { after.formUnion(state.answers.keys) } }
+            editor.connectionBundlesDidChange(after)
         }
     }
 
-    /// Reads every shape written as lines on the board shown.
-    private func build() {
-        built = true
-        partials = [:]
-        shapesOf = [:]
-        answers = [:]
-        bundles = [:]
-        dirty = []
-        let registry = editor.registry
-        let shapes = editor.document.shapes.lazy.filter { registry.lineRows(of: $0.kind) != nil }.map(\.id)
-        let touched = work(Set(shapes))
-        for id in touched { join(id) }
+    /// A commit reached other boards: what is worked out of them is read again as asked, and their connections are laid out again.
+    private func forget(_ boards: Set<BoardID>) {
+        var ids = Set<ShapeID>()
+        for board in boards {
+            guard let state = states.removeValue(forKey: board) else { continue }
+            ids.formUnion(state.answers.keys)
+        }
+        guard !ids.isEmpty else { return }
+        editor.onceSettled { [weak self] in self?.editor.connectionBundlesDidChange(ids) }
     }
 
-    private func flush() {
-        flushAsked = false
-        guard built, !dirty.isEmpty else { return }
-        var shapes = dirty
-        dirty = []
+    private func flush(_ board: BoardID) {
+        guard let state = states[board] else { return }
+        state.flushAsked = false
+        guard !state.dirty.isEmpty else { return }
+        var shapes = state.dirty
+        state.dirty = []
         // The shapes at the other ends of their connections: what is drawn at one end of a path is read from both.
-        let registry = editor.registry, document = editor.document
+        let registry = editor.registry, document = document(of: board)
         for id in shapes {
-            for arrow in partials[id].map({ Array($0.answers.keys) }) ?? [] { shapes.formUnion(shapesOf[arrow] ?? []) }
-            for edge in connections(at: id) {
+            for arrow in state.partials[id].map({ Array($0.answers.keys) }) ?? [] { shapes.formUnion(state.shapesOf[arrow] ?? []) }
+            for edge in connections(at: id, in: document) {
                 for end in [edge.source, edge.target] where document[end].map({ registry.lineRows(of: $0.kind) != nil }) == true { shapes.insert(end) }
             }
         }
-        let touched = work(shapes)
+        let touched = work(shapes, in: state)
         var changed: Set<ShapeID> = []
-        for id in touched where join(id) { changed.insert(id) }
+        for id in touched where join(id, in: state) { changed.insert(id) }
         editor.connectionBundlesDidChange(changed)
+        keepSelectionWhole(among: changed, in: state)
+    }
+
+    /// A connection selected that a fold has just bundled under its lead (a member, drawn by it) is selected with its bundle,
+    /// as a click on the lead selects it: the selection setter takes the rest.
+    private func keepSelectionWhole(among changed: Set<ShapeID>, in state: BoardState) {
+        guard state.board == editor.board else { return }
+        let selected = editor.selectedShapeIDs
+        let members = selected.filter { changed.contains($0) && state.answers[$0]?.lead != nil }
+        guard !members.isEmpty else { return }
+        // Laid out as the member it is now (hidden), which is what the selection takes a pick by.
+        for id in members { _ = editor.shapeContext.geometry(of: id) }
+        editor.selectedShapeIDs = selected
     }
 
     // MARK: Working out
 
-    /// The literal connections at `id`, each once.
-    private func connections(at id: ShapeID) -> [Edge] {
+    /// The literal connections at `id` that are on `document`'s board, each once.
+    private func connections(at id: ShapeID, in document: CanvasDocument) -> [Edge] {
         guard let topology = editor.topology, let kind = editor.registry.connectorKind else { return [] }
         var seen = Set<ShapeID>()
-        let document = editor.document
         return topology.edges(of: id, .either, view: .literal).filter { edge in
             edge.isConnection && document[edge.carrier]?.kind == kind && seen.insert(edge.carrier).inserted
         }
     }
 
     /// Works `shapes` out again: each one's partial answers. Returns the connections whose answer may have moved.
-    private func work(_ shapes: Set<ShapeID>) -> Set<ShapeID> {
+    private func work(_ shapes: Set<ShapeID>, in state: BoardState) -> Set<ShapeID> {
         var touched: Set<ShapeID> = []
         for id in shapes {
-            for arrow in partials[id].map({ Array($0.answers.keys) }) ?? [] {
+            for arrow in state.partials[id].map({ Array($0.answers.keys) }) ?? [] {
                 touched.insert(arrow)
-                shapesOf[arrow]?.removeAll { $0 == id }
-                if shapesOf[arrow]?.isEmpty == true { shapesOf[arrow] = nil }
+                state.shapesOf[arrow]?.removeAll { $0 == id }
+                if state.shapesOf[arrow]?.isEmpty == true { state.shapesOf[arrow] = nil }
             }
-            let found = partial(of: id)
-            partials[id] = found.answers.isEmpty ? nil : found
+            for far in state.partials[id]?.reads ?? [] {
+                state.readers[far]?.remove(id)
+                if state.readers[far]?.isEmpty == true { state.readers[far] = nil }
+            }
+            let found = partial(of: id, in: state)
+            state.partials[id] = found.answers.isEmpty ? nil : found
             for arrow in found.answers.keys {
                 touched.insert(arrow)
-                shapesOf[arrow, default: []].append(id)
+                state.shapesOf[arrow, default: []].append(id)
             }
+            if !found.answers.isEmpty { for far in found.reads { state.readers[far, default: []].insert(id) } }
         }
         return touched
     }
 
     /// Joins a connection's answer from its ends' partials. Returns whether it changed.
     @discardableResult
-    private func join(_ arrow: ShapeID) -> Bool {
+    private func join(_ arrow: ShapeID, in state: BoardState) -> Bool {
         var joined: ConnectionBundle?
         var led: [ShapeID]?
-        for shape in shapesOf[arrow] ?? [] {
-            guard let partial = partials[shape], let part = partial.answers[arrow] else { continue }
+        for shape in state.shapesOf[arrow] ?? [] {
+            guard let partial = state.partials[shape], let part = partial.answers[arrow] else { continue }
             if led == nil, case .lead = part.role { led = partial.bundles[arrow] }
             guard var answer = joined else {
                 joined = part
@@ -205,21 +270,21 @@ final class RowBundles {
             joined = answer
         }
         let answer = joined.flatMap { $0.isPlain ? nil : $0 }
-        let before = answers[arrow]
-        answers[arrow] = answer
-        bundles[arrow] = led
+        let before = state.answers[arrow]
+        state.answers[arrow] = answer
+        state.bundles[arrow] = led
         return before != answer
     }
 
     /// What `shape`, written as lines, says of each connection at it: bundles and slots among those sharing both drawn ends,
     /// fans among those with their other end at one place and theirs at different lines of it, and the row a connection to it as a
     /// whole comes in at.
-    private func partial(of shape: ShapeID) -> Partial {
-        let document = editor.document, registry = editor.registry, context = editor.shapeContext
+    private func partial(of shape: ShapeID, in state: BoardState) -> Partial {
+        let document = document(of: state.board), registry = editor.registry, context = editor.shapeContext
         guard let record = document[shape], registry.lineRows(of: record.kind) != nil else { return Partial() }
-        let edges = connections(at: shape)
+        let edges = connections(at: shape, in: document)
         guard !edges.isEmpty else { return Partial() }
-        var reader = StandingReader(context: context, registry: registry)
+        var reader = StandingReader(document: document, context: context, registry: registry)
 
         struct Drawn {
             let arrow: ShapeID
@@ -301,7 +366,9 @@ final class RowBundles {
             }
         }
 
-        // A connection to this shape as a whole: a row clear of the rows others end at on its side.
+        // A connection to this shape as a whole: a row clear of the rows others end at on its side. Read from the boxes of the
+        // shapes at its other ends (`reads`: when one moves, this is worked out again).
+        var reads: Set<ShapeID> = []
         let wholes = drawn.filter { item in
             (item.source == shape && item.sourcePart == nil) || (item.target == shape && item.targetPart == nil)
         }
@@ -309,6 +376,7 @@ final class RowBundles {
             // Which side of this shape an end at it is on (true: the right), by the boxes at rest as Arrows sides them: two row
             // ends whose shapes' spans across overlap both leave the right; any other end faces the shape at its other end.
             func side(toward far: ShapeID, bothRows: Bool) -> Bool {
+                reads.insert(far)
                 guard let other = document[far]?.box else { return true }
                 if bothRows, box.minX < other.maxX, other.minX < box.maxX { return true }
                 return other.midX >= box.midX
@@ -324,14 +392,17 @@ final class RowBundles {
             }
             for item in wholes {
                 let far = item.source == shape ? item.target : item.source
-                guard let lines = taken[side(toward: far, bothRows: false)], !lines.isEmpty else { continue }
+                // Joined to a row of the other shape: sided with it, as Arrows comes in (`ArrowGeometry`).
+                let farPart = item.source == shape ? item.targetPart : item.sourcePart
+                guard let lines = taken[side(toward: far, bothRows: farPart != nil)], !lines.isEmpty else { continue }
+                reads.insert(far)
                 let below = (document[far]?.box?.midY ?? .infinity) > box.midY
                 guard let row = RowBundles.clear(entries, taken: lines, fromTheEnd: below) else { continue }
                 let end: ConnectionBundle.End = item.target == shape && item.targetPart == nil ? .end : .start
                 answers[item.arrow]?.entries[end] = row
             }
         }
-        return Partial(answers: answers, bundles: bundles)
+        return Partial(answers: answers, bundles: bundles, reads: reads)
     }
 
     /// The row a line to a shape as a whole comes in at, clear of the lines in `taken` (other lines' ends on that side): the first,
@@ -349,11 +420,14 @@ final class RowBundles {
 /// Reads where connections' ends are drawn on shapes written as lines: each shape's rows and the lines its fold shows, read once.
 @MainActor
 private struct StandingReader {
+    /// The board the shapes are on.
+    let document: CanvasDocument
     let context: ShapeContext
     let registry: Registry
     private var read: [ShapeID: (index: [PartID: Int], rows: [FoldRow], shown: RowsShown?)?] = [:]
 
-    init(context: ShapeContext, registry: Registry) {
+    init(document: CanvasDocument, context: ShapeContext, registry: Registry) {
+        self.document = document
         self.context = context
         self.registry = registry
     }
@@ -361,7 +435,7 @@ private struct StandingReader {
     private mutating func lines(of id: ShapeID) -> (index: [PartID: Int], rows: [FoldRow], shown: RowsShown?)? {
         if let known = read[id] { return known }
         var found: (index: [PartID: Int], rows: [FoldRow], shown: RowsShown?)?
-        if let record = context.shape(id), let kind = registry.lineRows(of: record.kind), let rows = kind.rows(record) {
+        if let record = document[id], let kind = registry.lineRows(of: record.kind), let rows = kind.rows(record) {
             var index: [PartID: Int] = [:]
             for (at, row) in rows.enumerated() where index[row.id] == nil { index[row.id] = at }
             found = (index, rows, context.layoutInput(LineRowsLayout.shown, of: record))
@@ -389,20 +463,17 @@ private struct StandingReader {
 }
 
 extension RowBundles: EditorService {
-    /// A shape written as lines changed (its rows): what its connections stand at may have moved.
+    /// A shape written as lines changed (its rows), or a shape moved that a connection's entry row was read from: what its
+    /// connections stand at may have moved. A commit that reached other boards (an agent's `--on`) drops what is read of them.
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        guard built else { return }
+        guard !states.isEmpty else { return }
         if changes.replacedDocument { return rebuildLater() }
+        forget(changes.boardsReached)
         mark(changes.changed.union(changes.added).union(changes.removed))
     }
 
     /// Another board shown, or another file: read afresh as it is first asked.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        guard built else { return }
-        built = false
-        partials = [:]
-        shapesOf = [:]
-        answers = [:]
-        bundles = [:]
+        states = [:]
     }
 }

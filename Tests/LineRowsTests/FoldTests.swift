@@ -180,6 +180,25 @@ import TextEditing
         b.window.settle()
         expectEqual(b.drawn(), ["red", "+3"], "let go as Find ends")
     },
+    test("Peeks: a row the kind draws a hit of elsewhere (a hit only before its first dot) stays folded while Find is open; a hit in its own words shows it") {
+        let b = try Bench(find: true)
+        let id = b.tally("apples", ["red 3", "orders.refund", "orders.cancel", "pink"])
+        b.editor.rowFolds?.fold([id])
+        expectEqual(b.drawn(), ["red", "+3"])
+        let find = try require(b.editor.find)
+        find.open()
+        find.query = "orders"
+        try b.settleFind()
+        expect(find.hasHits(id), "found in two of its entries")
+        expectEqual(b.drawn(), ["red", "+3"], "a hit in the prefix alone: both stay folded")
+        expectEqual(b.editor.rowFolds?.findPeeks(of: id), [])
+        find.query = "refund"
+        try b.settleFind()
+        expectEqual(b.drawn(), ["red", "orders.refund", "+2"], "a hit in its own words shows it, and no other")
+        find.close()
+        b.window.settle()
+        expectEqual(b.drawn(), ["red", "+3"], "let go as Find ends")
+    },
     test("The folds are a view value: saved with the shapes in the file, and handed back to another editor; a shape gone isn't saved") {
         let b = try Bench()
         let kept = b.tally("kept", ["a 1", "b", "c"])

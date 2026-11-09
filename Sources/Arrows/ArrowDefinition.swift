@@ -84,7 +84,7 @@ extension ArrowDefinition: ShapeDefinition {
         let line = endLine(of: shape, in: context)
         // How its connection's meaning says it looks (its ends' marks, its width), asked here, kept, never per frame.
         let look = look(of: shape, in: context)
-        let spread = Self.spread(of: bundle)
+        let spread = Self.spread(of: bundle, for: shape.props)
         var detail: ArrowDetail? = line == nil && look == nil && bundle == nil ? nil
             : ArrowDetail(line: line, look: look, width: look?.lineWidth ?? ArrowStyle.strokeWidth, spread: spread, bundle: bundle)
         let geometry = arrowGeometry(shape.props, detail: detail, in: context)
@@ -283,7 +283,8 @@ extension ArrowDefinition: CustomTranslation {
             }
         }
         let connectables = Connectables(shapes: transaction.shapes)
-        let geometry = ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+        let geometry = ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth,
+                                     spread: transaction.shapes.geometry(of: shape.id)?.arrowDetail?.spread ?? ArrowSpread()) { connectables[$0] }
         var bindings: [ArrowEnd: ArrowBinding] = [:]
         for end in ends {
             guard var binding = arrow[end].binding, let bounds = connectables[binding.shapeID]?.bounds else { continue }
@@ -361,8 +362,10 @@ extension Arrow {
     /// The arrow with `ends` let go of the shapes they're bound to: each end stays where it
     /// visibly is, and the arrow keeps its curve.
     @MainActor
-    func releasing(_ ends: Set<ArrowEnd>, markReach: (start: CGFloat, end: CGFloat) = (0, 0), connectables: Connectables) -> Arrow {
-        let geometry = ArrowGeometry(arrow: self, strokeWidth: ArrowStyle.strokeWidth, markReach: markReach) { connectables[$0] }
+    func releasing(_ ends: Set<ArrowEnd>, markReach: (start: CGFloat, end: CGFloat) = (0, 0), spread: ArrowSpread = ArrowSpread(),
+                   connectables: Connectables) -> Arrow {
+        // As it is drawn among others sharing its path, so a line bowed apart from its pair keeps its place when freed.
+        let geometry = ArrowGeometry(arrow: self, strokeWidth: ArrowStyle.strokeWidth, markReach: markReach, spread: spread) { connectables[$0] }
         var arrow = self
         if let bend = geometry.bendKeepingCurve(movingHandlesToVisibleEndsAt: ends) {
             arrow.bend = bend
@@ -402,7 +405,8 @@ extension ArrowDefinition: ShapeReferencing {
                 return nil
             }
         }
-        var arrow = released.isEmpty ? shape.props : shape.props.releasing(released, markReach: context.geometry(of: shape.id)?.arrowDetail?.markReach ?? (0, 0), connectables: connectables)
+        var arrow = released.isEmpty ? shape.props : shape.props.releasing(released, markReach: context.geometry(of: shape.id)?.arrowDetail?.markReach ?? (0, 0),
+                                                                                 spread: context.geometry(of: shape.id)?.arrowDetail?.spread ?? ArrowSpread(), connectables: connectables)
         for (end, id) in remapped {
             guard var binding = arrow[end].binding else { continue }
             binding.shapeID = id

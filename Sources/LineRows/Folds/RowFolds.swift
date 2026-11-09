@@ -229,7 +229,7 @@ public final class RowFolds {
             if isOpen, let find, folds[id] != nil, find.hasHits(id) {
                 // The field of a row's text is its id's UUID: read as it is. A row whose hits its kind draws elsewhere (an
                 // endpoint's in its group's prefix, on the header) stays folded.
-                let record = editor.document[id], kind = record.flatMap { editor.registry.lineRows(of: $0.kind) }
+                let record = editor.shape(inFile: id), kind = record.flatMap { editor.registry.lineRows(of: $0.kind) }
                 for (field, ranges) in find.rangesHit(of: id) {
                     guard let part = UUID(uuidString: field).map(PartID.init) else { continue }
                     if let record, let kind, !kind.peeks(record, part, ranges) { continue }

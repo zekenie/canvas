@@ -41,10 +41,18 @@ struct Connectables {
         guard let record = shapes.shape(id), record.kind != Arrow.kind,
               let geometry = shapes.geometry(of: id), geometry.isClosed else { return nil }
         // The container only matters to a shape with parts, where a level curve leaves a row: read for those alone.
-        let container = geometry.parts.isEmpty ? nil
-            : shapes.document.container(of: record, containingKinds: shapes.registry.containingKinds).flatMap { shapes.geometry(of: $0)?.bounds }
+        let container = geometry.parts.isEmpty ? nil : containerID(of: record).flatMap { shapes.geometry(of: $0)?.bounds }
         return ConnectableShape(id: id, outline: geometry.outline, bounds: geometry.bounds, restBounds: record.box, parts: geometry.parts,
                                 entries: geometry.entries, container: container)
+    }
+
+    /// The container `record` is directly in, as the core goes by it (`CanvasDocument.container(of:containingKinds:)`), read through
+    /// `shapes.shape` so that only that shape is tied to the arrow's geometry: reading `shapes.document` would make every arrow bound
+    /// to a shape with parts worked out again on every commit to the board.
+    private func containerID(of record: AnyShapeRecord) -> ShapeID? {
+        guard let id = record.container, record.box != nil, let holder = shapes.shape(id),
+              shapes.registry.containingKinds.contains(holder.kind), !holder.isOpaque else { return nil }
+        return id
     }
 
     /// The front-most shape under `point` that arrows can bind to (in document order, as before:

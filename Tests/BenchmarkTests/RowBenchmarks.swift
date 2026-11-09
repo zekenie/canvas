@@ -17,7 +17,7 @@ import Titles
 // Rows (K11): a board where one shape in ten is a 12-row table and one in a hundred a 60-row table (and, since K17, one in a
 // hundred a 60-endpoint API), the rest notes, drawn
 // at 100% and 70% (each table's rows in view only, their text set once) and zoomed out at 30% and 10% (a bar a line in
-// view, one fill a color, none where a row is under 2 points); and ⌃⌘↑ on 1,000 tables with nothing selected, then the
+// view, one fill a color, none where a row is under 3 points, about 12%); and ⌃⌘↑ on 1,000 tables with nothing selected, then the
 // frame after (each fold a provided layout input, laid out again only for the tables folded); a row moved by ⌥↑ (K8) and
 // one event of a row dragged (K9).
 

@@ -263,7 +263,7 @@ final class SelectionState {
     /// all in view, is kept there while the view settles (`keepInViewWhileSettling`).
     func select(_ ids: [ShapeID], recording: Bool = true) {
         var seen = Set<ShapeID>()
-        let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
+        let kept = holdingUnitsOfMembers(ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }, seen: &seen)
         guard kept != selectedIDs else { return }
         hasJustArrived = false
         if recording { record(leaving: selectedIDs, for: kept) }

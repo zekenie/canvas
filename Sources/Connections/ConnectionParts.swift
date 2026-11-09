@@ -27,13 +27,20 @@ extension CanvasEditor {
             let other = context.geometry(of: otherID)?.bounds
             let near = leavingSegment(of: geometry.outline, from: leaves, around: own)
             // A row at the far end by the row's name, read with its shape's ("Arrow to id in customers").
-            let otherPart = edge.otherPart(from: id, leaves ? .outgoing : .incoming)
+            // A bundle's lead draws for several from the fold's line that stands for their rows: it says the count, and names that line
+            // where the far end is the shape folded (a row the fold hides isn't one a person sees).
+            var count = 1, otherPart = edge.otherPart(from: id, leaves ? .outgoing : .incoming)
+            if case .lead(let bundled, let standing)? = connectionBundle(of: edge.carrier)?.role {
+                count = bundled
+                if let standing, standing.shape == otherID { otherPart = standing.part }
+            }
             let name = accessibleName(readingThrough: PartAddress(otherID, part: otherPart)) ?? accessibleDescription(of: otherID)?.name
                 ?? registry.label(of: document[otherID]?.kind ?? kind).name
             let carrier = edge.carrier
             // A bundle's lead selects its bundle whole, as a click on it does.
             let unit = selectionUnit(of: carrier)
-            let part = ShapePart(id: carrier, title: (leaves ? ConnectionsStyle.arrowTo : ConnectionsStyle.arrowFrom) + name,
+            let part = ShapePart(id: carrier, title: (count > 1 ? (leaves ? ConnectionsStyle.arrowsTo(count) : ConnectionsStyle.arrowsFrom(count))
+                                    : (leaves ? ConnectionsStyle.arrowTo : ConnectionsStyle.arrowFrom)) + name,
                                  role: .connection, rect: near.insetBy(dx: -ConnectionsStyle.partPad / camera.zoom, dy: -ConnectionsStyle.partPad / camera.zoom),
                                  lights: [carrier]) { editor in
                 editor.selectedShapeIDs = unit

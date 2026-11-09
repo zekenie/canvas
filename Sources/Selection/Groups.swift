@@ -64,6 +64,22 @@ extension SelectionState {
         return nil
     }
 
+    /// `ids` with each shape drawn as part of another (`ShapeGeometry.isHidden`: a bundle's member, outlined and spoken by its lead)
+    /// taken with its plugin's unit, as a click on its lead takes it: a pick that names one (the table of contents' row of an arrow
+    /// under a fold) would select what nothing on the canvas shows, and Delete would take one arrow from a bundle unseen.
+    func holdingUnitsOfMembers(_ ids: [ShapeID], seen: inout Set<ShapeID>) -> [ShapeID] {
+        // Only where a shape is hidden at all (so no plugin is asked, nor one made, while a change is being taken in).
+        guard editor.hasHiddenShapes, !editor.registry.contributions(to: SelectionUnits.self).isEmpty else { return ids }
+        var result: [ShapeID] = []
+        result.reserveCapacity(ids.count)
+        for id in ids {
+            result.append(id)
+            guard editor.shapeContext.geometry(of: id)?.isHidden == true, let unit = pluginUnit(of: id) else { continue }
+            for other in unit where seen.insert(other).inserted { result.append(other) }
+        }
+        return result
+    }
+
     /// Where the groups come from (`SelectionGroups`): found once, or none.
     var groupSource: (any SelectionGroupSource)? {
         if let found = groupSourceFound { return found }

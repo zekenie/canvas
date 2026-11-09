@@ -222,6 +222,9 @@ public enum ConnectionsStyle {
     /// A shape's arrows as its parts: "Arrow to Payment".
     static let arrowTo = "Arrow to "
     static let arrowFrom = "Arrow from "
+    /// A bundle's lead as a part: "9 arrows to orders", "9 arrows from /orders in orders API".
+    static func arrowsTo(_ count: Int) -> String { "\(bundleKind(count)) to " }
+    static func arrowsFrom(_ count: Int) -> String { "\(bundleKind(count)) from " }
     /// How far a part's ring stands off the arrow's segment, in view points.
     static let partPad: CGFloat = 6
     /// How much of an arrow, from where it leaves a shape, its part takes in, in view points.
