@@ -99,8 +99,9 @@ enum MentionStyle {
     // MARK: What mentions a shape
 
     /// About how many characters of a mentioner's text a list of what mentions a shape quotes around
-    /// its mention.
-    static let quoteLength = 60
+    /// its mention: what a caption line of the panel's list shows before it is cut (a quote longer than the row cut the
+    /// mention itself off its end).
+    static let quoteLength = 40
     /// The symbol of a mentioner whose kind has no placing tool.
     static let unknownSymbol = "square.dashed"
     /// The canvas's context menu item, and a pill's in text.

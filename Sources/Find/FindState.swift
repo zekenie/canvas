@@ -461,11 +461,14 @@ public final class FindState {
         return made
     }
 
-    /// What each step announces: "Hit 3 of 12, Note, the text around it".
+    /// What each step announces: "Hit 3 of 12, orders, Table, the text around this hit" (a titled shape's name before its kind,
+    /// as its row says it; the words around the hit stepped to, never only the shape's first).
     public var announcement: String? {
         guard isActive, let current, results.indices.contains(current.result), let number = currentNumber else { return nil }
         let result = results[current.result]
-        return ["Hit \(number) of \(total)", kindName(of: result.id), FindSnippet.text(of: result, in: self)].joined(separator: ", ")
+        let around = hit(at: current).map(\.hit)
+        return (["Hit \(number) of \(total)"] + (rowName(of: result).map { [$0] } ?? [])
+                + [kindName(of: result.id), FindSnippet.text(of: result, around: around, in: self)]).joined(separator: ", ")
     }
 
     private func kindName(of id: ShapeID) -> String {

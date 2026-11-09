@@ -313,6 +313,53 @@ extension SampleBoardWindow {
             w.window.settle()
         })
     },
+    test("an API's closed header selected on the canvas: → opens it and ← closes it (item-outline-arrows), the rest as a table's rows; ⌥Tab reaches it from the API") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "shop API" endpoints: "GET /health\n/purchases\nGET /purchases/{id}\nPOST /purchases\n/customers\nGET /customers/{id}"
+            api "admin API" right of "shop API" endpoints: "GET /users"
+            """#)
+        let api = try require(editor.document.shapes.first { $0[TitleProperty.self] == "shop API" }?.typed(as: API.self))
+        editor.rowFolds?.fold([api.id])
+        w.window.settle()
+        let start = editor.file
+        let names: [AnyHashable: String] = Dictionary(uniqueKeysWithValues: api.props.endpoints.map { row in
+            (AnyHashable(row.id), row.header?.prefix ?? row.endpoint?.path ?? "?")
+        })
+        let shown = editor.shapeItems(of: api.id).map { names[$0.id] ?? "?" }
+        expectEqual(shown, ["/health", "/purchases", "/customers"], "folded: the endpoint under no header, then each header closed")
+        let purchases = try require(api.props.endpoints.first { $0.header?.prefix == "/purchases" }).id
+        let closed = { @MainActor in editor.rowFolds?.fold(of: api.id)?.closed.contains(purchases) == true }
+        let walk = KeyWalk(w.window, editor: editor, readers: [.custom("rows") { window in
+            guard let selection = editor.selectedItems, editor.editingShapeID == nil, window.firstResponder === w.canvas else { return nil }
+            return Focus.of(window, surface: "rows", element: selection.ids.map { names[$0] ?? "?" }.joined(separator: "+"))
+        }, .canvas(w.canvas, editor: editor, names: [api.id: "shop API"], part: { editor.focusedPart?.title })], settle: .runLoop)
+        walk.pending = meaningsPending
+        let reset = { @MainActor in
+            editor.endEditing()
+            while editor.file != start, editor.canUndo { editor.undo() }
+            editor.rowFolds?.fold([api.id])
+            editor.selection = nil
+            editor.selectedShapeIDs = [api.id]
+            w.window.makeFirstResponder(w.canvas)
+            walk.driver.send(.optionTab)
+            walk.driver.send(.down)
+            w.window.settle()
+        }
+        reset()
+        expectEqual(walk.focus.id, "rows//purchases", "⌥Tab into the API's rows, ↓ to the closed header")
+        let surface = KeySurface("An API's closed header on the canvas", axes: .vertical, overrides: [
+            .init(.tab, [.shallower], exception: "canvas-tab"), .init(.backTab, [.shallower], exception: "canvas-tab"),
+            .init(.space, [.acted, .none], exception: "canvas-space"),
+            .init(.right, [.acted], exception: "item-outline-arrows"), .init(.left, [.none], exception: "item-outline-arrows"),
+        ])
+        walk.expectMeanings(of: surface, stops: shown.map { "rows/\($0)" }, at: 1, depth: { _ in
+            editor.editingShapeID != nil ? 4 : editor.hasFocusedPart ? 3 : editor.selectedItems != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1
+        }, acted: { !closed() }, reset: reset)
+    },
     test("a table's row being typed in: every key means what the table says, but Return (line-return), on a row of a table of three; ⌘↓ into its card") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

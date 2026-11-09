@@ -89,21 +89,21 @@ let tiesPlugin = Contributor(id: "ties") { registrar in
 
         b.editor.setText(b.ask, MentionText([.text("The shopping for the week:\n\n  ask "), .mention(b.groceries, label: "Groceries"),
                                              .text(" about oat milk, bread, eggs, apples and everything else we need before the weekend.")]))
-        expectEqual(b.quote(b.ask, of: b.groceries), "…for the week: ask @Groceries about oat milk, bread…", "cut at both ends")
+        expectEqual(b.quote(b.ask, of: b.groceries), "…week: ask @Groceries about oat milk…", "cut at both ends, a third before the mention and the rest after, so a row cut at its end still shows it")
         b.editor.setText(b.ask, MentionText([.mention(b.groceries, label: "Groceries"),
                                              .text(" first, then everything else on the list for the whole long week ahead of us")]))
-        expectEqual(b.quote(b.ask, of: b.groceries), "@Groceries first, then everything else on the list for the…", "the room before it goes after it")
+        expectEqual(b.quote(b.ask, of: b.groceries), "@Groceries first, then everything else…", "the room before it goes after it")
         b.editor.setText(b.ask, MentionText([.text("Everything else on the list for the whole long week ahead of us, and then "),
                                              .mention(b.groceries, label: "Groceries"), .text(".")]))
-        expectEqual(b.quote(b.ask, of: b.groceries), "…for the whole long week ahead of us, and then @Groceries.", "and the room after it before it")
+        expectEqual(b.quote(b.ask, of: b.groceries), "…week ahead of us, and then @Groceries.", "and the room after it before it")
         b.editor.setText(b.ask, MentionText([.text("Ask "), .mention(b.groceries, label: "Groceries"), .text(" and "), .mention(b.milk, label: "Milk"),
                                              .text(", then "), .mention(b.groceries, label: "Groceries"), .text(" again")]))
-        expectEqual(b.quote(b.ask, of: b.milk), "Ask @Groceries and @Milk, then @Groceries again")
+        expectEqual(b.quote(b.ask, of: b.milk), "…and @Milk, then @Groceries again")
 
         // The names as they are now, the shape's own and the others'; one that's gone, as the text holds it.
         b.editor.rename(b.groceries, "Food")
         b.editor.transact { $0.update(b.milk, as: Token.self) { $0.props.caption = "Oat milk" } }
-        expectEqual(b.quote(b.ask, of: b.groceries), "Ask @Food and @Oat milk, then @Food again")
+        expectEqual(b.quote(b.ask, of: b.groceries), "Ask @Food and @Oat milk, then @Food…")
         b.editor.delete(b.milk)
         expectEqual(b.quote(b.ask, of: b.groceries), "Ask @Food and @Milk, then @Food again")
     },

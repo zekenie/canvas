@@ -153,11 +153,16 @@ enum RowItems {
         let shapes = editor.shapeContext
         guard let kind = editor.registry.lineRows(of: record.kind), let rows = kind.rows(record), !rows.isEmpty,
               let frame = shapes.frame(of: record) else { return [] }
+        // The rows each header heads: those after it up to the next header.
+        func members(of index: Int) -> [AnyHashable] {
+            guard rows[index].isHeader else { return [] }
+            return rows[(index + 1)...].prefix { !$0.isHeader }.map { AnyHashable($0.id) }
+        }
         guard let shown = shapes.layoutInput(LineRowsLayout.shown, of: record) else {
             let parts = shapes.geometry(of: record.id)?.parts
             return rows.enumerated().map { index, row in
                 ShapeItem(id: row.id, title: title(row.id), rect: parts?.frame(row.id)?.rect ?? kind.lineRect(index, frame),
-                          outline: row.isHeader ? .open : nil)
+                          outline: row.isHeader ? .open : nil, heads: members(of: index))
             }
         }
         var hidden: [Int: [AnyHashable]] = [:]
@@ -166,11 +171,12 @@ enum RowItems {
             let rect = kind.lineRect(line, frame)
             switch kept {
             case .row(let index):
-                return ShapeItem(id: rows[index].id, title: title(rows[index].id), rect: rect, outline: rows[index].isHeader ? .open : nil)
+                return ShapeItem(id: rows[index].id, title: title(rows[index].id), rect: rect, outline: rows[index].isHeader ? .open : nil,
+                                 heads: members(of: index))
             case .header(let index, let hiding):
                 // Said closed, with how many it hides: an open header and a closed one read apart before a key is pressed.
                 return ShapeItem(id: rows[index].id, title: LineFoldStyle.closedItem(title(rows[index].id), hiding: hiding, noun: kind.noun), rect: rect,
-                                 outline: .closed, stands: hidden[line] ?? [])
+                                 outline: .closed, stands: hidden[line] ?? [], heads: members(of: index))
             case .more(let count):
                 return ShapeItem(id: MoreLineItem(shape: record.id), title: LineFoldStyle.more(count, noun: kind.noun), rect: rect, outline: .closed,
                                  stands: hidden[line] ?? [])

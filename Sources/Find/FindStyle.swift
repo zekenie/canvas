@@ -78,6 +78,9 @@ public enum FindStyle {
     static let nameGap = "  "
     /// The same between a row's name and its snippet, as two texts in the row.
     static let nameSpacing: CGFloat = 6
+    /// How wide a shape's name in its row is at most, whole up to it, before the hit's words after it are cut: about half
+    /// the panel's row, so "orders API" reads before "POST /orders/{id}/refunds".
+    static let rowNameMost: CGFloat = 150
     static let boardTitle = Font.system(size: 11, weight: .semibold)
     static let tally = Font.system(size: 10).monospacedDigit()
     static let noMatchesFont = Font.system(size: 13)

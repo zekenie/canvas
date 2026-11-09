@@ -403,9 +403,14 @@ public final class NeighborList {
         }
         // The literal view reads other edges than the resolved one only where a shape stands in.
         let views: [EdgeView] = topology.hasStandIns ? [.resolved, .literal] : [.resolved]
-        let selector = NeighborLight.selector(of: subject)
+        // What each stand-in stands for, as the file is now: a pill the literal view lists is the far shape's way, folded into it.
+        let standing = views.count > 1 ? topology.snapshot() : nil
+        // A row that heads others (an API's path prefix) has no connections of its own: its rows' speak for it, under the same
+        // lights, as a bundle's lead speaks for its members.
+        let headed = subject.part.map { part in editor.itemsHeaded(by: AnyHashable(part), of: subject.shape).compactMap { $0.base as? PartID } } ?? []
+        let selectors = [NeighborLight.selector(of: subject)] + headed.map { NeighborLight.selector(of: PartAddress(subject.shape, part: $0)) }
         // A list that doesn't serve the subject (a shape's for a row, a row's for a shape) is asked nothing, and is empty.
-        let texts = groups.map { $0.serves.serves(subject) ? $0.query(selector) : nil }
+        let texts = groups.map { group in group.serves.serves(subject) ? selectors.map(group.query).joined(separator: ", ") : nil }
         let open = groups.indices.map(showsRows(of:))
         // The lists shown, if they're the subject's, for the answer to be compared with where it's made.
         // They stay as they are until it lands: only an ask lands one, and a new ask lets go of this.
@@ -415,8 +420,8 @@ public final class NeighborList {
         #endif
         asking = Task { [weak self, queries] in
             // A row's lists leave nothing out: a key from one column of a table to another lists its own table.
-            let answered = await NeighborList.answer(queries, texts: texts, open: open, views: views, subject: subject.part == nil ? subject.shape : nil,
-                                                     shown: shown)
+            let answered = await NeighborList.answer(queries, texts: texts, open: open, views: views, standing: standing,
+                                                     subject: subject.part == nil ? subject.shape : nil, shown: shown)
             // One let go of lands nothing: whoever did that asked again, or the list went.
             guard !Task.isCancelled, let self else { return }
             asking = nil
@@ -460,17 +465,17 @@ public final class NeighborList {
     /// the engine's own turns take (a list of 100,000 rows is made, compared and handed over whole, and
     /// costs the main actor what a list of ten does).
     @concurrent
-    nonisolated private static func answer(_ queries: QueryState, texts: [String?], open: [Bool], views: [EdgeView], subject: ShapeID?,
-                                           shown: [NeighborListing.Group]?) async -> Answer {
+    nonisolated private static func answer(_ queries: QueryState, texts: [String?], open: [Bool], views: [EdgeView], standing: TopologySnapshot?,
+                                           subject: ShapeID?, shown: [NeighborListing.Group]?) async -> Answer {
         var groups = texts.map { NeighborListing.Group(count: 0, rows: $0 == nil ? [] : nil) }
         let closed = texts.indices.filter { !open[$0] && texts[$0] != nil }
         await withTaskGroup(of: Answered.self) { tasks in
             if !closed.isEmpty {
-                tasks.addTask { await .counts(NeighborList.counts(queries, closed.map { texts[$0]! }, views: views, subject: subject)) }
+                tasks.addTask { await .counts(NeighborList.counts(queries, closed.map { texts[$0]! }, views: views, standing: standing, subject: subject)) }
             }
             for group in texts.indices where open[group] {
                 guard let text = texts[group] else { continue }
-                tasks.addTask { await .rows(group, NeighborList.rows(queries, text, views: views, subject: subject)) }
+                tasks.addTask { await .rows(group, NeighborList.rows(queries, text, views: views, standing: standing, subject: subject)) }
             }
             for await answered in tasks {
                 switch answered {
@@ -482,11 +487,21 @@ public final class NeighborList {
         return Answer(groups: groups, readsAsShown: shown == groups)
     }
 
+    /// Whether `id`, listed in a view after the first, is a stand-in for what the first view listed already (`listed`) or for
+    /// the subject: a key's pill and the table it stands for are one row, the table's, never two of one name. A pill that
+    /// stands for nothing listed keeps its row (an end that can't be read).
+    nonisolated private static func standsForListed(_ id: ShapeID, in standing: TopologySnapshot?, listed: Set<ShapeID>, subject: ShapeID?) -> Bool {
+        guard let standing else { return false }
+        let forwards = standing.forwards(of: id)
+        return !forwards.isEmpty && forwards.allSatisfy { listed.contains($0) || $0 == subject }
+    }
+
     /// How many shapes each query matches, the subject left out: the union of its views' ids (with one
-    /// view the answer's own count, and no id asked for). A request the engine refuses (a shape that
-    /// holds nothing asked what it holds) counts none.
+    /// view the answer's own count, and no id asked for), a stand-in for what's counted once. A request the engine refuses (a
+    /// shape that holds nothing asked what it holds) counts none.
     @concurrent
-    nonisolated private static func counts(_ queries: QueryState, _ texts: [String], views: [EdgeView], subject: ShapeID?) async -> [Int] {
+    nonisolated private static func counts(_ queries: QueryState, _ texts: [String], views: [EdgeView], standing: TopologySnapshot?,
+                                           subject: ShapeID?) async -> [Int] {
         let limit = views.count > 1 ? QueryMatchRequest.every : 1
         let requests = texts.flatMap { text in
             views.map { QueryMatchRequest(text, edges: $0, limit: limit, admitting: { $0.id != subject }) }
@@ -494,27 +509,40 @@ public final class NeighborList {
         let answers = await queries.matches(requests)
         return texts.indices.map { index in
             var ids: Set<ShapeID> = [], most = 0
-            for case .success(let answer) in answers[index * views.count ..< (index + 1) * views.count] {
-                ids.formUnion(answer.ids)
-                most = max(most, answer.count)
+            for (view, answer) in answers[index * views.count ..< (index + 1) * views.count].enumerated() {
+                guard case .success(let answer) = answer else { continue }
+                if view == 0 {
+                    ids.formUnion(answer.ids)
+                    most = answer.count
+                } else {
+                    let first = ids
+                    ids.formUnion(answer.ids.filter { !standsForListed($0, in: standing, listed: first, subject: subject) })
+                }
             }
             return max(ids.count, most)
         }
     }
 
-    /// A query's rows, the subject left out: each view's, a shape once, the first view's first.
+    /// A query's rows, the subject left out: each view's, a shape once, the first view's first, and a stand-in a later view lists
+    /// for a shape the first listed (a key's pill, beside its table) folded into it.
     @concurrent
-    nonisolated private static func rows(_ queries: QueryState, _ text: String, views: [EdgeView], subject: ShapeID?) async -> NeighborListing.Group {
+    nonisolated private static func rows(_ queries: QueryState, _ text: String, views: [EdgeView], standing: TopologySnapshot?,
+                                         subject: ShapeID?) async -> NeighborListing.Group {
         var rows: [NeighborRow] = [], seen: Set<ShapeID> = Set([subject].compactMap { $0 }), most = 0
-        for view in views {
+        var first: Set<ShapeID> = []
+        for (index, view) in views.enumerated() {
             guard let result = try? await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: .none, edges: view)) else { continue }
             var own = 0
             for row in result.rows {
                 if row.id == subject { own = 1 }
+                if index > 0, standsForListed(row.id, in: standing, listed: first, subject: subject) { continue }
                 guard seen.insert(row.id).inserted else { continue }
                 rows.append(NeighborRow(id: row.id, kind: row.kind, title: row.title, board: row.board, inside: row.inside))
             }
-            most = max(most, result.count - own)
+            if index == 0 {
+                first = Set(rows.map(\.id))
+                most = result.count - own
+            }
         }
         return .init(count: max(rows.count, most), rows: rows)
     }
