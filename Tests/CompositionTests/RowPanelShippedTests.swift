@@ -69,7 +69,7 @@ private let e6 = #"""
         expectEqual(lists.map(\.title), ["Calls It", "Writes", "Reads", "Mentioned By"], "E6's order")
         expectEqual(lists.map { $0.rows.map(\.name) }, [["storefront"], ["refunds"], ["payments"], ["Partial refunds go through @POST /orders/{id}/refunds"]])
         expectEqual(lists.last?.rows.first?.id, note)
-        expectEqual(lists.last?.rows.first?.caption, "Partial refunds go through @POST /orders/{id}/refunds", "the note around its mention")
+        expectEqual(lists.last?.rows.first?.caption, "…go through @POST /orders/{id}/refunds", "the note around its mention, short enough for its line")
         // Another endpoint lists nothing of these; the API as a whole keeps the shipped lists.
         editor.selectItems([AnyHashable(try require(endpoint(editor, api, "POST /orders")?.part))], of: api)
         w.window.spin { list.subject?.part != row.part && list.hasLanded && !list.isAsking }

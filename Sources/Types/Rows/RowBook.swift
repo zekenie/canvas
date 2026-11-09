@@ -185,9 +185,9 @@ struct RowTemplate {
     var renames: Int
     /// The index of the first relation row; nil with none.
     var relationStart: Int?
-    /// How wide the widest value is, where every value is words of a known width (a type's fields' kinds, "Number"): the
-    /// names may take the rest of the row, so "amount_cents" isn't cut with room beside it. Nil where a value is a pill or a
-    /// value typed in (a note's), whose names keep to their share.
+    /// How wide the widest of the fields' kinds' words is ("Number"), where none is a pill: the names may take the rest of the
+    /// row, so "amount_cents" isn't cut with room beside it; the same on a type's note and on a note that is one (one column
+    /// for both). Nil where a kind is a pill or there are relation rows: the names keep to their share.
     var valueColumn: CGFloat?
 
     init(items: [RowTemplateItem], nameColumn: CGFloat, usesNames: Bool, renames: Int, relationStart: Int? = nil, valueColumn: CGFloat? = nil) {
@@ -364,8 +364,9 @@ public final class RowBook {
         let list = RowList(resolved, own: own)
         let dotRoom = TypesStyle.neededDotGap + TypesStyle.neededDotSize
         var items: [RowTemplateItem] = [], column: CGFloat = 0, usesNames = false
-        // The widest value, while every one is a kind's words (a type's rows, no pill among them).
-        var values: CGFloat? = subject.isType ? 0 : nil
+        // The widest of the kinds' words, while none is a pill: what a type's note shows as values, and the column a note that is
+        // one keeps too, so a name is cut at the same place on both (its typed values cut at their ends where they run past).
+        var values: CGFloat? = 0
         for item in list.items {
             switch item {
             case .field(let field):

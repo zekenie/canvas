@@ -182,10 +182,10 @@ private let locale = Locale(identifier: "en_US")
         let long = try require(rows.first { $0.name.hasPrefix("amount") })
         expect(long.nameRect.width > TypesStyle.nameShare * long.rect.width, "past its share: \(long.nameRect.width) of \(long.rect.width)")
         expect(long.valueRect.minX > long.nameRect.maxX, "the kind's words still after it")
-        // A note's values are typed, of no known width: its names keep to their share.
+        // A note that is one keeps the same column, so a name is cut at the same place on both.
         let note = t.note([money], ["amount_in_minor_units": 1250, "currency": "EUR"])
         let noted = try require(t.book.rows(of: note).first { $0.name.hasPrefix("amount") })
-        expect(noted.nameRect.width <= TypesStyle.nameShare * noted.rect.width + 0.5, "a note's: \(noted.nameRect.width) of \(noted.rect.width)")
+        expect(noted.nameRect.width > TypesStyle.nameShare * noted.rect.width, "a note's too, cut where the type's is: \(noted.nameRect.width) of \(noted.rect.width)")
     },
     test("a note of two types has each field once, in the chain's order") {
         let t = try Bench()
