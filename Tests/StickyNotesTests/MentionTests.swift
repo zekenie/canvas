@@ -135,14 +135,14 @@ private final class ContentsList {
         editor.transact { $0.update(groceries) { $0[TitleProperty.self] = "Market" } }
         expectEqual(row(note), "Get @Market and @Old list", "a rename shows in the rows that mention it")
         editor.transact { $0.delete([groceries]) }
-        expectEqual(row(note), "Get @Shopping and @Old list", "deleted: the name the mention holds")
+        expectEqual(row(note), "Get @Market and @Old list", "deleted: the name it last showed; one never shown keeps the name it holds")
         editor.undo()
         expectEqual(row(note), "Get @Market and @Old list", "the deletion undone, named as it is again")
         editor.undo()
         expectEqual(row(note), "Get @Groceries and @Old list", "the rename undone")
         editor.redo()
         editor.redo()
-        expectEqual(row(note), "Get @Shopping and @Old list", "redone: deleted again")
+        expectEqual(row(note), "Get @Market and @Old list", "redone: deleted again")
         expectEqual(editor.note(note)?.props.text.stored,
                     MentionText([.text("Get "), .mention(groceries, label: "Shopping"), .text(" and "), .mention(gone, label: "Old list")]).stored,
                     "nothing written to the note")
