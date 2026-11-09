@@ -65,7 +65,31 @@ extension CanvasEditor {
                 }
             }
         }
-        for record in paintOrder(in: drawn) { drawShape(record, in: shapes) }
+        // A shape painted just below its anchor (a key, under the cards it joins) has a tinted outline (a hover's light) drawn where
+        // it is painted, just after it, so the cards above it cover its light as they cover it, and the light never strikes through
+        // their words (UX walk 2 structure-4); its own plugin may draw what is covered faint over them.
+        let (asked, hint) = outlinesAndHint
+        var outlines = asked
+        let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
+        var beneath: [ShapeID: [TintedOutlines]] = [:]
+        if !outlines.tinted.isEmpty {
+            for index in outlines.tinted.indices {
+                let group = outlines.tinted[index]
+                let under = group.shapes.filter { shapeIndex.paintsBelowAnchor($0) }
+                guard !under.isEmpty else { continue }
+                for id in under { beneath[id, default: []].append(group) }
+                let lifted = Set(under)
+                outlines.tinted[index].shapes.removeAll { lifted.contains($0) }
+            }
+        }
+        for record in paintOrder(in: drawn) {
+            drawShape(record, in: shapes)
+            for group in beneath[record.id] ?? [] {
+                strokeOutlines(of: [record.id], rects: [], in: group.color, width: Style.tintedIndicatorWidth,
+                               outset: CGFloat(max(group.ring, 0)) * Style.tintedRingPitch, around: drawn,
+                               skeletonPixel: skeletons ? ink.pixel : nil, context: context, shapes: shapes, tinted: tinted)
+            }
+        }
         previews.endFrame()
         if previews.isPending, nextPreviewFrame == nil {
             nextPreviewFrame = scheduler.schedule(after: .zero) { [weak self] in
@@ -73,8 +97,6 @@ extension CanvasEditor {
                 self?.setNeedsDisplay()
             }
         }
-        let (outlines, hint) = outlinesAndHint
-        let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
         drawOutlines(outlines, hint: hint, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
         if let hint, let part = hintedPart { drawHintedPart(part, of: hint, in: context, shapes: shapes) }
         // The shapes waiting to be placed (`placeLater`), faint, over the board's and its outlines, under what

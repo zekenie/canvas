@@ -124,6 +124,9 @@ extension PaintOrderAnchored {
             paintAnchor(of: shape, in: document).map { PaintAnchor(shape: $0, below: paintsBelowAnchor(shape, in: document)) }
         }
     }
+    func erasedPaintAnchorFollowsContainment(of record: AnyShapeRecord) -> [ShapeID] {
+        record.typed(as: Props.self).map { paintAnchorFollowsContainment(of: $0) } ?? []
+    }
 }
 
 /// Where a shape painted by anchor goes (`PaintOrderAnchored`): just above its anchor, or just below it.

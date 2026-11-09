@@ -88,6 +88,9 @@ extension ArrowDefinition: CustomSkeletonOutline {
 }
 
 extension ArrowDefinition {
+    /// The body a level arrow's or a looked arrow's skeleton draws at `zoom` (`ArrowDrawing.skeleton(atZoom:)`).
+    static func skeletonBody(of drawing: ArrowDrawing, atZoom zoom: CGFloat) -> CGPath { drawing.skeleton(atZoom: zoom).body }
+
     /// The heads a skeleton draws: the arrow's, but for an end of a relationship type's none at its pill (`EndLine`).
     static func heads(of arrow: Arrow, in geometry: ShapeGeometry) -> (start: Bool, end: Bool) {
         guard let line = geometry.arrowDetail?.line else { return (arrow.startArrowhead, arrow.endArrowhead) }

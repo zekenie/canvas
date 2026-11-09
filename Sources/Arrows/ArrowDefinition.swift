@@ -351,6 +351,14 @@ extension ArrowDefinition: PaintOrderAnchored {
         Self.placing(shape.props, in: document)?.below ?? false
     }
 
+    /// An arrow with an end at a row follows its ends' containment (just above the container of its higher end); one bound to
+    /// shapes as wholes follows none (review R26).
+    func paintAnchorFollowsContainment(of shape: ShapeRecord<Arrow>) -> [ShapeID] {
+        let arrow = shape.props
+        guard arrow.start.binding?.part != nil || arrow.end.binding?.part != nil else { return [] }
+        return [arrow.start.binding?.shapeID, arrow.end.binding?.shapeID].compactMap { $0 }
+    }
+
     /// The shape an arrow is painted against, and whether just below it. From the arrow's props and the order and
     /// containment of the document alone.
     private static func placing(_ arrow: Arrow, in document: CanvasDocument) -> (shape: ShapeID, below: Bool)? {
@@ -572,6 +580,8 @@ public struct ArrowsPlugin: ListedPlugin {
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.service { ArrowRowNesting(editor: $0) }
         registrar.overlay(BindingHintsOverlay())
+        // The stretch of a key a card covers, faint over the card (`ArrowUnderCardsOverlay`).
+        registrar.overlay(ArrowUnderCardsOverlay())
         // Arrows let go of shapes as they're deleted through `ShapeReferencing`, which the core asks.
     }
 }

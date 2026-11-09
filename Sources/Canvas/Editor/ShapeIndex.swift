@@ -47,6 +47,10 @@ final class ShapeIndex {
         var hitMargins: [HitMargin]
         /// Each anchored shape's anchor, as `order` has it.
         var anchors: [ShapeID: PaintAnchor?]
+        /// The shapes whose containment an anchored shape's anchor follows (`paintAnchorFollowsContainment`), by that shape, and
+        /// how many anchored shapes follow each.
+        var follows: [ShapeID: [ShapeID]] = [:]
+        var followed: [ShapeID: Int] = [:]
         /// How many shapes at the end of `order` are anchored with no plain shape to be above (the anchor is missing, or
         /// anchored itself), which go on top.
         var topCount: Int
@@ -188,6 +192,12 @@ final class ShapeIndex {
     // MARK: Paint order
 
     /// Up to date: rebuilt if the stack changed, with the extents of whatever else changed redone.
+    /// Whether `id` is painted just below its anchor (`PaintOrderAnchored.paintsBelowAnchor`) in the paint list as it is; false
+    /// before one is built.
+    func paintsBelowAnchor(_ id: ShapeID) -> Bool {
+        paintList?.anchors[id]??.below == true
+    }
+
     func paintList(in context: ShapeContext) -> PaintList {
         refresh(in: context)
         return paintList!
@@ -402,6 +412,7 @@ final class ShapeIndex {
             if let anchored = registry.definition(for: kind) as? any PaintOrderAnchored { anchoredKinds[kind] = anchored }
         }
         var anchors: [ShapeID: PaintAnchor?] = [:]
+        var follows: [ShapeID: [ShapeID]] = [:], followed: [ShapeID: Int] = [:]
         var isAnchored = [Bool](repeating: false, count: shapes.count)
         var anchorIDs = [PaintAnchor?](repeating: nil, count: shapes.count)
         if !anchoredKinds.isEmpty {
@@ -409,6 +420,11 @@ final class ShapeIndex {
                 guard let anchored = anchoredKinds[record.kind] else { continue }
                 let anchor = anchored.erasedPaintAnchor(of: record, in: document)
                 anchors[record.id] = .some(anchor)
+                let reads = anchored.erasedPaintAnchorFollowsContainment(of: record)
+                if !reads.isEmpty {
+                    follows[record.id] = reads
+                    for id in reads { followed[id, default: 0] += 1 }
+                }
                 isAnchored[i] = true
                 anchorIDs[i] = anchor
             }
@@ -453,7 +469,7 @@ final class ShapeIndex {
         paintListsBuilt += 1
         #endif
         return PaintList(order: order, positions: positions, extents: extents, hitMargins: hitMargins, anchors: anchors,
-                         topCount: top.count, lastPlain: plain.last ?? -1)
+                         follows: follows, followed: followed, topCount: top.count, lastPlain: plain.last ?? -1)
     }
 
     // MARK: Keeping up
@@ -471,7 +487,26 @@ final class ShapeIndex {
             paintList = nil
             grid = nil
             staleExtents = []
+            return
         }
+        // Kept: what the anchored shapes that changed (or came) follow the containment of now.
+        for id in changes.changed.union(changes.added) {
+            guard let record = document[id], let anchored = registry.definition(for: record.kind) as? any PaintOrderAnchored else { continue }
+            follow(id, anchored.erasedPaintAnchorFollowsContainment(of: record))
+        }
+        for id in changes.removed where paintList!.follows[id] != nil { follow(id, []) }
+    }
+
+    /// Notes that `id`'s anchor follows the containment of `reads` now.
+    private func follow(_ id: ShapeID, _ reads: [ShapeID]) {
+        let before = paintList!.follows[id] ?? []
+        guard before != reads else { return }
+        for old in before {
+            let count = (paintList!.followed[old] ?? 1) - 1
+            paintList!.followed[old] = count > 0 ? count : nil
+        }
+        for new in reads { paintList!.followed[new, default: 0] += 1 }
+        paintList!.follows[id] = reads.isEmpty ? nil : reads
     }
 
     /// Puts the shapes a commit added at the end of the paint list, if that's where they belong and nothing else in
@@ -619,9 +654,15 @@ final class ShapeIndex {
     private func anchorsMoved(_ changes: ChangeSet, in document: CanvasDocument, registry: Registry) -> Bool {
         // A shape that went into or out of a container (an anchor may follow containment, as a key's does: just above the
         // container of its end) may have changed any anchor's, though the stack and the anchored shapes didn't.
-        if !paintList!.anchors.isEmpty, !changes.onlyMoves, changes.priors.holdsRecords,
-           changes.changed.contains(where: { id in changes.before(id).map { $0.container != document[id]?.container } ?? false }) {
-            return true
+        // Only a shape an anchor follows the containment of, or a container holding one, counts (review R26: every arrow counted,
+        // so a note dropped into a frame on a board with one plain arrow built the list and the grid again).
+        if !paintList!.followed.isEmpty, !changes.onlyMoves, changes.priors.holdsRecords {
+            let followed = paintList!.followed, kinds = registry.containingKinds
+            for id in changes.changed where changes.before(id).map({ $0.container != document[id]?.container }) ?? false {
+                if followed[id] != nil { return true }
+                if let kind = document[id]?.kind, kinds.contains(kind),
+                   document.descendants(of: id, containingKinds: kinds).contains(where: { followed[$0] != nil }) { return true }
+            }
         }
         return changes.changed.contains { id in
             guard let record = document[id], let anchored = registry.definition(for: record.kind) as? any PaintOrderAnchored else { return false }

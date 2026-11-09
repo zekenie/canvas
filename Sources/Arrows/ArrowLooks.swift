@@ -139,9 +139,15 @@ struct ArrowDrawing: @unchecked Sendable {
     let ends: [Mark]
     /// Every mark's strokes together; empty with none.
     let marks: CGPath
+    /// Its visible ends, and whether it is a level curve (an end at a row): far out, its skeleton is the straight line between
+    /// them.
+    let start: CGPoint
+    let end: CGPoint
+    let isLevel: Bool
 
     init(_ geometry: ArrowGeometry, detail: ArrowDetail) {
         whole = geometry.bodyPath
+        (start, end, isLevel) = (geometry.start, geometry.end, geometry.isLevel)
         let heads = CGMutablePath(), triangles = CGMutablePath()
         for head in geometry.arrowheads(strokeWidth: detail.width) {
             for path in [heads, triangles] {
@@ -176,8 +182,17 @@ struct ArrowDrawing: @unchecked Sendable {
 
     /// The marks drawn zoomed out at `zoom`, each once it reaches `ArrowStyle.skeletonMarkLength` view points along the line,
     /// and the body they're drawn on: cut where a circle drawn is, else whole.
+    /// Below `ArrowStyle.straightSkeletonZoom` a level curve is one straight line from its end to its end, with no marks or
+    /// level reaches (UX walk 3 tables-4: three keys between two tables 75 apart knotted into a scribble at 10%), as other kinds'
+    /// skeletons simplify further farther out.
     @MainActor
     func skeleton(atZoom zoom: CGFloat) -> (body: CGPath, marks: [CGPath]) {
+        if isLevel, zoom < ArrowStyle.straightSkeletonZoom {
+            let line = CGMutablePath()
+            line.move(to: start)
+            line.addLine(to: end)
+            return (line, [])
+        }
         let shown = ends.filter { $0.reach * zoom >= ArrowStyle.skeletonMarkLength }
         return (shown.contains(where: \.isCut) ? body : whole, shown.map(\.path))
     }
@@ -233,4 +248,7 @@ extension ArrowStyle {
     /// Zoomed out, an end's marks are drawn once the longest reaches this many view points along the line; shorter, the line
     /// runs whole to the end.
     static let skeletonMarkLength: CGFloat = 3
+    /// Below this zoom a level curve's skeleton is a straight line between its ends: where a key's bars (17.5 out) are under
+    /// `skeletonMarkLength` view points and drawn no more, and a row is too thin to have bars of its own (the kit's 12% floor).
+    static let straightSkeletonZoom: CGFloat = 0.15
 }
