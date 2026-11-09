@@ -1,4 +1,5 @@
 import Canvas
+import CoreGraphics
 import Draw
 import Selection
 import SlashCommands
@@ -212,8 +213,9 @@ extension CanvasEditor {
     /// keyboard stays where it is (the core's `Placement.settled()`). Either way one step, "New Type", into which the caller
     /// may write what names it, in a group of its own of that name.
     ///
-    /// Put down settled where no clear spot in view is left (the view full), it lands where it can and the view pans the least
-    /// to show it, `keeping` (else the owners) in view as well where both fit (Selection's `revealIfOffscreen`).
+    /// Put down settled where no clear spot in view is left (the view full), it lands at the clear spot nearest the view and the
+    /// view pans the least to show it, `keeping` (else the owners) in view as well where both fit, else the anchor of a card
+    /// shown (the row it was made from), so the card stays up (Selection's `revealIfOffscreen`).
     @discardableResult
     public func newType(named name: String, besides owners: [ShapeID], givingType: Bool, editing: Bool, keeping: [ShapeID] = []) -> ShapeID? {
         var seen = Set<ShapeID>()
@@ -245,7 +247,17 @@ extension CanvasEditor {
         // into view as it's selected, wherever it lands).
         if !editing, !surroundings.shows(landing.rect, put: put) {
             let anywhere = surroundings.anywhere(put: put)
-            if surroundings.shows(anywhere.rect, put: put) { landing = anywhere }
+            if surroundings.shows(anywhere.rect, put: put) {
+                landing = anywhere
+            } else if let view = surroundings.reading.view {
+                // None clear in view (it's full): the clear spot nearest what the person is at (the row a card hangs from, else
+                // what it is kept beside, else the view), beside it or round the view's middle, so the least pan shows both.
+                let at = card?.anchor ?? shapeContext.bounds(of: keeping) ?? view
+                var spots = [landing, surroundings.anywhere()]
+                if let beside = surroundings.near(at, avoiding: [at]) { spots.append(beside) }
+                func away(_ rect: CGRect) -> CGFloat { let x = rect.midX - at.midX, y = rect.midY - at.midY; return (x * x + y * y).squareRoot() }
+                landing = spots.min { away($0.rect) < away($1.rect) } ?? landing
+            }
         }
         let inView = editing || surroundings.shows(landing.rect, put: put)
         let newID = undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) { () -> ShapeID? in
@@ -254,8 +266,9 @@ extension CanvasEditor {
             if givingType { giveType(id, to: owners) }
             return id
         }
-        // Nowhere clear in view: brought into view by the least pan, what it was made for kept in view where both fit.
-        if let id = newID, !inView { revealIfOffscreen([id], keeping: keeping.isEmpty ? owners : keeping) }
+        // Nowhere clear in view: brought into view by the least pan, what it was made for kept in view where both fit, else the
+        // row a card hangs from (made from a row's card, the card stays up, the caret in it).
+        if let id = newID, !inView { revealIfOffscreen([id], keeping: keeping.isEmpty ? owners : keeping, orKeeping: card?.anchor) }
         return newID
     }
 

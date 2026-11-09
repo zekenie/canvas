@@ -95,10 +95,10 @@ public enum PlacingStyle {
     public static let markRoom: CGFloat = 36
     /// The line a pill stands at the end of shows this much either side of the label it carries (a channel's pill: `reads`), its
     /// head's run and its own: a pill put down for such an arrow is at least the label's width and twice this from its start.
-    public static let labelEndRoom: CGFloat = 24
+    public static let labelEndRoom: CGFloat = 40
     /// Between two such labels on lines from one start to pills one above the other: the pills are spaced so the labels, halfway
     /// along, are this far apart.
-    public static let labelSpacing: CGFloat = 8
+    public static let labelSpacing: CGFloat = 16
 }
 
 /// A board shapes land on, as `canvas draw` reads the board it places shapes on: read in place
