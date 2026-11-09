@@ -236,7 +236,8 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         expect(apart.output.contains("the board in front, if any."), apart.output)
         let loose = try startCommandServer(boards: [board], frontmost: nil)
         defer { loose.stop() }
-        let none = try canvas(loose, ["measure", "-", "--board", "99"], input: "sticky-note \"A\"")
+        // A number no board of this server has: a board's number is the process's count, so a fixed one is some run's board.
+        let none = try canvas(loose, ["measure", "-", "--board", String(board.number + 1)], input: "sticky-note \"A\"")
         expect(none.status != 0, "a board named that isn't open is refused as for any board command")
     },
     test("the answer, whole, through canvas as built: the JSON a tool reads") {
