@@ -23,15 +23,23 @@ extension ChannelPill: Adornment {
 /// channel's, whatever registry declares it).
 @MainActor
 enum ChannelPills {
-    private static var kept: [ChannelID: AdornmentLabel] = [:]
+    private struct Key: Hashable {
+        let channel: ChannelID
+        let count: Int
+    }
+    private static var kept: [Key: AdornmentLabel] = [:]
 
-    /// The pill for a connection on `channel`: its title in white on its tint; nil for an untitled channel.
-    static func label(of channel: ChannelID, in registry: Registry) -> AdornmentLabel? {
+    /// The pill for a connection on `channel`: its title in white on its tint, and for a bundle's lead how many it draws for
+    /// ("writes · 9", E8); nil for an untitled channel.
+    static func label(of channel: ChannelID, count: Int = 1, in registry: Registry) -> AdornmentLabel? {
         guard let title = registry.channelTitle(channel) else { return nil }
-        if let known = kept[channel], known.text == title { return known }
+        let text = count > 1 ? ConnectionsStyle.bundleTitle(title, count: count) : title
+        let key = Key(channel: channel, count: count)
+        if let known = kept[key], known.text == text { return known }
         guard let tint = registry.channelTint(channel) else { return nil }
-        let label = AdornmentLabel(title).tinted(AdornmentTint(tint, ink: .white, style: .solid))
-        kept[channel] = label
+        let label = AdornmentLabel(text).tinted(AdornmentTint(tint, ink: .white, style: .solid))
+        if kept.count >= 512 { kept.removeAll(keepingCapacity: true) }
+        kept[key] = label
         return label
     }
 }
@@ -45,7 +53,9 @@ public struct ConnectionPillsPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.forShapes(holding: ChannelProperty.self) { connections in
             connections.adornment(ChannelPill.self) { shape, context in
-                shape[ChannelProperty.self].flatMap { ChannelPills.label(of: $0, in: context.registry) }
+                // A bundle's lead says how many it draws for; a member draws none (it is hidden, its lead's pill is the one).
+                let count = context.layoutInput(ConnectionBundle.input, of: shape)?.count ?? 1
+                return shape[ChannelProperty.self].flatMap { ChannelPills.label(of: $0, count: count, in: context.registry) }
             }
             // VoiceOver: the relation the pill shows, said as a label part after the connection's kind ("Arrow, from X to Y, writes").
             connections.accessibility { shape, editor in

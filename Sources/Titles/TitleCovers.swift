@@ -252,7 +252,7 @@ struct TitleCoverOverlay: CanvasOverlay {
             guard let found = TitleCoverStyle.cover(of: record, in: context.shapes, editor: editor) else { continue }
             draw(found, offset: context.worldDrawingOffset(of: record.id), in: context)
         }
-        bars.fill(in: context.cg)
+        bars.fill(in: context.cg, zoom: context.zoom)
         guard !context.pendingShapes.isEmpty else { return }
         context.drawingPending {
             for record in context.pendingShapes {
@@ -283,6 +283,11 @@ struct TitleCoverOverlay: CanvasOverlay {
 enum TitleBar {
     /// The bar's height, as much of the pill's.
     static let heightFraction: CGFloat = 0.4
+    /// The narrowest shape that has a bar, view points: a bar needs no room for text, so a table of usual width far out (10%) still
+    /// has its bar (a cover's floor, `TitleCoverStyle.smallestShape`, is for words).
+    static let narrowest: CGFloat = 8
+    /// A bar thinner than this, view points, is drawn square: its rounded ends are under a point.
+    static let squareBelow: CGFloat = 4
     /// A column of its title, view points: the pill's 11-point text, as `SkeletonText` counts a column.
     static let column: CGFloat = SkeletonTextMetrics.systemFontColumn * 11
     /// What the bar keeps besides its title's columns, view points: the pill's padding at both ends and its symbol.
@@ -294,14 +299,14 @@ enum TitleBar {
     static let fill = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.5, alpha: 0.9) : NSColor(white: 0.25, alpha: 0.9) }
 
     /// A titled shape's bar, world units, where its shape is drawn (moved by `offset`); nil for a kind that draws a
-    /// cover, an untitled shape, and one too small on screen to say anything (`TitleCoverStyle.smallestShape`).
+    /// cover, an untitled shape, and one too small on screen to be seen (`narrowest`).
     /// `start`: how far right of the shape's left edge the bar starts, world units (Adornments' `adornmentRowStart`, clear
     /// of a container's tab, as the pill's row is).
     static func bar(of record: AnyShapeRecord, in shapes: ShapeContext, offset: CGPoint, start: () -> CGFloat = { 0 }) -> (rect: CGRect, color: NSColor?)? {
         guard !record.isOpaque, let found = shapes.registry.titleBar(of: record), let geometry = shapes.geometry(of: record.id),
               !geometry.bounds.isNull else { return nil }
         let bounds = geometry.bounds.offsetBy(dx: offset.x, dy: offset.y), zoom = shapes.zoom
-        guard bounds.width * zoom >= TitleCoverStyle.smallestShape.width else { return nil }
+        guard bounds.width * zoom >= narrowest else { return nil }
         let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction, start = start()
         let points = lead + column * CGFloat(SkeletonText.columns(of: found.title, upTo: 80))
         let width = min(bounds.width - start, points * row.height / AdornmentLayout.rowHeight)
@@ -319,14 +324,17 @@ struct TitleBars {
         if let color = bar.color { tinted[color, default: []].append(bar.rect) } else { plain.append(bar.rect) }
     }
 
-    @MainActor func fill(in cg: CGContext) {
+    /// `zoom`: a bar thinner than `squareBelow` view points has corners too small to see, so it is filled as a plain rect, all of a
+    /// color in one call (a board of thousands far out is a bar a table: a path each cost more than the rest of the frame).
+    @MainActor func fill(in cg: CGContext, zoom: CGFloat) {
         func fill(_ rects: [CGRect], _ color: NSColor) {
-            guard !rects.isEmpty else { return }
+            guard let first = rects.first else { return }
+            cg.setFillColor(color.cgColor)
+            if first.height * zoom < TitleBar.squareBelow { return cg.fill(rects) }
             for rect in rects {
                 let radius = rect.height / 2
                 cg.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
             }
-            cg.setFillColor(color.cgColor)
             cg.fillPath()
         }
         fill(plain, TitleBar.fill)

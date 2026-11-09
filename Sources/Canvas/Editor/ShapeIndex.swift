@@ -63,6 +63,9 @@ final class ShapeIndex {
     let serial: Int
     private static var serials = 0
     private var entries: [ShapeID: Entry] = [:]
+    /// The shapes whose kept geometry is hidden (`ShapeGeometry.isHidden`: drawn as part of another), so what lists the shapes
+    /// in a rect leaves them out at no cost when there are none.
+    private(set) var hidden: Set<ShapeID> = []
     /// For each shape, the shapes whose geometry looked it up.
     private var readers: [ShapeID: Set<ShapeID>] = [:]
     private var documentReaders: Set<ShapeID> = []
@@ -134,6 +137,7 @@ final class ShapeIndex {
         let entry = Entry(geometry: geometry, extent: Self.extent(of: record, geometry, laidOut: context.registry.isLaidOutBox(record.kind)), hitMargin: definition?.hitMargin ?? HitMargin(),
                           reads: reads.shapes)
         entries[id] = entry
+        if geometry?.isHidden == true { hidden.insert(id) }
         for read in reads.shapes where read != id { readers[read, default: []].insert(id) }
         if reads.document { documentReaders.insert(id) }
         if reads.camera { cameraReaders.insert(id) }
@@ -635,6 +639,7 @@ final class ShapeIndex {
         while let id = queue.popLast() {
             guard forgotten.insert(id).inserted else { continue }
             if let entry = entries.removeValue(forKey: id) {
+                if entry.geometry?.isHidden == true { hidden.remove(id) }
                 extents = extents.union(entry.extent)
                 for read in entry.reads where read != id {
                     readers[read]?.remove(id)

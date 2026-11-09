@@ -42,6 +42,12 @@ private let frame = CGRect(x: 0, y: 0, width: 40, height: 30)
 }
 
 @MainActor let deleteStepsTests = Suite("Delete says what went", [
+    test("asked shapes some of which weren't seen (a bundle's members, drawn by its lead) are named though nothing went along") {
+        let r = try Rig()
+        let registry = r.editor.registry
+        expectEqual(DeleteSteps.name(asked: [Link.kind, Link.kind, Link.kind], along: [], in: registry), "Delete")
+        expectEqual(DeleteSteps.name(asked: [Link.kind, Link.kind, Link.kind], along: [], namesAsked: true, in: registry), "Delete 3 links")
+    },
     test("a ledger deleted with the links bound to it: one step named for the ledger and the links that went with it, in the registry's words") {
         let r = try Rig()
         let before = r.editor.document

@@ -50,6 +50,30 @@ struct Row {
 }
 
 @MainActor let groupSelectionTests = Suite("Groups selected as one", [
+    test("a plugin's unit (a bundle of arrows) is selected whole before any group: by a click, a click again, the marquee and Delete") {
+        let groups = GroupsFixture()
+        var unit: [ShapeID] = []
+        let h = try groupsHarness(groups, [Contributor(id: "units") { $0.selectionUnits { _, id in unit.contains(id) ? unit : nil } }])
+        let row = Row(h)
+        unit = [row.a, row.b]
+        groups.paths = [row.a: ["g"], row.b: ["g"], row.c: ["h"], row.d: ["h"]]
+        h.click(at: row.middle(row.b))
+        expectEqual(h.editor.selectedShapeIDs, [row.a, row.b], "the unit, not the group it's in")
+        h.click(at: row.middle(row.b))
+        expectEqual(h.editor.selectedShapeIDs, [row.a, row.b], "a unit has no inside: clicked again, still whole")
+        expectEqual(h.editor.selectionUnit(of: row.a), [row.a, row.b])
+        h.click(at: row.middle(row.c))
+        expectEqual(h.editor.selectedShapeIDs, [row.c, row.d], "a shape in no unit goes on to its group")
+        h.editor.selectedShapeIDs = []
+        // A marquee reaching only a selects b with it.
+        h.press(at: CGPoint(x: -20, y: -20))
+        h.drag(to: CGPoint(x: 60, y: 60))
+        h.release()
+        expectEqual(Set(h.editor.selectedShapeIDs), [row.a, row.b])
+        h.editor.selectedShapeIDs = [row.a, row.b]
+        expect(h.key("\u{7f}"), "Delete is heard")
+        expect(h.editor.document[row.a] == nil && h.editor.document[row.b] == nil, "Delete takes the whole unit")
+    },
     test("a click on a shape in a group selects the group, all of it; a drag moves it all") {
         let groups = GroupsFixture()
         let h = try groupsHarness(groups)

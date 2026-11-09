@@ -249,6 +249,12 @@ struct TallyLines: LineModel {
         Set(shape.props.rows.filter { $0.count != nil }.map(\.id))
     }
     func isHeader(_ row: TallyRow) -> Bool { row.label.hasSuffix("/") }
+    /// A hit before an entry's first dot is drawn elsewhere (as an endpoint's group prefix is, on its header): it shows no entry.
+    func peeks(_ row: TallyRow, at index: Int, of rows: [TallyRow], hitAt ranges: [Range<Int>]) -> Bool {
+        guard let dot = row.label.firstIndex(of: ".") else { return true }
+        let prefix = row.label.utf16.distance(from: row.label.startIndex, to: dot)
+        return ranges.contains { $0.upperBound > prefix }
+    }
     /// An entry with a count drags from its line's left (its lead).
     func lead(of row: TallyRow, at index: Int, among rows: [TallyRow], line: CGRect, in context: LineContext) -> CGRect? {
         row.count == nil ? nil : Tally.lead(in: line)

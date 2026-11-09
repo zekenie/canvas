@@ -263,7 +263,7 @@ final class SelectionState {
     /// all in view, is kept there while the view settles (`keepInViewWhileSettling`).
     func select(_ ids: [ShapeID], recording: Bool = true) {
         var seen = Set<ShapeID>()
-        let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
+        let kept = holdingUnitsOfMembers(ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }, seen: &seen)
         guard kept != selectedIDs else { return }
         hasJustArrived = false
         if recording { record(leaving: selectedIDs, for: kept) }
@@ -799,12 +799,15 @@ extension CanvasEditor {
     /// is "Delete" when nothing did.
     public func deleteShapes(_ ids: [ShapeID]) {
         guard !ids.isEmpty else { return }
+        // Shapes drawn by another (a bundle's members, drawn by its lead) are named, so Undo says what comes back.
+        let unseen = ids.contains { shapeContext.geometry(of: $0)?.isHidden == true }
         transact("Delete") { tx in
             let kinds = ids.compactMap { id in tx.document[id].map { (id, $0.kind) } }
             tx.delete(Set(ids))
-            guard !tx.deletedAlong.isEmpty else { return }       // nothing went along: plain "Delete"
+            guard !tx.deletedAlong.isEmpty || unseen else { return }       // nothing went along: plain "Delete"
             // The ones that went: a read-only shape asked for stays, and isn't part of the name.
-            tx.stepName = DeleteSteps.name(asked: kinds.filter { tx.document[$0.0] == nil }.map(\.1), along: tx.deletedAlong, in: registry)
+            tx.stepName = DeleteSteps.name(asked: kinds.filter { tx.document[$0.0] == nil }.map(\.1), along: tx.deletedAlong,
+                                           namesAsked: unseen, in: registry)
         }                                                // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays
     }

@@ -22,18 +22,28 @@ extension CanvasEditor {
             guard document[edge.carrier]?.kind == kind, seen.insert(edge.carrier).inserted else { continue }
             let leaves = edge.source == id
             let otherID = leaves ? edge.target : edge.source
-            guard let geometry = context.geometry(of: edge.carrier), !geometry.outline.isEmpty else { continue }
+            // A bundle's member is its lead's: the lead is listed once, for all of them.
+            guard let geometry = context.geometry(of: edge.carrier), !geometry.outline.isEmpty, !geometry.isHidden else { continue }
             let other = context.geometry(of: otherID)?.bounds
             let near = leavingSegment(of: geometry.outline, from: leaves, around: own)
             // A row at the far end by the row's name, read with its shape's ("Arrow to id in customers").
-            let otherPart = edge.otherPart(from: id, leaves ? .outgoing : .incoming)
+            // A bundle's lead draws for several from the fold's line that stands for their rows: it says the count, and names that line
+            // where the far end is the shape folded (a row the fold hides isn't one a person sees).
+            var count = 1, otherPart = edge.otherPart(from: id, leaves ? .outgoing : .incoming)
+            if case .lead(let bundled, let standing)? = connectionBundle(of: edge.carrier)?.role {
+                count = bundled
+                if let standing, standing.shape == otherID { otherPart = standing.part }
+            }
             let name = accessibleName(readingThrough: PartAddress(otherID, part: otherPart)) ?? accessibleDescription(of: otherID)?.name
                 ?? registry.label(of: document[otherID]?.kind ?? kind).name
             let carrier = edge.carrier
-            let part = ShapePart(id: carrier, title: (leaves ? ConnectionsStyle.arrowTo : ConnectionsStyle.arrowFrom) + name,
+            // A bundle's lead selects its bundle whole, as a click on it does.
+            let unit = selectionUnit(of: carrier)
+            let part = ShapePart(id: carrier, title: (count > 1 ? (leaves ? ConnectionsStyle.arrowsTo(count) : ConnectionsStyle.arrowsFrom(count))
+                                    : (leaves ? ConnectionsStyle.arrowTo : ConnectionsStyle.arrowFrom)) + name,
                                  role: .connection, rect: near.insetBy(dx: -ConnectionsStyle.partPad / camera.zoom, dy: -ConnectionsStyle.partPad / camera.zoom),
                                  lights: [carrier]) { editor in
-                editor.selectedShapeIDs = [carrier]
+                editor.selectedShapeIDs = unit
             }
             let middle = other.map { CGPoint(x: $0.midX, y: $0.midY) } ?? CGPoint(x: near.midX, y: near.midY)
             if leaves { outgoing.append((part, middle)) } else { incoming.append((part, middle)) }

@@ -30,4 +30,16 @@ import TestKit
         expectEqual(told, beforeClose + 1, "told as it closes")
         expectEqual(find.fieldsHit(of: shapes[0].id), [], "none while closed")
     },
+    test("rangesHit gives each hit field's ranges, in the field's own text, only while Find is open: what a kind that draws some hits elsewhere reads to leave them out") {
+        let shapes = memos(["apple pie and apple tart", "plum", "apple"])
+        let h = try findHarness(CanvasFile(root: CanvasDocument(shapes: shapes)))
+        let find = try require(h.editor.find)
+        expectEqual(find.rangesHit(of: shapes[0].id), [:], "nothing before Find opens")
+        _ = try search("apple", in: h)
+        expectEqual(find.rangesHit(of: shapes[0].id), ["body": [0..<5, 14..<19]], "both hits, in UTF-16 of the field's text")
+        expectEqual(find.rangesHit(of: shapes[1].id), [:], "a shape with no hit")
+        expectEqual(find.rangesHit(of: shapes[2].id), ["body": [0..<5]])
+        find.close()
+        expectEqual(find.rangesHit(of: shapes[0].id), [:], "none while closed")
+    },
 ])

@@ -22,8 +22,13 @@ public struct AccessibleTraits: Sendable, Equatable {
     public var states: [String]
     /// What can be done with it, said after a pause. The first plugin's that says one.
     public var help: String?
+    /// What it is said to be in its kind's place ("9 arrows": an arrow that draws for several, bundled); the first plugin's that
+    /// says one. Nil for its kind's label.
+    public var kind: String?
 
-    public init(name: String? = nil, labelParts: [String] = [], value: String? = nil, states: [String] = [], help: String? = nil) {
+    public init(name: String? = nil, labelParts: [String] = [], value: String? = nil, states: [String] = [], help: String? = nil,
+                kind: String? = nil) {
+        self.kind = kind
         self.name = name
         self.labelParts = labelParts
         self.value = value
@@ -148,8 +153,8 @@ extension CanvasEditor {
     /// name, value and help; every label part and state), after its kind's label: "Checkout, Note,
     /// Person, locked". A shape kept aside is its kind alone. Worked out each time it's asked.
     public func accessibleDescription(of record: AnyShapeRecord) -> AccessibleDescription {
-        let kind = registry.label(of: record.kind).name
-        var name: String?, value: String?, help: String?
+        var kind = registry.label(of: record.kind).name
+        var name: String?, value: String?, help: String?, saidKind: String?
         var parts: [String] = [], states: [String] = []
         if !record.isOpaque {
             for describe in registry.contributions(to: CorePoints.ShapeAccessibility.self, for: record.kind) {
@@ -157,10 +162,12 @@ extension CanvasEditor {
                 if name == nil, let said = Self.said(traits.name) { name = said }
                 if value == nil, let said = Self.said(traits.value) { value = said }
                 if help == nil, let said = Self.said(traits.help) { help = said }
+                if saidKind == nil, let said = Self.said(traits.kind) { saidKind = said }
                 parts += traits.labelParts.compactMap(Self.said)
                 states += traits.states.compactMap(Self.said)
             }
         }
+        if let saidKind { kind = saidKind }
         let label = ((name.map { [$0] } ?? []) + [kind] + parts + states).joined(separator: ", ")
         return AccessibleDescription(name: name ?? kind, kind: kind, label: label, value: value, help: help)
     }
@@ -225,7 +232,8 @@ extension CanvasEditor {
         var seen = Set<ShapeID>(), list: [ShapeID] = []
         let document = document
         func add(_ id: ShapeID) {
-            if document[id] != nil, seen.insert(id).inserted { list.append(id) }
+            // A shape drawn as part of another (an arrow bundled under its lead) is no element: its lead speaks for it.
+            if document[id] != nil, context.geometry(of: id)?.isHidden != true, seen.insert(id).inserted { list.append(id) }
         }
         if let order = registry.contributions(to: CorePoints.AccessibleOrder.self).first?.value {
             order(self).forEach(add)

@@ -181,13 +181,21 @@ enum ArrowParts {
     /// names of the shapes its ends are bound to, as VoiceOver says them), the relation its end marks say ("many to one"), and its label's words.
     static func accessibility(of shape: ShapeRecord<Arrow>, in editor: CanvasEditor) -> AccessibleTraits {
         // A row's end by the row's name, read with its shape's ("id in customers").
+        // A bundle's lead draws for several from a fold's line: said by that line ("9 arrows, from /orders in orders API to orders").
+        let detail = editor.shapeContext.geometry(of: shape.id)?.arrowDetail
+        var count = 1, standing: PartAddress?
+        if case .lead(let bundled, let line)? = detail?.bundle?.role { (count, standing) = (bundled, line) }
         func name(_ end: ArrowEnd) -> String? {
-            shape.props[end].binding.flatMap { editor.accessibleName(readingThrough: $0.address) ?? editor.accessibleDescription(of: $0.shapeID)?.name }
+            shape.props[end].binding.flatMap { binding in
+                let address = standing.flatMap { $0.shape == binding.shapeID ? $0 : nil } ?? binding.address
+                return editor.accessibleName(readingThrough: address) ?? editor.accessibleDescription(of: binding.shapeID)?.name
+            }
         }
         let runs = ArrowStyle.accessibleRun(from: name(.start), to: name(.end))
         let text = shape.props.hasText ? editor.mentions?.plainText(shape.props.text) ?? shape.props.text.plainText() : nil
         // A key's marks say what the eye reads off its ends: "many to one".
-        let cardinality = editor.shapeContext.geometry(of: shape.id)?.arrowDetail?.look?.cardinality
-        return AccessibleTraits(labelParts: [runs, cardinality].compactMap { $0 }, value: text)
+        let cardinality = detail?.look?.cardinality
+        return AccessibleTraits(labelParts: [runs, cardinality].compactMap { $0 }, value: text,
+                                kind: count > 1 ? ConnectionsStyle.bundleKind(count) : nil)
     }
 }

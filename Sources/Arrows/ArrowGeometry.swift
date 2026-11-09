@@ -52,8 +52,10 @@ public struct ArrowGeometry: Sendable {
     /// since its bend is worked out from the pill's place, never a person's.
     /// `markReach` is how far out along the line each end's mark reaches (`ArrowMarks.reach(of:)`): a level curve between
     /// ends too near to make a way for the marks reaches out far enough to turn clear of them.
+    /// `spread` is how the arrow is drawn among others sharing its path (`ArrowSpread`): bowed by a slot, fanned at an end, come
+    /// in at a row of a shape it is bound to as a whole.
     public init(arrow: Arrow, strokeWidth: CGFloat, minBend: CGFloat = ArrowGeometry.minBend,
-                markReach: (start: CGFloat, end: CGFloat) = (0, 0), shape: (ShapeID) -> ConnectableShape?) {
+                markReach: (start: CGFloat, end: CGFloat) = (0, 0), spread: ArrowSpread = ArrowSpread(), shape: (ShapeID) -> ConnectableShape?) {
         // A part named on a binding to a shape that lists none (a pill standing for the table the part is a column of): the end
         // meets that shape as a whole, at its middle, whatever anchor the binding kept; the part is Topology's and the key index's.
         var arrow = arrow
@@ -71,6 +73,13 @@ public struct ArrowGeometry: Sendable {
             shape(binding.shapeID).map { BoundShape($0, isExact: binding.isExact) }
         }
         let relationship = Relationship(start: startShape, end: endShape)
+        // An end bound to a shape as a whole that the spread brings in at a row: that row's sides are its entries.
+        for (end, entry) in [(ArrowEnd.start, spread.startEntry), (.end, spread.endEntry)] {
+            guard let entry else { continue }
+            if end == .start, let rect = startShape?.parts.frame(entry)?.rect { startShape?.entries = ShapeEntry.sides(of: rect) }
+            if end == .end, let rect = endShape?.parts.frame(entry)?.rect { endShape?.entries = ShapeEntry.sides(of: rect) }
+        }
+        let bend = arrow.bend + spread.bend
 
         startHandle = Self.handle(
             for: arrow.start, shape: startShape,
@@ -92,13 +101,18 @@ public struct ArrowGeometry: Sendable {
             // table, in a stack or side by side.
             let startX = startPart?.midX ?? startHandle.x, endX = endPart?.midX ?? endHandle.x
             let together = startPart != nil && endPart != nil ? startShape.flatMap { start in endShape.map { PartSide.sides(start.restBounds, $0.restBounds) } } : nil
-            if let rect = startPart {
-                let side = together?.start ?? PartSide(facing: endX, from: rect)
+            var sides = (start: startPart.map { together?.start ?? PartSide(facing: endX, from: $0) },
+                         end: endPart.map { together?.end ?? PartSide(facing: startX, from: $0) })
+            // Both in one container (a database): an end whose curve would run out past its edge leaves the other side, where
+            // that keeps it inside (a departure from tldraw, whose arrows know no container).
+            if let container = Self.sharedContainer(startShape, endShape) {
+                sides = Self.keepingInside(container, sides: sides, startPart: startPart, endPart: endPart, startShape: startShape, endShape: endShape)
+            }
+            if let rect = startPart, let side = sides.start {
                 (startSide, startHandle) = (side, side.point(of: rect))
                 startShape?.isExact = true
             }
-            if let rect = endPart {
-                let side = together?.end ?? PartSide(facing: startX, from: rect)
+            if let rect = endPart, let side = sides.end {
                 (endSide, endHandle) = (side, side.point(of: rect))
                 endShape?.isExact = true
             }
@@ -109,18 +123,45 @@ public struct ArrowGeometry: Sendable {
             let (startPoint, endPoint) = (startHandle, endHandle)
             let partStart = startSide.map { (point: startPoint, normal: Optional($0.normal)) }
             let partEnd = endSide.map { (point: endPoint, normal: Optional($0.normal)) }
-            let s = partStart ?? Self.levelAnchor(of: arrow.start, in: startShape, handle: startPoint, toward: partEnd?.point ?? endPoint)
-            let e = partEnd ?? Self.levelAnchor(of: arrow.end, in: endShape, handle: endPoint, toward: s.point)
+            // An end at a shape as a whole, joined to a row of a shape whose span across overlaps its own (one above the other), comes
+            // in at the side that row leaves by, as two rows are sided together: the line runs round the shapes' one side, not back
+            // along the row's own shape.
+            func together(with side: PartSide?, _ other: BoundShape?, _ shape: BoundShape?) -> CGPoint? {
+                guard let side, let other, let shape, other.restBounds.minX < shape.restBounds.maxX, shape.restBounds.minX < other.restBounds.maxX else { return nil }
+                return side.normal
+            }
+            var s = partStart ?? Self.levelAnchor(of: arrow.start, in: startShape, handle: startPoint, toward: partEnd?.point ?? endPoint,
+                                                  preferring: together(with: endSide, endShape, startShape))
+            var e = partEnd ?? Self.levelAnchor(of: arrow.end, in: endShape, handle: endPoint, toward: s.point,
+                                                preferring: together(with: startSide, startShape, endShape))
+            // Fanned ends: each comes in at an angle of its own (a marked one also a little apart along its side).
+            if let fan = spread.startFan { s = Self.fanned(s, by: fan, count: spread.startFanCount, marked: markReach.start > 0, part: startPart) }
+            if let fan = spread.endFan { e = Self.fanned(e, by: fan, count: spread.endFanCount, marked: markReach.end > 0, part: endPart) }
+            // A slot's arrows leave and meet their ends a little apart along the side too, so they run apart from the first.
+            if spread.slotShift != 0 {
+                s = Self.shifted(s, by: spread.slotShift, part: startPart)
+                e = Self.shifted(e, by: spread.slotShift, part: endPart)
+            }
+            if startPart != nil { startHandle = s.point }
+            if endPart != nil { endHandle = e.point }
             let chord = e.point - s.point
             bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
             let clear = ArrowStyle.levelClearReach(ofMark: max(markReach.start, markReach.end))
-            // An end with a mark of its own reaches far enough for its mark to lie on the level stretch, the other end ahead or not.
-            let reachStart = s.normal.map { max(Self.reach($0, from: s.point, to: e.point, clearing: clear), Self.markReach($0, from: s.point, to: e.point, mark: markReach.start)) } ?? 0
-            let reachEnd = e.normal.map { max(Self.reach($0, from: e.point, to: s.point, clearing: clear), Self.markReach($0, from: e.point, to: s.point, mark: markReach.end)) } ?? 0
+            // An end with a mark of its own reaches far enough for its mark to lie on the level stretch, the other end ahead or not;
+            // inside a container both ends are in, no further than keeps the curve inside it, as a best effort.
+            let container = Self.sharedContainer(startShape, endShape)
+            let reachStart = s.normal.map {
+                Self.reach($0, from: s.point, to: e.point, clearing: clear, atLeast: Self.markReach($0, from: s.point, to: e.point, mark: markReach.start), inside: container)
+            } ?? 0
+            let reachEnd = e.normal.map {
+                Self.reach($0, from: e.point, to: s.point, clearing: clear, atLeast: Self.markReach($0, from: e.point, to: s.point, mark: markReach.end), inside: container)
+            } ?? 0
             let plain = Cubic(s.point, s.point + (s.normal ?? .zero) * reachStart, e.point + (e.normal ?? .zero) * reachEnd, e.point)
-            bendOrigin = plain.point(at: 0.5)
+            // A slot's bow moves where the bend is measured from with it, so the bend handle's drag still puts the middle where
+            // the pointer is.
+            bendOrigin = plain.point(at: 0.5) + bendAxis * spread.bend
             // tldraw's bend: both controls move by 4/3 of it across the chord, so the middle moves exactly by it.
-            let shift = bendAxis * (arrow.bend * 4 / 3)
+            let shift = bendAxis * (bend * 4 / 3)
             let cubic = Cubic(plain.start, plain.control1 + shift, plain.control2 + shift, plain.end)
             // Only an end bound to a shape as a whole, short of an exact binding, stands a head's gap off it, along the curve.
             func gap(_ end: ArrowEnd, _ shape: BoundShape?) -> CGFloat {
@@ -143,8 +184,8 @@ public struct ArrowGeometry: Sendable {
 
         let chord = endHandle - startHandle
         bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
-        bendOrigin = (startHandle + endHandle) / 2
-        let bendPoint = (startHandle + endHandle) / 2 + bendAxis * arrow.bend
+        bendOrigin = (startHandle + endHandle) / 2 + bendAxis * spread.bend
+        let bendPoint = (startHandle + endHandle) / 2 + bendAxis * bend
 
         let clipping = Clipping(
             strokeWidth: strokeWidth,
@@ -152,7 +193,7 @@ public struct ArrowGeometry: Sendable {
             startArrowhead: arrow.startArrowhead,
             endArrowhead: arrow.endArrowhead
         )
-        if abs(arrow.bend) >= minBend,
+        if abs(bend) >= minBend,
            let handleArc = Arc(from: startHandle, through: bendPoint, to: endHandle),
            handleArc.length.isFinite, handleArc.length > 0 {
             let (startT, endT, middle) = clipping.curved(handleArc, bendPoint: bendPoint, startShape: &startShape, endShape: &endShape)
@@ -193,22 +234,94 @@ public struct ArrowGeometry: Sendable {
     /// How far a level curve's end reaches out along the way out of its side before it turns, from where it is to the other
     /// end's: half the way when the other end is ahead, far less when it is behind (a C rather than an S), never under
     /// `ArrowStyle.levelMinReach`; and, with marks, when the other end is not yet `clearing` ahead (a C, or rows too near for an
-    /// S), at least `clearing`, the reach that turns the curve beyond the longer mark (`ArrowStyle.levelClearReach`).
-    static func reach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint, clearing: CGFloat = 0) -> CGFloat {
+    /// S), at least `clearing`, the reach that turns the curve beyond the longer mark (`ArrowStyle.levelClearReach`); and at
+    /// least `least` (an end's own mark's reach, `markReach`).
+    static func reach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint, clearing: CGFloat = 0, atLeast least: CGFloat = 0,
+                      inside container: CGRect? = nil) -> CGFloat {
         let along = normal.dot(other - point)
         let reach = along >= 0 ? along * ArrowStyle.levelAheadShare : ArrowStyle.levelBackReach * (-along).squareRoot()
-        return max(ArrowStyle.levelMinReach, reach, along < clearing ? clearing : 0)
+        let wanted = max(ArrowStyle.levelMinReach, reach, along < clearing ? clearing : 0, least)
+        // Inside a container both ends are in, no further than keeps the curve inside its edge (a cubic bows out by at most
+        // 3/4 of its control's reach), as a best effort: never under half the least reach.
+        guard let room = room(along: normal, from: point, inside: container) else { return wanted }
+        return min(wanted, max(ArrowStyle.levelMinReach / 2, room / 0.75))
+    }
+
+    /// How far from `point` the way `normal` stays inside `container` less its clearance; nil for none, or a way that isn't across.
+    private static func room(along normal: CGPoint, from point: CGPoint, inside container: CGRect?) -> CGFloat? {
+        guard let container, abs(normal.x) > abs(normal.y) else { return nil }
+        let edge = normal.x > 0 ? container.maxX - ArrowStyle.containerClearance : container.minX + ArrowStyle.containerClearance
+        return max(0, (edge - point.x) * (normal.x > 0 ? 1 : -1))
+    }
+
+    /// The container both ends' shapes are in, when it's one: its bounds.
+    private static func sharedContainer(_ start: BoundShape?, _ end: BoundShape?) -> CGRect? {
+        guard let a = start?.container, let b = end?.container, a == b else { return nil }
+        return a
+    }
+
+    /// The sides of two ends' parts, an end whose curve would run past its container's edge taking the other side where that is
+    /// clear (both together, for ends sided together): the side with room inside it.
+    private static func keepingInside(_ container: CGRect, sides: (start: PartSide?, end: PartSide?), startPart: CGRect?, endPart: CGRect?,
+                                      startShape: BoundShape?, endShape: BoundShape?) -> (start: PartSide?, end: PartSide?) {
+        // How far a curve leaving `rect` from `side` reaches out at the least (its reach's bow).
+        func fits(_ side: PartSide, of rect: CGRect) -> Bool {
+            let point = side.point(of: rect)
+            guard let room = room(along: side.normal, from: point, inside: container) else { return true }
+            return room >= ArrowStyle.containerSideRoom
+        }
+        func flipped(_ side: PartSide) -> PartSide { side == .left ? .right : .left }
+        var result = sides
+        var startOut = false, endOut = false
+        if let side = sides.start, let rect = startPart { startOut = !fits(side, of: rect) }
+        if let side = sides.end, let rect = endPart { endOut = !fits(side, of: rect) }
+        guard startOut || endOut else { return sides }
+        if let start = sides.start, let end = sides.end, let a = startPart, let b = endPart, start == end {
+            // Sided together: both take the other side, where both fit there.
+            if fits(flipped(start), of: a), fits(flipped(end), of: b) { result = (flipped(start), flipped(end)) }
+            return result
+        }
+        if startOut, let start = sides.start, let rect = startPart, fits(flipped(start), of: rect) { result.start = flipped(start) }
+        if endOut, let end = sides.end, let rect = endPart, fits(flipped(end), of: rect) { result.end = flipped(end) }
+        return result
+    }
+
+    /// An end moved `shift` along its side (down a side across, right along a top), within its part's band where it has one.
+    private static func shifted(_ anchor: (point: CGPoint, normal: CGPoint?), by shift: CGFloat, part: CGRect?) -> (point: CGPoint, normal: CGPoint?) {
+        guard let normal = anchor.normal else { return anchor }
+        let across = abs(normal.x) >= abs(normal.y) ? CGPoint(x: 0, y: 1) : CGPoint(x: 1, y: 0)
+        let band = part.map { (abs(across.y) > 0 ? $0.height : $0.width) * 0.4 } ?? abs(shift)
+        return (anchor.point + across * max(-band, min(band, shift)), normal)
+    }
+
+    /// A level curve's end fanned among `count` that come into one place: its way out turned by `spread` (-1 the first, 1 the
+    /// last) of the fan's angle, the first coming in from above (or the left); a marked end (or one at a part) also moved along
+    /// its side a little, so the marks stand apart.
+    private static func fanned(_ anchor: (point: CGPoint, normal: CGPoint?), by spread: CGFloat, count: Int, marked: Bool,
+                               part: CGRect?) -> (point: CGPoint, normal: CGPoint?) {
+        guard let normal = anchor.normal else { return anchor }
+        let across = abs(normal.x) >= abs(normal.y) ? CGPoint(x: 0, y: 1) : CGPoint(x: 1, y: 0)
+        let half = min(ArrowStyle.fanSpread, CGFloat(max(count - 1, 0)) * ArrowStyle.fanStep) / 2
+        let turned = (normal + across * tan(spread * half)).normalized
+        var point = anchor.point
+        if marked {
+            let room = part.map { abs(across.y) > 0 ? $0.height : $0.width } ?? ArrowStyle.fanMarkShift * 4
+            point = point + across * (spread * min(ArrowStyle.fanMarkShift, room * 0.35))
+        }
+        return (point, turned)
     }
 
     /// Where a level curve meets an end that isn't at a row, and the way out of the shape there: a free end its point, with no
     /// way (the curve comes straight at it); an end bound to a shape as a whole the entry facing `other` its kind gives (a
     /// table's first row), else the side of its bounds a line from its anchor to `other` leaves by, at that side's middle (on
     /// the outline, for a shape that isn't a box), or for a precise or exact binding where that line leaves the outline.
+    /// `preferring`: the way out an entry takes when the other end's row is sided with it (`ArrowGeometry.init`), if it has one.
     private static func levelAnchor(of terminal: ArrowTerminal, in shape: BoundShape?, handle: CGPoint,
-                                    toward other: CGPoint) -> (point: CGPoint, normal: CGPoint?) {
+                                    toward other: CGPoint, preferring: CGPoint? = nil) -> (point: CGPoint, normal: CGPoint?) {
         guard let shape, let binding = terminal.binding else { return (handle, nil) }
         let isAimed = binding.isPrecise || binding.isExact
-        if !isAimed, let entry = shape.entries.max(by: { $0.normal.dot(other - $0.point) < $1.normal.dot(other - $1.point) }) {
+        if !isAimed, let entry = preferring.flatMap({ way in shape.entries.first { $0.normal == way } })
+            ?? shape.entries.max(by: { $0.normal.dot(other - $0.point) < $1.normal.dot(other - $1.point) }) {
             return (entry.point, entry.normal)
         }
         let bounds = shape.bounds
@@ -491,6 +604,7 @@ private struct BoundShape {
     var outline: [CGPoint]
     var parts: PartFrames
     var entries: [ShapeEntry]
+    var container: CGRect?
     var isExact: Bool
     var didIntersect = false
 
@@ -501,8 +615,26 @@ private struct BoundShape {
         outline = shape.outline
         parts = shape.parts
         entries = shape.entries
+        container = shape.container
         self.isExact = isExact
     }
+}
+
+/// How an arrow is drawn among others sharing its path (Connections' `ConnectionBundle`, as Arrows reads it): bowed by a slot
+/// (`bend`, added to its own), fanned at an end (`startFan`, `endFan`: -1 the first of the fan to 1 the last, of a count), come in
+/// at a row of a shape it's bound to as a whole (`startEntry`, `endEntry`). Pure; nothing is stored.
+public struct ArrowSpread: Hashable, Sendable {
+    public var bend: CGFloat = 0
+    /// How far a slot's ends move along their sides, world units (0 for none).
+    public var slotShift: CGFloat = 0
+    public var startFan: CGFloat?
+    public var startFanCount = 1
+    public var endFan: CGFloat?
+    public var endFanCount = 1
+    public var startEntry: PartID?
+    public var endEntry: PartID?
+
+    public init() {}
 }
 
 /// The side of a part (a row) an arrow's end is at: its left or right edge, at its middle.

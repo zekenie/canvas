@@ -38,6 +38,41 @@ import TextEditing
         expectEqual(shown.line(standingFor: 2), 0, "a row under a closed header stands at it")
         expectEqual(shown.row(atLine: 0), 0)
     },
+    test("RowsShown: under a fold to the marks, an open header's rows all show (its group opened), only rows under no header fold to the marks") {
+        let rows = [FoldRow(id: PartID()), FoldRow(id: PartID()), FoldRow(id: PartID()),
+                    FoldRow(id: PartID(), isHeader: true), FoldRow(id: PartID()), FoldRow(id: PartID()), FoldRow(id: PartID()),
+                    FoldRow(id: PartID(), isHeader: true), FoldRow(id: PartID())]
+        let shown = try require(RowsShown.make(rows: rows, fold: RowFold(toMarked: true, closed: [rows[7].id]), marked: []))
+        expectEqual(shown.lines, [.row(0), .row(1), .row(3), .row(4), .row(5), .row(6), .header(7, hiding: 1), .more(1)])
+        let all = try require(RowsShown.make(rows: Array(rows[3...]), fold: RowFold(toMarked: true, closed: [rows[3].id, rows[7].id]), marked: []))
+        expectEqual(all.lines, [.header(0, hiding: 3), .header(4, hiding: 1)], "every row in a group: closed headers alone, no +N")
+    },
+    test("⌃⌘↑ on a tally with headers closes every header, each with its count, the rows under none folded to the marks; → and ← on a header item open and close it; ⌃⌘↓ opens them all") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["kiwi 2", "fruit/", "red 3", "green", "veg/", "kale 2", "plum", "leek"])
+        b.editor.selectedShapeIDs = [id]
+        b.press(.controlCommandUp)
+        let rows = b.rows(id)
+        expect(b.editor.rowFolds?.isFoldedWhole(id) == true)
+        let shown = try require(b.editor.shapeContext.layoutInput(LineRowsLayout.shown, of: try require(b.editor.document[id])))
+        expectEqual(shown.lines, [.row(0), .header(1, hiding: 2), .header(4, hiding: 3)])
+        expectEqual(b.editor.announcements.last, "Folded, 2 groups closed")
+        expect(!b.editor.canPerform(.foldRows), "folded as far as it goes")
+        b.editor.selectItems([AnyHashable(rows[4].id)], of: id)
+        b.press(Chord(Key.right))
+        let opened = try require(b.editor.shapeContext.layoutInput(LineRowsLayout.shown, of: try require(b.editor.document[id])))
+        expectEqual(opened.lines, [.row(0), .header(1, hiding: 2), .row(4), .row(5), .row(6), .row(7)], "veg/ open, its rows all shown")
+        expectEqual(b.editor.selectedItems?.ids, [AnyHashable(rows[4].id)], "the header stays selected")
+        b.press(Chord(Key.left))
+        expectEqual(b.editor.shapeContext.layoutInput(LineRowsLayout.shown, of: try require(b.editor.document[id]))?.lines,
+                    [.row(0), .header(1, hiding: 2), .header(4, hiding: 3)], "← closes it again: the exact way back")
+        b.press(.space)
+        expect(b.editor.shapeContext.layoutInput(LineRowsLayout.shown, of: try require(b.editor.document[id]))?.lines.contains(.row(5)) == true, "Space opens it too")
+        b.editor.selectedShapeIDs = [id]
+        b.press(.controlCommandDown)
+        expect(b.editor.rowFolds?.isFolded(id) != true, "every header open")
+        expectEqual(b.editor.undoHistory.undoName, nil, "no step")
+    },
     test("⌃⌘↑ folds the selected tally to its marked entries, laid out at their height with a +N line; ⌃⌘↓ unfolds; no step, nothing written") {
         let b = try Bench()
         let id = b.tally("apples", ["red 3", "green", "blue 2", "pink", "gold"])
@@ -145,6 +180,25 @@ import TextEditing
         b.window.settle()
         expectEqual(b.drawn(), ["red", "+3"], "let go as Find ends")
     },
+    test("Peeks: a row the kind draws a hit of elsewhere (a hit only before its first dot) stays folded while Find is open; a hit in its own words shows it") {
+        let b = try Bench(find: true)
+        let id = b.tally("apples", ["red 3", "orders.refund", "orders.cancel", "pink"])
+        b.editor.rowFolds?.fold([id])
+        expectEqual(b.drawn(), ["red", "+3"])
+        let find = try require(b.editor.find)
+        find.open()
+        find.query = "orders"
+        try b.settleFind()
+        expect(find.hasHits(id), "found in two of its entries")
+        expectEqual(b.drawn(), ["red", "+3"], "a hit in the prefix alone: both stay folded")
+        expectEqual(b.editor.rowFolds?.findPeeks(of: id), [])
+        find.query = "refund"
+        try b.settleFind()
+        expectEqual(b.drawn(), ["red", "orders.refund", "+2"], "a hit in its own words shows it, and no other")
+        find.close()
+        b.window.settle()
+        expectEqual(b.drawn(), ["red", "+3"], "let go as Find ends")
+    },
     test("The folds are a view value: saved with the shapes in the file, and handed back to another editor; a shape gone isn't saved") {
         let b = try Bench()
         let kept = b.tally("kept", ["a 1", "b", "c"])
@@ -223,9 +277,9 @@ import TextEditing
     },
     test("Keys walk a fold's lines: ⌥Tab visits a closed header and +N in reading order, ⌥⇧Tab undoes each, Escape goes back to the shape; each shows, named") {
         let b = try Bench()
-        let id = b.tally("fruit", ["fruit/", "red 3", "green", "veg/", "kale 2", "plum"])
+        // Three rows under no header (the first two kept, the third behind +N) and two groups, each closed by ⌃⌘↑.
+        let id = b.tally("fruit", ["pear", "fig", "kiwi", "fruit/", "red 3", "green", "veg/", "kale 2", "plum"])
         b.editor.rowFolds?.fold([id])
-        b.editor.rowFolds?.setClosed(true, header: b.rows(id)[0].id, of: id)
         b.editor.selectedShapeIDs = [id]
         let titles = b.editor.shapeParts(of: id).map(\.title)
         expect(titles.count >= 2, "a closed header and +N are parts: \(titles)")

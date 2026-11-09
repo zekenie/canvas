@@ -15,7 +15,7 @@ import Titles
 // Keys look right, as shipped (K4): every key drawn by `canvas draw` is a level curve from its column's row to the row it
 // references, 2.5 wide; T3 panel 4's marks (a unique column's key bars at both ends, a nullable one's a bar and a circle at
 // the row it references) and a column changed in place redrawing its key's marks with nothing written to the arrow; an arrow
-// from a row to a table as a whole meeting its first row; and a key's ends leaving Toggle Arrowhead out.
+// from a row to a table as a whole meeting it at a row clear of a key's end there; and a key's ends leaving Toggle Arrowhead out.
 
 private let billing = #"""
     table "payments" columns: "id uuid pk\norder_id uuid unique\namount_cents int"
@@ -123,7 +123,7 @@ private let billing = #"""
         editor.undo()
         expectEqual(editor.arrowLook(of: id), ConnectionLook(start: .many, end: .zeroOrOne, lineWidth: 2.5))
     },
-    test("an arrow from a row to a table as a whole meets the table's first row, at the side facing it") {
+    test("an arrow from a row to a table as a whole meets the table at the side facing it, at a row clear of the key that ends at its first row there (K17)") {
         let editor = try billingEditor()
         let refunds = try table(editor, "refunds"), payments = try table(editor, "payments")
         var arrow = ShapeRecord(Arrow(start: .bound(ArrowBinding(shapeID: refunds.id, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true,
@@ -133,9 +133,11 @@ private let billing = #"""
         arrow[ChannelProperty.self] = ForeignKey.id
         editor.transact("Add Arrow") { $0.insert(AnyShapeRecord(arrow)) }
         let geometry = try require(editor.arrowGeometry(of: arrow.id))
-        let first = try require(editor.shapeContext.geometry(of: payments.id)?.parts.first).rect
+        // refunds' key ends at payments' id, its first row, on the side facing refunds: the arrow comes in at amount_cents, the
+        // first row there with no key's end beside it, so the two don't read as one tangle at the corner.
+        let clear = try require(editor.shapeContext.geometry(of: payments.id)?.parts.frame(payments.props.columns[2].id)).rect
         let body = try require(geometry.levelBody)
-        expectEqual(body.end, CGPoint(x: first.maxX, y: first.midY), "payments' first row's right side, facing refunds")
+        expectEqual(body.end, CGPoint(x: clear.maxX, y: clear.midY), "payments' amount_cents row's right side, facing refunds")
         expectEqual(geometry.end, body.end, "a marked end: no gap")
     },
     test("a key's ends have no head to toggle: the Shape menu leaves Toggle Arrowhead out, a plain arrow keeps it") {

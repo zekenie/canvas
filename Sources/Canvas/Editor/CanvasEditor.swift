@@ -1748,15 +1748,17 @@ public final class CanvasEditor {
         // through every shape.
         let positions = shapeIndex.positions(touching: rect, in: context)
         guard !positions.isEmpty else { return }
-        let list = shapeIndex.paintList(in: context), shapes = document.shapes, only = drawnShapes
-        // The shape being edited, laid out wider than it stores (a line typed longer than it is), is painted after the rest, so
-        // what its widening now overlaps (a shape put down beside it) never covers its rows while the caret is in it. Nothing
-        // moves: it is back in its place in the order as it stops being wider, or edited.
+        let list = shapeIndex.paintList(in: context), shapes = document.shapes, only = drawnShapes, hidden = shapeIndex.hidden
+        // The shape being edited, laid out larger than it stores (a line typed longer than it is, its waiting line), is painted
+        // after the rest, so what its widening now overlaps (a shape put down beside it) never covers its rows while the caret is
+        // in it. Nothing moves: it is back in its place in the order as it stops being larger, or edited.
         let lifted = liftedWhileEdited(in: context)?.id
         var held: (record: AnyShapeRecord, extent: CGRect)?
         for position in positions {
             let record = shapes[list.order[position]]
             if let only, !only.contains(record.id) { continue }
+            // Drawn as part of another (`ShapeGeometry.isHidden`: an arrow bundled under its lead): never shown on its own.
+            if !hidden.isEmpty, hidden.contains(record.id) { continue }
             if record.id == lifted {
                 held = (record, list.extents[position])
                 continue
@@ -1802,6 +1804,11 @@ public final class CanvasEditor {
         didSet { setNeedsDisplay() }
     }
 
+    /// Whether any shape of the board shown is drawn as part of another (`ShapeGeometry.isHidden`: a bundle's member arrow), as far
+    /// as the shapes laid out so far say. False where nothing is, so what only matters for such shapes (Selection's taking a hidden
+    /// pick with its unit) costs nothing there, and asks no plugin.
+    public var hasHiddenShapes: Bool { !shapeIndex.hidden.isEmpty }
+
     /// The front-most shape under a world point, of those `include` accepts. Only shapes near the
     /// point are asked (see `ShapeDefinition.hitMargin`).
     public func shape(at point: CGPoint, where include: (AnyShapeRecord) -> Bool = { _ in true }) -> ShapeID? {
@@ -1809,7 +1816,7 @@ public final class CanvasEditor {
         // Front to back, those near enough to be asked (`ShapeIndex.mayHit`), found in the cells round the point.
         let positions = shapeIndex.positions(mayHit: point, zoom: camera.zoom, in: context)
         guard !positions.isEmpty else { return nil }
-        let list = shapeIndex.paintList(in: context), shapes = document.shapes
+        let list = shapeIndex.paintList(in: context), shapes = document.shapes, hidden = shapeIndex.hidden
         // The shape edited, painted above what its widening overlaps, is hit first there too.
         if let lifted = liftedWhileEdited(in: context)?.id, let record = document[lifted], let index = document.index(of: lifted),
            positions.contains(list.positions[index]), include(record),
@@ -1818,6 +1825,8 @@ public final class CanvasEditor {
         }
         for position in positions {
             let record = shapes[list.order[position]]
+            // A shape drawn as part of another is hit as that one (its lead), never itself.
+            if !hidden.isEmpty, hidden.contains(record.id) { continue }
             if include(record), registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
                 return record.id
             }

@@ -35,8 +35,11 @@ final class ArrowTargeting {
     /// reaches as far as its kept marks need, so the bend handle is where it is drawn.
     func geometry(of arrow: Arrow, id: ShapeID) -> ArrowGeometry {
         let connectables = connectables
-        return ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth,
-                             markReach: editor.shapeContext.geometry(of: id)?.arrowDetail?.markReach ?? (0, 0)) { connectables[$0] }
+        // As the arrow is drawn among others sharing its path (its slot's bow, its fans), so what a drag or a key turns into stored
+        // values (a bend, an end's place) starts from the line the person sees.
+        let detail = editor.shapeContext.geometry(of: id)?.arrowDetail
+        return ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth, markReach: detail?.markReach ?? (0, 0),
+                             spread: detail?.spread ?? ArrowSpread()) { connectables[$0] }
     }
 
     func arrow(_ id: ShapeID) -> Arrow? { editor.document[id]?.typed(as: Arrow.self)?.props }

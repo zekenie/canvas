@@ -94,15 +94,29 @@ public final class RowFolds {
 
     // MARK: Folding
 
-    /// Folds `ids` to their marked rows (⌃⌘↑): laid out again at once, and saved with the file's view. No step. Returns those
-    /// it folded: not the ones already folded to their marks.
+    /// What ⌃⌘↑ asks of `id`: folded to its marked rows, and every header closed (an API's path prefixes, each showing its count,
+    /// E8; rows under no header fold to the marks). Nil for a shape not written as lines.
+    func foldAsked(of id: ShapeID) -> RowFold? {
+        guard let record = editor.document[id], let rows = editor.registry.lineRows(of: record.kind)?.rows(record) else { return nil }
+        return RowFold(toMarked: true, closed: Set(rows.filter(\.isHeader).map(\.id)))
+    }
+
+    /// Whether `id` is folded as far as ⌃⌘↑ folds it: to its marks, every header closed.
+    public func isFoldedWhole(_ id: ShapeID) -> Bool {
+        guard let fold = folds[id], let asked = foldAsked(of: id) else { return false }
+        return fold.toMarked && asked.closed.isSubset(of: fold.closed)
+    }
+
+    /// Folds `ids` as ⌃⌘↑ does: to their marked rows, every header closed. Laid out again at once, and saved with the file's view.
+    /// No step. Returns those it folded: not the ones folded so already.
     @discardableResult
     public func fold(_ ids: some Sequence<ShapeID>) -> [ShapeID] {
         var changed: [ShapeID] = []
         for id in ids {
+            guard let asked = foldAsked(of: id), !isFoldedWhole(id) else { continue }
             var fold = folds[id] ?? RowFold()
-            guard !fold.toMarked else { continue }
             fold.toMarked = true
+            fold.closed.formUnion(asked.closed)
             folds[id] = fold
             changed.append(id)
         }
@@ -189,6 +203,16 @@ public final class RowFolds {
         generation += 1
         for id in ids { kept[id] = nil }
         editor.shapesDidChangeLayout(ids)
+        for listener in lineListeners { listener(ids) }
+    }
+
+    /// What hears that shapes' lines changed with no commit (a fold, a peek, editing begun or ended): the bundles of their
+    /// connections.
+    private var lineListeners: [@MainActor ([ShapeID]) -> Void] = []
+
+    /// Runs `body` with the shapes each time what they show changes with no commit to them.
+    func whenLinesChange(_ body: @escaping @MainActor ([ShapeID]) -> Void) {
+        lineListeners.append(body)
     }
 
     // MARK: Find
@@ -203,8 +227,14 @@ public final class RowFolds {
         for id in Set(folds.keys).union(findPeeks.keys) {
             var hit: Set<PartID> = []
             if isOpen, let find, folds[id] != nil, find.hasHits(id) {
-                // The field of a row's text is its id's UUID: read as it is, with no look at the shape's rows.
-                hit = Set(find.fieldsHit(of: id).compactMap { UUID(uuidString: $0).map(PartID.init) })
+                // The field of a row's text is its id's UUID: read as it is. A row whose hits its kind draws elsewhere (an
+                // endpoint's in its group's prefix, on the header) stays folded.
+                let record = editor.shape(inFile: id), kind = record.flatMap { editor.registry.lineRows(of: $0.kind) }
+                for (field, ranges) in find.rangesHit(of: id) {
+                    guard let part = UUID(uuidString: field).map(PartID.init) else { continue }
+                    if let record, let kind, !kind.peeks(record, part, ranges) { continue }
+                    hit.insert(part)
+                }
             }
             guard hit != (findPeeks[id] ?? []) else { continue }
             findPeeks[id] = hit.isEmpty ? nil : hit

@@ -74,8 +74,9 @@ public enum KitStyle {
     public static let skeletonBarHeight: CGFloat = 8
     /// The most columns a bar stands for, so a name of hundreds of characters costs what one of twenty does.
     public static let skeletonMostColumns = 40
-    /// The least a row is on screen, view points, for a skeleton to draw its bars: under it the paper says it.
-    public static let skeletonLeastRow: CGFloat = 2
+    /// The least a row is on screen, view points, for a skeleton to draw its bars: under it (about 12%, a row three pixels
+    /// tall) the paper and its title bar say it, for every kind written as lines (tables, enums, APIs).
+    public static let skeletonLeastRow: CGFloat = 3
 
     /// The paper's path at `rect`.
     public static func paperPath(_ rect: CGRect) -> CGPath {

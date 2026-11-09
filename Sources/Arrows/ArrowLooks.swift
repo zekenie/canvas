@@ -81,6 +81,10 @@ struct ArrowDetail: @unchecked Sendable {
     let look: ConnectionLook?
     /// Its line's width, world units: the look's, else `ArrowStyle.strokeWidth`.
     let width: CGFloat
+    /// How it is drawn among the connections sharing its path (a slot's bow, a fan, a row it comes in at), and that answer: nil
+    /// for one drawn as ever.
+    var spread: ArrowSpread? = nil
+    var bundle: ConnectionBundle? = nil
     /// What a frame draws: nil for an arrow that is only a relationship's end, drawn as it always was.
     var drawing: ArrowDrawing?
 
@@ -196,7 +200,26 @@ extension ArrowDefinition {
     func arrowGeometry(_ arrow: Arrow, detail: ArrowDetail?, in context: ShapeContext) -> ArrowGeometry {
         guard let detail else { return arrowGeometry(arrow, in: context) }
         let connectables = Connectables(shapes: context)
-        return ArrowGeometry(arrow: detail.drawn(arrow), strokeWidth: detail.width, minBend: detail.minBend, markReach: detail.markReach) { connectables[$0] }
+        return ArrowGeometry(arrow: detail.drawn(arrow), strokeWidth: detail.width, minBend: detail.minBend, markReach: detail.markReach,
+                             spread: detail.spread ?? ArrowSpread()) { connectables[$0] }
+    }
+
+    /// How an arrow's bundle answer draws it (`ConnectionBundle`): its slot's bow, its fans, the rows it comes in at; nil for none.
+    /// An arrow imprecise at both ends is one of a pair that `ArrowConnections.pairBend` bowed apart when it was made (the later
+    /// one holds a bend of its own, whose sign a slot's bow could cancel), so it takes no slot's bow: its own bend is its slot.
+    static func spread(of bundle: ConnectionBundle?, for arrow: Arrow) -> ArrowSpread? {
+        guard let bundle, !bundle.isPlain else { return nil }
+        var spread = ArrowSpread()
+        let paired = [arrow.start, arrow.end].allSatisfy { $0.binding.map { !$0.isPrecise } ?? false }
+        if !paired {
+            spread.bend = CGFloat(bundle.slotOffset) * ArrowStyle.slotSpacing
+            spread.slotShift = CGFloat(bundle.slotOffset) * ArrowStyle.slotEndShift
+        }
+        if let fan = bundle.fan(at: .start) { (spread.startFan, spread.startFanCount) = (CGFloat(fan.spread), fan.count) }
+        if let fan = bundle.fan(at: .end) { (spread.endFan, spread.endFanCount) = (CGFloat(fan.spread), fan.count) }
+        spread.startEntry = bundle.entries[.start]
+        spread.endEntry = bundle.entries[.end]
+        return spread == ArrowSpread() ? nil : spread
     }
 }
 

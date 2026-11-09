@@ -18,12 +18,14 @@ extension Budget {
     /// A frame of a board of 10,000 titled tables of four columns and 20 of 300, zoomed out to fit it (10%) and at 6%, where
     /// some 4,000 of them are in view, within what a frame zoomed out may cost. Never measured before the tables: a release
     /// build did on 2026-11-07 8 ms fitted and 10 at 6%, where a row is under 2 points and its bars aren't drawn; with them it
-    /// was 20 ms at 6% (some 5 µs a table in view), which is why they aren't.
+    /// was 20 ms at 6% (some 5 µs a table in view), which is why they aren't. Since K17 the floor is 3 points (about 12%) for every
+    /// kind written as lines: at 10% a row is 2.4 points, so the fitted frame draws no row bars either, only each table's title bar,
+    /// filled as a plain rect where thinner than 4 points (benchmarks.md has the numbers).
     static let tablesZoomedOut = zoomedOut
 }
 
 @MainActor let tableBenchmarks = Suite("Table benchmarks", [
-    test("a frame zoomed out over 10,000 titled tables, 20 of them 300 columns long, costs the cards in view, no bar a row once a row is under 2 points") {
+    test("a frame zoomed out over 10,000 titled tables, 20 of them 300 columns long, costs the cards in view, no bar a row once a row is under 3 points (about 12%)") {
         let viewport = CGSize(width: 1200, height: 800)
         let context = try bitmapContext(viewport)
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

@@ -2701,9 +2701,30 @@ func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSi
 ```
 
 Editing a folded shape shows every row; Find's hits show in place while Find is open
-(`FindState.fieldsHit(of:)`); the "+N ›" line opens with a click, or ⌥Tab then Return or Space. Folds are
-remembered with the file's view on this Mac, a core view value (`ViewValueKey`, `editor.setViewValue`, no
-step), which `BoardDocument` saves and hands back before the canvas is made.
+(`FindState.rangesHit(of:)`, a kind keeping folded a row whose hits it draws elsewhere: `LineModel.peeks`); the "+N ›"
+line opens with a click, or ⌥Tab then Return or Space. A kind with headers (an API's path prefixes) folds as far as
+it goes: ⌃⌘↑ closes every header too, each showing its count, and → or Space opens one selected as an item, ←
+closes it. Folds are remembered with the file's view on this Mac, a core view value (`ViewValueKey`,
+`editor.setViewValue`, no step), which `BoardDocument` saves and hands back before the canvas is made.
+
+**Arrows drawn together.** Where a fold makes connections end at one line (a closed group's endpoints all writing one
+table) they are drawn as one: LineRows provides Connections' `ConnectionBundle` for the connections at shapes written
+as lines, worked out from Topology's literal connections at the shapes a change reaches, and the connector draws what
+it says. The first in the board's order leads, its pill counting the rest ("writes · 9"), which keep its outline under
+the core's `ShapeGeometry.isHidden` (not drawn, hit or spoken); a press on it selects them all (Selection's
+`SelectionUnits`). The same answer bows apart connections with the same two ends, fans those that end together from
+one shape's rows (their pills slid to their starts), and brings a line to a table as a whole in at a row clear of
+the keys at its side:
+
+```swift
+registrar.layoutInput(ConnectionBundle.input) { record, reading in reading.service(RowBundles.self)?.answer(for: record, in: reading) }
+registrar.selectionUnits { editor, id in editor.service(RowBundles.self)?.unit(of: id) }   // a bundle, selected whole
+// the connector, as it lays a connection out:
+let bundle = context.layoutInput(ConnectionBundle.input, of: shape)
+if let lead = bundle?.lead, let led = context.geometry(of: lead) {
+    return ShapeGeometry(outline: led.outline, bounds: led.bounds, isClosed: false, isHidden: true)
+}
+```
 
 **Rows as items and wholes.** A kind written as lines gets its rows selected on the canvas, as Selection's items of
 its shape ([Items inside a shape](#items-inside-a-shape)), and moved as wholes, with no code of its own beyond two
@@ -16554,9 +16575,9 @@ engineering-lights   neighbor light · neighbor light · neighbor light · neigh
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape · RowDetails in Connections → every shape with parts
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-line-rows            service LineRowsService · service RowFolds · service RowCuts · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
+line-rows            service LineRowsService · service RowFolds · service RowBundles · service RowCuts · layout input connection-bundle · selection units · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
 engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · key hint Space on an Endpoint Change the Endpoint's Method · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · RowDetails in Column first → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · RowDetails in Endpoint first → api · shape endpoint · label Endpoint → endpoint · tint → endpoint · ShapeTitles → endpoint · ContentsTitles → endpoint · mentionable → endpoint · ShapeResizing → endpoint · parts resize handles → endpoint · ContentsRows → endpoint · ShapeDetails → endpoint · accessibility → endpoint · line rows (endpoints) → endpoint · row moves (endpoints) → endpoint · items rows → endpoint · ports calls on rows → endpoint · ports writes on rows → endpoint · ports reads on rows → endpoint · connect picks → endpoint · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · command newVersion · command groupByPrefix · CanvasContextMenu in APIMenuGroup after TransformMenuGroup, RowsMenuGroup after ShapeMenuGroup · /new-version → the command bar's target · /group-by-prefix → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
-engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
+engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type · findable rows → api
 engineering-agents   query word :route("…") members routes · query part names of table · query part names of enum-type · query part names of api · ask fact tables · ask fact apis
 ```
 
