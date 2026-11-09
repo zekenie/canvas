@@ -465,6 +465,9 @@ public struct DrawValueWriting {
     let edges: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge]
     /// Whether its values imply edges at all (`edges` answers none otherwise).
     let impliesEdges: Bool
+    /// What JSON a script writes is read as before the property's schema checks it, for a writer that takes a shorthand the
+    /// stored form doesn't (a column's `"type": "uuid"` for `{"words": "uuid"}`); nil: as written.
+    var reading: (@MainActor (JSONValue) -> JSONValue)? = nil
 }
 
 /// An edge a value implies (`DrawValueWriting.edges`): from the shape whose statement writes the value, at the row `fromRow`
@@ -581,13 +584,15 @@ extension PluginRegistrar {
     }
 
     /// The same for a writer whose values imply edges (`DrawImpliedEdge`): `implies` gives the edges the value as written implies,
-    /// from the shape its statement draws, which the run draws with the script's own.
+    /// from the shape its statement draws, which the run draws with the script's own. `reading`, for a writer that takes a
+    /// shorthand in its JSON the stored form doesn't: what the JSON is read as before the property's schema checks it.
     public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
+                                         reading: (@MainActor (JSONValue) -> JSONValue)? = nil,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue,
                                          implies: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge],
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
         contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: { written, held, _ in merge(written, held) },
-                                    edges: implies, impliesEdges: true), to: DrawValueWriters.self)
+                                    edges: implies, impliesEdges: true, reading: reading), to: DrawValueWriters.self)
     }
 
     /// The same, `merge` handed the registry too, for a join that goes by what other plugins say (Types keeps every

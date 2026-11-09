@@ -1176,7 +1176,7 @@ struct Drawing {
             let from = attribute.fromStyle.map { " (from style \($0))" } ?? ""
             let value: JSONValue
             do throws(ValueRefusal) {
-                value = try vocabulary.value(of: attribute)
+                value = read(try vocabulary.value(of: attribute), key)
                 try fits(value, key, item.kind, vocabulary)
                 try checkQuery(value, key, vocabulary)
             } catch {
@@ -1395,6 +1395,13 @@ struct Drawing {
             }
             throw DrawError(item.statement, .invalidValue, "\(subject(of: item)) can't have those attributes together: \(error)")
         }
+    }
+
+    /// A value as its property's writer reads it before its schema checks it (`DrawValueWriting.reading`): JSON in a shorthand
+    /// the writer takes, as the stored form says it; text, and a value of a property with no such writer, as written.
+    private func read(_ value: JSONValue, _ key: String) -> JSONValue {
+        guard case .string = value else { return registry.drawValueWriters[key]?.reading?(value) ?? value }
+        return value
     }
 
     /// Refuses JSON (an object or a list) that its property's schema says has a member it hasn't, or
@@ -1744,7 +1751,7 @@ struct Drawing {
         guard let edgeKind else { throw noEdges(statement) }
         let key = attribute.key, value: JSONValue
         do throws(ValueRefusal) {
-            value = try connector.value(of: attribute)
+            value = read(try connector.value(of: attribute), key)
             try fits(value, key, edgeKind, connector)
         } catch {
             throw DrawError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)

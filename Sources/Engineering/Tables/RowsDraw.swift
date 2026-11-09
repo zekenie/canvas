@@ -21,7 +21,8 @@ enum RowsDraw {
 
     /// The columns a script wrote, each as the object a column is coded as: its lines read (every member a line says, a
     /// `default` it doesn't give written null, so a restated column loses it), or its JSON items as they were given (an
-    /// id given to each that has none, and only the members it names), each type that names an enum bound to it. A name
+    /// id given to each that has none, only the members it names, a `type` written as a string its words), each type that
+    /// names an enum bound to it. A name
     /// two enums answer to is refused, not left unbound without a word.
     @MainActor
     static func columns(written value: JSONValue, _ context: DrawTextContext) throws(DrawError) -> JSONValue {
@@ -94,6 +95,17 @@ enum RowsDraw {
         return edges
     }
 
+    /// JSON columns as the writer reads them, before their schema checks them: a `type` written as a string (`"type": "uuid"`),
+    /// as an endpoint's body is, is the words of a type, `{"words": "uuid"}`.
+    static func reading(_ value: JSONValue) -> JSONValue {
+        guard case .array(let items) = value else { return value }
+        return .array(items.map { item in
+            guard case .object(var members) = item, let words = members["type"]?.stringValue else { return item }
+            members["type"] = .object(["words": .string(words)])
+            return .object(members)
+        })
+    }
+
     /// The values a script wrote: its lines read, or its JSON items.
     @MainActor
     static func values(written value: JSONValue) throws(DrawError) -> JSONValue {
@@ -158,7 +170,7 @@ enum RowsDraw {
 extension PluginRegistrar {
     /// The writers of a table's `columns:` and an enum's `values:`.
     mutating func rowsDraw() {
-        drawValueWriter(for: "columns", describes: RowsDraw.columnLines, write: { value, context throws(DrawError) in
+        drawValueWriter(for: "columns", describes: RowsDraw.columnLines, reading: RowsDraw.reading, write: { value, context throws(DrawError) in
             try RowsDraw.columns(written: value, context)
         }, implies: { value, context throws(DrawError) in
             try RowsDraw.keys(written: value, context)
