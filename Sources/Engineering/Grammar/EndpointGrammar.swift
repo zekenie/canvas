@@ -146,9 +146,10 @@ public enum EndpointGrammar {
         return (String(word.text.dropFirst().dropLast()), NSRange(location: word.range.location + 1, length: word.range.length - 2))
     }
 
-    /// A type's name as a line writes it: quoted where it's more than one word, so the line reads back the name whole.
+    /// A type's name as a line writes it: quoted where it's more than one word, or where a response's status would read it
+    /// (`default`, `404`), so the line reads back the name whole, and as a type.
     static func written(_ type: String) -> String {
-        guard type.contains(where: \.isWhitespace) else { return type }
+        guard type.contains(where: \.isWhitespace) || isStatus(type) else { return type }
         let quote = type.contains("\"") ? "'" : "\""
         return quote + type + quote
     }
@@ -330,6 +331,13 @@ public enum APIGroups {
         return path == head || path.hasPrefix(head + "/")
     }
 
+    /// Whether `path` can be written under `prefix` and read back whole: under it (`isUnder`), and not a path the join can't say
+    /// there (`/orders/` under `/orders`, which `/` would say as `/orders`; `orders`, with no leading slash). What every writer of
+    /// full paths puts an endpoint under a header by: one that doesn't fit stays whole, under none.
+    public static func fits(_ path: String, under prefix: String) -> Bool {
+        isUnder(path, prefix) && joined(prefix, relative(path, under: prefix)) == path
+    }
+
     /// `path` as written under `prefix`: what's left past it (`/{id}`), `/` for the prefix itself.
     public static func relative(_ path: String, under prefix: String) -> String {
         let head = prefix.hasSuffix("/") ? String(prefix.dropLast()) : prefix
@@ -342,7 +350,7 @@ public enum APIGroups {
     public static func longestHeader(for path: String, in rows: [APIRow]) -> Int? {
         var best: (index: Int, length: Int)?
         for (index, row) in rows.enumerated() {
-            guard let header = row.header, isUnder(path, header.prefix) else { continue }
+            guard let header = row.header, fits(path, under: header.prefix) else { continue }
             if best == nil || header.prefix.count > best!.length { best = (index, header.prefix.count) }
         }
         return best?.index
@@ -396,7 +404,7 @@ public enum APIGroups {
             case .endpoint(var endpoint):
                 guard !kept.contains(endpoint.id), let before = was[endpoint.id], before.header != current?.id else { result.append(row); continue }
                 if let current {
-                    guard isUnder(before.full, current.prefix) else { strays.append((endpoint, before.full)); continue }
+                    guard fits(before.full, under: current.prefix) else { strays.append((endpoint, before.full)); continue }
                     endpoint.path = relative(before.full, under: current.prefix)
                 } else {
                     endpoint.path = before.full
@@ -434,7 +442,7 @@ public enum APIGroups {
     /// covers none of them: there's nowhere it can go that keeps every full path.
     public static func adoptingAbove(at index: Int, in rows: [APIRow]) -> [APIRow]? {
         guard rows.indices.contains(index), let header = rows[index].header, !rows[..<index].contains(where: { $0.header != nil }),
-              let taken = rows[..<index].lastIndex(where: { $0.endpoint.map { isUnder($0.path, header.prefix) } ?? false }),
+              let taken = rows[..<index].lastIndex(where: { $0.endpoint.map { fits($0.path, under: header.prefix) } ?? false }),
               case .endpoint(var endpoint) = rows[taken] else { return nil }
         endpoint.path = relative(endpoint.path, under: header.prefix)
         var result = rows
@@ -459,21 +467,37 @@ public enum APIGroups {
     /// a header for each first path segment two or more of them share (`/orders` for `/orders` and `/orders/{id}`), in the order
     /// each is first met, its endpoints after it in their order, each path written relative to it; the endpoints that share
     /// their first segment with none first, in their order, whole. So three endpoints under three segments stay ungrouped (E1),
-    /// and sixty under seven make seven groups (E8).
+    /// and sixty under seven make seven groups (E8). A header says back every full path under it (`fits`): its prefix is the
+    /// segment with the slash after it where more of them end in one (`/orders/` for Django's `/orders/` and `/orders/{id}/`), and
+    /// a path it can't say (`/orders/` beside `/orders` and `/orders/{id}`, `orders` with no slash) stays whole, under none.
     public static func byPrefix(_ endpoints: [Endpoint]) -> [APIRow] {
-        func segment(_ path: String) -> String? { path.split(separator: "/", omittingEmptySubsequences: true).first.map(String.init) }
-        var counts: [String: Int] = [:], order: [String] = []
+        func segment(_ path: String) -> String? {
+            guard path.hasPrefix("/") else { return nil }
+            return path.split(separator: "/", omittingEmptySubsequences: true).first.map(String.init)
+        }
+        var order: [String] = [], paths: [String: [String]] = [:]
         for endpoint in endpoints {
             guard let first = segment(endpoint.path) else { continue }
-            if counts[first] == nil { order.append(first) }
-            counts[first, default: 0] += 1
+            if paths[first] == nil { order.append(first) }
+            paths[first, default: []].append(endpoint.path)
         }
-        let shared = Set(order.filter { counts[$0, default: 0] > 1 })
-        var rows: [APIRow] = endpoints.filter { segment($0.path).map { !shared.contains($0) } ?? true }.map(APIRow.endpoint)
-        for first in order where shared.contains(first) {
-            let prefix = "/" + first
+        // Each shared segment's prefix: the one more of its paths fit, the bare segment where as many fit either.
+        var prefixes: [String: String] = [:]
+        for first in order {
+            let bare = "/" + first, slashed = bare + "/", held = paths[first] ?? []
+            let underBare = held.filter { fits($0, under: bare) }.count, underSlashed = held.filter { fits($0, under: slashed) }.count
+            let prefix = underSlashed > underBare ? slashed : bare
+            if max(underBare, underSlashed) > 1 { prefixes[first] = prefix }
+        }
+        func group(of endpoint: Endpoint) -> String? {
+            guard let first = segment(endpoint.path), let prefix = prefixes[first], fits(endpoint.path, under: prefix) else { return nil }
+            return first
+        }
+        var rows: [APIRow] = endpoints.filter { group(of: $0) == nil }.map(APIRow.endpoint)
+        for first in order {
+            guard let prefix = prefixes[first] else { continue }
             rows.append(.header(PathHeader(prefix: prefix)))
-            for var endpoint in endpoints where segment(endpoint.path) == first {
+            for var endpoint in endpoints where group(of: endpoint) == first {
                 endpoint.path = relative(endpoint.path, under: prefix)
                 rows.append(.endpoint(endpoint))
             }

@@ -88,6 +88,8 @@ enum EnumStyle {
     static let placeholder = "Untitled Enum"
     static let width: CGFloat = 220
     static let minimumWidth: CGFloat = 100
+    /// The widest a commit or a draw makes an enum for its values to read whole (`EnumDefinition.wholeWidth`), as a table's.
+    static let mostWholeWidth: CGFloat = TableStyle.mostWholeWidth
     static func accessibleRows(_ count: Int) -> String { count == 1 ? "1 value" : "\(count.formatted()) values" }
     static let titleFieldName = "Enum name"
     static let addStep = "Add Enum"

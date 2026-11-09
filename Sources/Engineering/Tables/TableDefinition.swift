@@ -1,6 +1,7 @@
 import Adornments
 import AppKit
 import Canvas
+import Draw
 import Geometry
 import LineRows
 import Palette
@@ -23,7 +24,7 @@ extension TableDefinition: ShapeDefinition {
         let lines = KitPaper.rowsInView(rows.lines(columns.count), in: frame, context)
         // The table's keys, read once a frame and only for a table with rows in view.
         let keys = lines.isEmpty ? [:] : context.shapes.keys?.keys(of: shape.id) ?? [:]
-        let more = rows.more
+        let more = rows.more, names = lines.isEmpty ? nil : context.service(KitNames.self)
         for line in lines {
             if line == more?.line, let more {
                 MoreLine.draw(more.count, in: KitStyle.rowRect(line, in: frame), context)
@@ -31,13 +32,13 @@ extension TableDefinition: ShapeDefinition {
             }
             guard let index = rows.row(atLine: line), columns[index].id != rows.focused else { continue }
             rows.drawing(columns[index].id, in: context.cg) {
-                drawColumn(columns[index], isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
+                drawColumn(columns[index], of: shape.id, names: names, isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
             }
         }
     }
 
     /// One column's row: its mark, its name, and its type at the right (the type wins the room: a name too long is cut).
-    private func drawColumn(_ column: Column, isKey: Bool, in row: CGRect, _ context: RenderContext) {
+    private func drawColumn(_ column: Column, of table: ShapeID, names: KitNames?, isKey: Bool, in row: CGRect, _ context: RenderContext) {
         let cg = context.cg, middle = row.midY
         if column.primaryKey {
             RowMarks.draw(TableStyle.keySymbol, color: TableStyle.keyColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
@@ -46,7 +47,7 @@ extension TableDefinition: ShapeDefinition {
         } else if column.unique {
             RowMarks.draw(TableStyle.uniqueSymbol, color: TableStyle.uniqueColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
         }
-        let laid = ColumnRow(column, in: row, pill: Self.enumPill(of: column, registry: context.shapes.registry, inFile: context.shape(inFile:)))
+        let laid = ColumnRow(column, in: row, pill: Self.enumPill(of: column, in: table, registry: context.shapes.registry, inFile: context.shape(inFile:), names: names))
         if let null = laid.null { RowText.draw(null.line, at: null.x, middle: middle, in: cg) }
         if let pill = laid.pill { pill.label.draw(at: pill.rect.origin, in: cg) }
         if let type = laid.type { RowText.draw(type.line, at: type.x, middle: middle, room: type.width, in: cg) }
@@ -57,9 +58,10 @@ extension TableDefinition: ShapeDefinition {
     /// its type or enum pill, a nullable's `?`), never narrower than a new table (`TableStyle.width`) nor wider than
     /// `TableStyle.mostWholeWidth`: what a commit widens a table to (`TableLines.wholeWidth`) and what a pasted table is made at.
     /// An enum the file doesn't hold (`inFile` finds none) measures as its type's words.
-    static func wholeWidth(of columns: [Column], registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?) -> CGFloat {
+    static func wholeWidth(of columns: [Column], in table: ShapeID, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?, names: KitNames?) -> CGFloat {
         wholeWidth(of: columns.map { column in
-            WholeRow(name: column.name, type: column.type.words, pill: enumPill(of: column, registry: registry, inFile: inFile), nullable: column.nullable)
+            WholeRow(name: column.name, type: column.type.words, pill: enumPill(of: column, in: table, registry: registry, inFile: inFile, names: names),
+                     nullable: column.nullable)
         })
     }
 
@@ -89,16 +91,19 @@ extension TableDefinition: ShapeDefinition {
     }
 
     /// An enum-typed column's pill: the enum its type names, while it's in the file, by its name now.
-    static func enumPill(of column: Column, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?) -> AdornmentLabel? {
-        guard let name = enumName(of: column, registry: registry, inFile: inFile) else { return nil }
+    static func enumPill(of column: Column, in table: ShapeID, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?, names: KitNames?) -> AdornmentLabel? {
+        guard let name = enumName(of: column, in: table, registry: registry, inFile: inFile, names: names) else { return nil }
         return AdornmentLabel(name).tinted(TableStyle.enumPill)
     }
 
     /// The name of the enum a column's type names, now, while it's in the file: what makes the type a pill, at rest and
-    /// zoomed out, and what Find finds in it.
-    static func enumName(of column: Column, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?) -> String? {
-        guard let record = column.type.shape.flatMap(inFile), record.kind == DatabaseEnum.kind else { return nil }
-        return registry.title(of: record) ?? column.type.words
+    /// zoomed out, and what Find finds in it. A type whose words were written before their enum was made, or whose enum is gone
+    /// and one of that name made since, names the enum its words name, nearest the table, as typing the line would bind it
+    /// (`KitNames.enumNamed`), so the table at rest, Find, its width and its line say the same.
+    static func enumName(of column: Column, in table: ShapeID, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?, names: KitNames?) -> String? {
+        if let record = column.type.shape.flatMap(inFile), record.kind == DatabaseEnum.kind { return registry.title(of: record) ?? column.type.words }
+        guard !column.type.words.isEmpty, let names, names.enumNamed(column.type.words, near: table) != nil else { return nil }
+        return column.type.words
     }
 
     /// Its laid-out frame, and a part a row.
@@ -131,6 +136,15 @@ extension TableDefinition: MakesRoomAsItGrows {}
 extension TableDefinition: DerivedProps {
     func derive(_ table: inout DatabaseTable) {
         table.frame.size.height = KitStyle.height(rows: table.columns.count)
+    }
+}
+
+/// Drawn by `canvas draw`, it's as wide as its columns read whole at rest, as a commit of its lines makes it.
+extension TableDefinition: DrawnWhole {
+    func wholeWidth(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGFloat? {
+        let names = context.service(KitNames.self)
+        return Self.wholeWidth(of: shape.props.columns, in: shape.id, registry: context.registry, inFile: { context.shape($0) ?? names?.editor.shape(inFile: $0) },
+                               names: names)
     }
 }
 
@@ -168,7 +182,7 @@ extension TableDefinition: CustomSkeleton {
         KitPaper.drawSkeleton(frame, in: context)
         let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
         var text: [CGRect] = [], pills: [CGRect] = [], fadedText: [CGRect] = [], fadedPills: [CGRect] = []
-        let more = rows.more
+        let more = rows.more, names = context.service(KitNames.self)
         for line in KitPaper.skeletonRowsInView(rows.lines(columns.count), in: frame, context) {
             if line == more?.line, let more {
                 if let bar = MoreLine.bar(more.count, in: KitStyle.rowRect(line, in: frame)) { text.append(bar) }
@@ -182,7 +196,7 @@ extension TableDefinition: CustomSkeleton {
             let type = KitPaper.bar(columns: SkeletonText.columns(of: column.type.words, upTo: TableStyle.skeletonMostColumns),
                                     column: TableStyle.skeletonTypeColumn, at: end, trailing: true, in: row, room: (end - start) / 2)
             if let type {
-                if Self.enumName(of: column, registry: context.shapes.registry, inFile: context.shape(inFile:)) != nil {
+                if Self.enumName(of: column, in: shape.id, registry: context.shapes.registry, inFile: context.shape(inFile:), names: names) != nil {
                     if taken { fadedPills.append(type) } else { pills.append(type) }
                 } else if taken { fadedText.append(type) } else { text.append(type) }
             }

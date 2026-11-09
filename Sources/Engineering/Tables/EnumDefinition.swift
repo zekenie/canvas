@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Draw
 import Geometry
 import LineRows
 import Titles
@@ -38,6 +39,24 @@ extension EnumDefinition: ShapeDefinition {
     func indicatorPath(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> CGPath {
         KitStyle.paperPath(context.frame(of: shape))
     }
+}
+
+extension EnumDefinition {
+    /// How wide an enum is drawn for every value to read whole at rest (its inset, the value in the values' font, the trailing
+    /// inset), never narrower than a new enum (`EnumStyle.width`) nor wider than `EnumStyle.mostWholeWidth`: what a commit of its
+    /// lines widens it to (`EnumLines.wholeWidth`), as a table's.
+    static func wholeWidth(of values: [EnumValue]) -> CGFloat {
+        var widest = EnumStyle.width
+        for value in values {
+            widest = max(widest, KitStyle.nameInset + RowText.line(value.text, .value).width + KitStyle.trailingInset)
+        }
+        return min(widest.rounded(.up), EnumStyle.mostWholeWidth)
+    }
+}
+
+/// Drawn by `canvas draw`, it's as wide as its values read whole at rest, as a commit of its lines makes it.
+extension EnumDefinition: DrawnWhole {
+    func wholeWidth(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> CGFloat? { Self.wholeWidth(of: shape.props.values) }
 }
 
 extension EnumDefinition: LaidOutBox {

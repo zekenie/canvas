@@ -123,6 +123,11 @@ enum RowsDraw {
             guard let at = merged.firstIndex(where: { $0.name == column.name }) else { continue }
             if let onDelete = given["onDelete"] { merged[at].onDelete = onDelete.stringValue }
             if let onUpdate = given["onUpdate"] { merged[at].onUpdate = onUpdate.stringValue }
+            // A column written with what its key does (Paste SQL's keyed column: its key is drawn with it) leaves no key's words
+            // kept from a line before (`→ customers.id`, typed while customers wasn't there): the key says where it goes.
+            if given["onDelete"] != nil || given["onUpdate"] != nil, given["unread"] == nil, let words = ColumnGrammar.key(in: merged[at].unread) {
+                merged[at].unread = words.rest
+            }
         }
         return (try? JSONValue(encoding: merged)) ?? written
     }

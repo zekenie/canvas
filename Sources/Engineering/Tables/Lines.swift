@@ -49,25 +49,33 @@ struct ColumnLineGrammar: LineGrammar {
         guard var column = scan.column else { return LineReading(row: nil) }
         var spans: [LineSpan] = []
         var key = ColumnKey.none
+        var arrowRead = false
+        // The word after the first `→`, the only one that is a key: a later `→`'s is words.
+        let keyTarget = scan.words.firstIndex { $0.role == .arrow }.map { $0 + 1 }
         for (index, word) in scan.words.enumerated() {
             switch word.role {
             case .name: spans.append(LineSpan(word.range, .name))
             case .type:
-                let words = column.type.words
+                let words = column.type.words, inner = scan.typeRange ?? word.range
                 // A run the line carries stands for its enum whatever else is called so; a name typed afresh is found.
-                let named: ShapeID? = if let target = line.reference(at: NSRange(location: word.range.location, length: (words as NSString).length)),
-                                         context.editor.shape(inFile: target.shape)?.kind == DatabaseEnum.kind {
+                let named: ShapeID? = if let target = line.reference(at: inner), context.editor.shape(inFile: target.shape)?.kind == DatabaseEnum.kind {
                     target.shape
                 } else {
                     context.editor.service(KitNames.self)?.enumNamed(words, near: context.shape)
                 }
                 column.type.shape = named
-                spans.append(LineSpan(word.range, named == nil ? .code : .pill(LineLooks.enumFill, ink: LineLooks.enumInk)))
+                // A quoted name's pill is its words', the quotes outside it, as an API's quoted type's is.
+                let quoted = inner.location != word.range.location
+                spans.append(LineSpan(quoted ? inner : word.range, named == nil ? .code : .pill(LineLooks.enumFill, ink: LineLooks.enumInk)))
             case .keyword: spans.append(LineSpan(word.range, .keyword))
             case .arrow:
                 spans.append(LineSpan(word.range, .keyword))
-                // The first `→` only: the word after it is its target, a key once it names a table's row on the board or one a pill can reach.
-                guard key == .none, scan.words.indices.contains(index + 1), scan.words[index + 1].role == .unread else { continue }
+                // The first `→` only, as `canvas draw` reads a line's (`ColumnGrammar.key(in:)`): the word after it is its target, a key
+                // once it names a table's row on the board or one a pill can reach; one that names none leaves the line no key, and a
+                // later `→` is words.
+                guard !arrowRead else { continue }
+                arrowRead = true
+                guard scan.words.indices.contains(index + 1), scan.words[index + 1].role == .unread else { continue }
                 let target = scan.words[index + 1]
                 if let found = Self.target(target.text, at: target.range, in: line, from: id, context) {
                     key = .to(found.row)
@@ -75,8 +83,8 @@ struct ColumnLineGrammar: LineGrammar {
                 }
             case .defaultValue: spans.append(LineSpan(word.range, .code))
             case .unread:
-                // A target that names a table is in its pill, the table's own name already as `customers.` is typed.
-                if index > 0, scan.words[index - 1].role == .arrow, Self.names(word.text, at: word.range, in: line, from: id, context) {
+                // The first `→`'s target that names a table is in its pill, the table's own name already as `customers.` is typed.
+                if index == keyTarget, Self.names(word.text, at: word.range, in: line, from: id, context) {
                     spans.append(LineSpan(word.range, .pill(LineLooks.keyFill, ink: LineLooks.keyInk)))
                 } else {
                     spans.append(LineSpan(word.range, .plain))
@@ -111,7 +119,7 @@ struct ColumnLineGrammar: LineGrammar {
         if let found = row(line.reference(at: range)) { return found }
         guard let (table, column) = ColumnGrammar.target(word) else { return nil }
         if let column {
-            let length = (column as NSString).length
+            let length = (ColumnGrammar.written(column: column) as NSString).length
             if let found = row(line.reference(at: NSRange(location: NSMaxRange(range) - length, length: length))) { return found }
         }
         guard let id = editor.service(KitNames.self)?.tableNamed(table, besides: context.shape),
@@ -130,22 +138,26 @@ struct ColumnLineGrammar: LineGrammar {
     /// A table's primary key's column: the first that's part of it.
     static func primaryKey(of table: DatabaseTable) -> Column? { table.columns.first(where: \.primaryKey) }
 
-    /// The line as the grammar prints it: an enum's name as it's called now, standing for it; then the key the line holds, or the
-    /// board's for a column as stored, `→ customers.id` with the far table's and column's names as they are now, standing for the row.
+    /// The line as the grammar prints it: an enum's name as it's called now (quoted where it's several words), standing for it;
+    /// then the key the line holds, or the board's for a column as stored, `→ customers.id` with the far table's and column's names
+    /// as they are now, standing for the row, before the words the column kept, so the line's first `→` is its key. A column that has
+    /// a key keeps no key's words in the line (`→ customers.id` typed before customers was made, and the key drawn since, to there
+    /// or elsewhere): the key is the one thing the line says of where it goes.
     func print(_ line: ColumnLine, in context: LineContext) -> LineText {
         var column = line.column
         if let id = column.type.shape, let name = context.editor.service(KitNames.self)?.name(of: id) { column.type.words = name }
-        var string = ColumnGrammar.print(column)
+        let target = Self.key(of: line, in: context)
+        let written = target.flatMap { Self.written($0, context.editor) }
+        // The board has the key, so the words a column kept of one (typed before its table existed, or aimed elsewhere) are stale and
+        // not shown: the line says one key, and its next commit drops them.
+        if target != nil, written != nil, let words = ColumnGrammar.key(in: column.unread) { column.unread = words.rest }
+        let (string, keyRange) = ColumnGrammar.print(column, key: written)
         var references: [LineReference] = []
-        if let id = column.type.shape, !column.type.words.isEmpty,
-           let type = ColumnGrammar.placedWords(of: string).dropFirst().first, type.text == column.type.words {
-            references.append(LineReference(range: type.range, target: PartAddress(id)))
+        if let id = column.type.shape, !column.type.words.isEmpty, let type = ColumnGrammar.scan(string).typeRange,
+           (string as NSString).substring(with: type) == column.type.words {
+            references.append(LineReference(range: type, target: PartAddress(id)))
         }
-        if let target = Self.key(of: line, in: context), let written = Self.written(target, context.editor) {
-            string += " \(ColumnGrammar.arrow) "
-            references.append(LineReference(range: NSRange(location: (string as NSString).length, length: (written as NSString).length), target: target))
-            string += written
-        }
+        if let target, let keyRange { references.append(LineReference(range: keyRange, target: target)) }
         return LineText(string, references: references)
     }
 
@@ -176,6 +188,23 @@ struct ColumnLineGrammar: LineGrammar {
         let range = at.map { words[$0].range } ?? NSRange(location: caret, length: 0)
         let typed = at.map { String(words[$0].text.utf16.prefix(caret - words[$0].range.location)) ?? "" } ?? ""
         let before = words.prefix(index).map(\.text)
+        // The caret in a type (all its words, `timestamp with time zone`), or in the word after one that goes on with a word typed so
+        // far (`double pre`): SQL's types and the file's enums, a pick replacing the type from its first word.
+        let text = line.string as NSString
+        if let run = ColumnGrammar.scan(line.string).words.first(where: { $0.role == .type }) {
+            let end = NSMaxRange(run.range)
+            if caret >= run.range.location && caret <= end {
+                let prefix = text.substring(with: NSRange(location: run.range.location, length: caret - run.range.location))
+                return LineOffers(range: run.range, query: prefix, items: typeOffers(context))
+            }
+            if let at, !typed.isEmpty, words.firstIndex(where: { NSMaxRange($0.range) == end }).map({ $0 + 1 }) == at {
+                let prefix = text.substring(with: NSRange(location: run.range.location, length: caret - run.range.location)).lowercased()
+                if LineLooks.sqlTypes.contains(where: { $0.contains(" ") && $0.hasPrefix(prefix) }) {
+                    let whole = NSRange(location: run.range.location, length: NSMaxRange(words[at].range) - run.range.location)
+                    return LineOffers(range: whole, query: prefix, items: typeOffers(context))
+                }
+            }
+        }
         if index == 1 {
             return LineOffers(range: range, query: typed, items: typeOffers(context))
         }
@@ -205,10 +234,11 @@ struct ColumnLineGrammar: LineGrammar {
             let keys = table.columns.filter { $0.primaryKey || $0.unique }
             return keys.isEmpty ? table.columns : keys
         }
-        // A table on another board says which: two alike on two boards are told apart by it, as Mentions' rows are.
-        func offer(_ table: ShapeID, _ column: Column, label: String) -> LineOffer {
-            let detail = [column.type.words, editor.mentions?.boardName(ofShape: table)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-            return LineOffer(CaretCompletion(label: label, detail: detail, insert: label), light: PartAddress(table, part: column.id))
+        // A table in a database, or on another board, says where it is (Mentions' place: `billing`, a board's name): two alike in two
+        // databases of one board, or on two boards, are told apart by it, as the `@` picker's rows are.
+        func offer(_ table: ShapeID, _ column: Column, label: String, insert: String) -> (id: ShapeID, offer: LineOffer) {
+            let detail = [column.type.words, editor.mentions?.place(ofShape: table)?.text].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            return (table, LineOffer(CaretCompletion(label: label, detail: detail, insert: insert), light: PartAddress(table, part: column.id)))
         }
         if let dot = typed.lastIndex(of: "."), let (name, _) = ColumnGrammar.target(String(typed[...dot])),
            let table = editor.service(KitNames.self)?.tableNamed(name, besides: context.shape) {
@@ -216,7 +246,7 @@ struct ColumnLineGrammar: LineGrammar {
             let length = (after as NSString).length
             let start = range.location + (String(typed[...dot]) as NSString).length
             let wordEnd = NSMaxRange(range)
-            let items = keyColumns(table).map { offer(table, $0, label: $0.name) }
+            let items = keyColumns(table).map { offer(table, $0, label: $0.name, insert: ColumnGrammar.written(column: $0.name)).offer }
             guard !items.isEmpty else { return nil }
             return LineOffers(range: NSRange(location: start, length: max(length, wordEnd - start)), query: after, items: items)
         }
@@ -231,23 +261,47 @@ struct ColumnLineGrammar: LineGrammar {
             }
         }
         var seen: Set<ShapeID> = []
-        var items: [LineOffer] = []
+        var offered: [(id: ShapeID, offer: LineOffer)] = []
         for candidate in found.all where seen.insert(candidate.id).inserted {
             guard let record = editor.shape(inFile: candidate.id), let name = editor.registry.title(of: record) else { continue }
             for column in keyColumns(candidate.id) {
-                items.append(offer(candidate.id, column, label: ColumnGrammar.written(table: name, column: column.name)))
+                let written = ColumnGrammar.written(table: name, column: column.name)
+                offered.append(offer(candidate.id, column, label: written, insert: written))
             }
         }
+        // Two tables of one name in one place say the same: one is offered, the one typing would bind.
+        let items = Self.distinct(offered, near: context.shape, editor.service(KitNames.self))
         return items.isEmpty ? nil : LineOffers(range: range, query: typed, items: items)
     }
 
-    /// SQL's types, then the file's enums, each in its purple chip and lit while it's highlighted.
+    /// SQL's types, then the file's enums, each in its purple chip, lit while it's highlighted and standing for its enum once picked
+    /// (a name of several words put in quotes, as the line reads one). Two enums of one name are both offered, each saying where it is
+    /// (its database, or its board: Mentions' place), so either can be picked; two that nothing tells apart (one name, one place) are
+    /// offered once, as the one typing binds, since a pick of either could only be that one.
     func typeOffers(_ context: LineContext) -> [LineOffer] {
         let types = LineLooks.sqlTypes.map { LineOffer(CaretCompletion(label: $0, insert: $0)) }
-        let enums = (context.editor.service(KitNames.self)?.enums ?? []).reduce(into: [(id: ShapeID, name: String)]()) { list, found in
-            if !list.contains(where: { $0.name == found.name }) { list.append((found.id, found.name)) }
+        let names = context.editor.service(KitNames.self)
+        let enums = names?.enums ?? []
+        var counts: [String: Int] = [:]
+        for found in enums { counts[found.name, default: 0] += 1 }
+        let offered = enums.map { found -> (id: ShapeID, offer: LineOffer) in
+            let place = counts[found.name, default: 0] > 1 ? context.editor.mentions?.place(ofShape: found.id)?.text : nil
+            let detail = [EnumStyle.label, place].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            return (found.id, LineOffer(CaretCompletion(label: found.name, detail: detail, insert: ColumnGrammar.written(type: found.name), chip: LineLooks.enumChip),
+                                        light: PartAddress(found.id)))
         }
-        return types + enums.map { LineOffer(CaretCompletion(label: $0.name, detail: EnumStyle.label, insert: $0.name, chip: LineLooks.enumChip), light: PartAddress($0.id)) }
+        return types + Self.distinct(offered, near: context.shape, names)
+    }
+
+    /// `found`'s offers, one of those that say the same (a label and what it says of where): the shape nearest `shape`, as typing
+    /// binds it.
+    private static func distinct(_ found: [(id: ShapeID, offer: LineOffer)], near shape: ShapeID, _ names: KitNames?) -> [LineOffer] {
+        func said(_ offer: LineOffer) -> [String] { [offer.completion.label, offer.completion.detail, offer.completion.insert] }
+        var alike: [[String]: [ShapeID]] = [:]
+        for item in found { alike[said(item.offer), default: []].append(item.id) }
+        var kept: [[String]: ShapeID] = [:]
+        for (said, ids) in alike where ids.count > 1 { kept[said] = names?.nearest(ids, to: shape) ?? ids[0] }
+        return found.filter { item in kept[said(item.offer)].map { $0 == item.id } ?? true }.map(\.offer)
     }
 
     var substitutions: [LineSubstitution] { [LineSubstitution(ColumnGrammar.typedArrow, becomes: ColumnGrammar.arrow)] }
@@ -257,15 +311,21 @@ struct ColumnLineGrammar: LineGrammar {
         let column = line.column
         var words = [column.name]
         if !column.type.words.isEmpty {
-            let type = column.type.shape.flatMap { context.editor.service(KitNames.self)?.name(of: $0) } ?? column.type.words
-            words.append(column.type.shape == nil ? type : "\(type) enum")
+            // An enum as rest binds it (by the stored shape, else the words' name now), as the screen draws it.
+            let enumName = TableDefinition.enumName(of: column, in: context.shape, registry: context.editor.registry, inFile: context.editor.shape(inFile:),
+                                                    names: context.editor.service(KitNames.self))
+            words.append(enumName.map { "\($0) enum" } ?? column.type.words)
         }
         if column.primaryKey { words.append("primary key") }
         if column.unique { words.append("unique") }
         if column.nullable { words.append("null") }
         if let value = column.default { words.append("default \(value)") }
-        if let target = Self.key(of: line, in: context), let name = context.editor.accessibleName(of: target) { words.append("key to \(name)") }
-        if !column.unread.isEmpty { words.append(column.unread) }
+        var unread = column.unread
+        if let target = Self.key(of: line, in: context), let name = context.editor.accessibleName(of: target) {
+            words.append("key to \(name)")
+            if let kept = ColumnGrammar.key(in: unread) { unread = kept.rest }
+        }
+        if !unread.isEmpty { words.append(unread) }
         return words.joined(separator: ", ")
     }
 }
@@ -289,7 +349,7 @@ struct TableLines: LineModel {
     var style: LineStyle { LineLooks.table }
     /// As wide as every column's name and type read whole at rest (`TableDefinition.wholeWidth`): a commit widens it so.
     func wholeWidth(of props: DatabaseTable, in editor: CanvasEditor) -> CGFloat? {
-        TableDefinition.wholeWidth(of: props.columns, registry: editor.registry, inFile: editor.shape(inFile:))
+        TableDefinition.wholeWidth(of: props.columns, in: table ?? ShapeID(), registry: editor.registry, inFile: editor.shape(inFile:), names: editor.service(KitNames.self))
     }
     func rows(of props: DatabaseTable) -> [ColumnLine] { props.columns.map { ColumnLine($0) } }
     func setRows(_ rows: [ColumnLine], in props: inout DatabaseTable) { props.columns = rows.map(\.column) }
@@ -458,6 +518,8 @@ struct EnumLines: LineModel {
 
     var noun: LineNoun { LineNoun("value") }
     var style: LineStyle { LineLooks.enumValues }
+    /// As wide as every value reads whole at rest (`EnumDefinition.wholeWidth`): a commit widens it so, as a table's.
+    func wholeWidth(of props: DatabaseEnum, in editor: CanvasEditor) -> CGFloat? { EnumDefinition.wholeWidth(of: props.values) }
     func rows(of props: DatabaseEnum) -> [EnumValue] { props.values }
     func setRows(_ rows: [EnumValue], in props: inout DatabaseEnum) { props.values = rows }
     func id(of row: EnumValue) -> PartID { row.id }
@@ -497,6 +559,10 @@ public enum EngineeringLines {
     public static var columns: any LineGrammar<ColumnLine> { ColumnLineGrammar() }
     /// An enum's value's line.
     public static var values: any LineGrammar<EnumValue> { EnumLineGrammar() }
+    /// A column as its card writes it where it gives its type, its default (`ColumnCard`): the columns the card can make.
+    public static func cardRetyped(_ column: Column, _ type: TypeRef?) -> Column { ColumnCard.retyped(column, type) }
+    public static func cardDefaulted(_ column: Column, _ value: String?) -> Column { ColumnCard.defaulted(column, value) }
+    public static func cardNormalized(_ column: Column) -> Column { ColumnCard.normalized(column) }
 }
 
 // MARK: Looks
@@ -545,6 +611,7 @@ enum LineLooks {
     static let sqlTypes = [
         "uuid", "text", "int", "int8", "integer", "interval", "inet", "bigint", "smallint", "serial", "bigserial", "numeric", "decimal",
         "real", "float8", "bool", "boolean", "date", "time", "timestamp", "timestamptz", "json", "jsonb", "bytea", "varchar", "char",
-        "citext", "money", "cidr",
+        "citext", "money", "cidr", "double precision", "character varying", "timestamp with time zone", "timestamp without time zone",
+        "time with time zone", "time without time zone",
     ]
 }

@@ -19,7 +19,10 @@ public enum ColumnGrammar {
     /// The column a line says, its id `id`; nil for a line with nothing on it. The first word is its name, the next
     /// its type (a `?` after it: it may be null), then any of `null` (`not null` says it mayn't), `unique`, `pk`
     /// (`primary key` too), `default` and the word after it, in any order and any case; everything else, a key's `→`
-    /// and its target among it, is kept as written, in order.
+    /// and its target among it, is kept as written, in order. A type is read as SQL writes it, several words where SQL's
+    /// are (`timestamp with time zone`, `character varying(255)`, `double precision`: `SQLTypeWords`), and so is a default
+    /// that casts to one (`''::character varying`); a name, a type or a default in double quotes is the words between them
+    /// (`"order date"`, `"Order Status"`, a doubled `""` a quote), what a line prints a part in that wouldn't read back alone.
     public static func read(_ line: String, id: PartID = PartID()) -> Column? {
         scan(line, id: id).column
     }
@@ -28,11 +31,11 @@ public enum ColumnGrammar {
     public enum WordRole: Hashable, Sendable {
         /// Its name.
         case name
-        /// Its type (a `?` after it included).
+        /// Its type (a `?` after it included): all its words, one run.
         case type
         /// A word of the grammar's own: `null`, `not`, `unique`, `pk`, `primary`, `key`, `default`.
         case keyword
-        /// What follows `default`.
+        /// What follows `default`: all its words, one run.
         case defaultValue
         /// A key's arrow.
         case arrow
@@ -40,10 +43,13 @@ public enum ColumnGrammar {
         case unread
     }
 
-    /// A line read: the column it says (nil for a line with nothing on it), and each word's role and place in it (UTF-16).
+    /// A line read: the column it says (nil for a line with nothing on it), and each word's role and place in it (UTF-16);
+    /// `typeRange`, where the type's words are without the quotes round them or the `?` after them (what stands for an
+    /// enum the type names).
     public struct Scan: Sendable {
         public var column: Column?
         public var words: [(role: WordRole, range: NSRange, text: String)]
+        public var typeRange: NSRange?
     }
 
     /// Reads a line as `read` does, saying too what each word is and where.
@@ -51,17 +57,15 @@ public enum ColumnGrammar {
         let words = Self.placedWords(of: line)
         guard let name = words.first else { return Scan(column: nil, words: []) }
         var roles: [(role: WordRole, range: NSRange, text: String)] = [(.name, name.range, name.text)]
-        var column = Column(id: id, name: name.text, type: TypeRef(""))
+        var column = Column(id: id, name: unquoted(name.text) ?? name.text, type: TypeRef(""))
         var rest = words.dropFirst()
-        if let type = rest.first, !isFlag(type.text) {
-            rest = rest.dropFirst()
-            roles.append((.type, type.range, type.text))
-            if type.text.count > 1, type.text.hasSuffix("?") {
-                column.type = TypeRef(String(type.text.dropLast()))
-                column.nullable = true
-            } else {
-                column.type = TypeRef(type.text)
-            }
+        var typeRange: NSRange?
+        if let type = typeRun(rest) {
+            rest = rest.dropFirst(type.count)
+            roles.append((.type, type.range, (line as NSString).substring(with: type.range)))
+            column.type = TypeRef(type.words)
+            column.nullable = type.nullable
+            typeRange = type.inner
         }
         var unread: [String] = []
         // A word the grammar reads once: said again, it is kept as written with the rest, so printing loses none.
@@ -94,9 +98,10 @@ public enum ColumnGrammar {
                 column.primaryKey = true
             case Self.default where rest.first != nil && first(Self.default):
                 roles.append((.keyword, word.range, word.text))
-                roles.append((.defaultValue, rest.first!.range, rest.first!.text))
-                column.default = rest.first!.text
-                rest = rest.dropFirst()
+                let value = defaultRun(rest)
+                roles.append((.defaultValue, value.range, (line as NSString).substring(with: value.range)))
+                column.default = value.text
+                rest = rest.dropFirst(value.count)
             default:
                 // A key's arrow, typed either way, and what follows it are kept whole: `→ customers.id`.
                 let isArrow = word.text == arrow || word.text == typedArrow
@@ -105,20 +110,147 @@ public enum ColumnGrammar {
             }
         }
         column.unread = unread.joined(separator: " ")
-        return Scan(column: column, words: roles)
+        return Scan(column: column, words: roles, typeRange: typeRange)
+    }
+
+    /// A type's run at the head of `words`: its first word (nil where it's one of the grammar's own) and the words SQL's types of
+    /// several words go on with (`SQLTypeWords`); a quoted name alone. Its words as the column holds them (one space between, the
+    /// quotes and a `?` taken off), how many words it is, where it is, where its words are, and whether a `?` says null.
+    static func typeRun(_ words: ArraySlice<(text: String, range: NSRange)>)
+        -> (words: String, count: Int, range: NSRange, inner: NSRange, nullable: Bool)? {
+        guard let head = words.first, !isFlag(head.text) else { return nil }
+        func nulled(_ text: String) -> (text: String, nullable: Bool) {
+            text.count > 1 && text.hasSuffix("?") ? (String(text.dropLast()), true) : (text, false)
+        }
+        let (headText, headNull) = nulled(head.text)
+        if let inner = unquoted(headText) {
+            return (inner, 1, head.range, NSRange(location: head.range.location + 1, length: (headText as NSString).length - 2), headNull)
+        }
+        var count = 1, nullable = headNull
+        if !headNull {
+            let more = SQLTypeWords.goesOn(after: headText, through: words.dropFirst().map(\.text))
+            count += more
+            nullable = more > 0 && nulled(words[words.startIndex + more].text).nullable
+        }
+        let run = words.prefix(count)
+        let texts = run.enumerated().map { $0.offset == count - 1 && nullable ? nulled($0.element.text).text : $0.element.text }
+        let last = run.last!.range
+        let range = NSRange(location: head.range.location, length: NSMaxRange(last) - head.range.location)
+        let inner = NSRange(location: range.location, length: range.length - (nullable ? 1 : 0))
+        return (texts.joined(separator: " "), count, range, inner, nullable)
+    }
+
+    /// A default's run at the head of `words` (it has one): a quoted value alone, else its word and, where it casts to one of SQL's
+    /// types of several words (`''::character varying`), the words the type goes on with.
+    static func defaultRun(_ words: ArraySlice<(text: String, range: NSRange)>) -> (text: String, count: Int, range: NSRange) {
+        let head = words.first!
+        if let inner = unquoted(head.text) { return (inner, 1, head.range) }
+        var count = 1
+        if let cast = head.text.range(of: "::", options: .backwards) {
+            count += SQLTypeWords.goesOn(after: String(head.text[cast.upperBound...]), through: words.dropFirst().map(\.text))
+        }
+        let run = words.prefix(count)
+        let range = NSRange(location: head.range.location, length: NSMaxRange(run.last!.range) - head.range.location)
+        return (run.map(\.text).joined(separator: " "), count, range)
+    }
+
+    /// The words between a word's double quotes, a doubled quote a quote: what a quoted name, type or default is. Nil for a
+    /// word that isn't one quoted run.
+    static func unquoted(_ word: String) -> String? {
+        let characters = Array(word)
+        guard characters.count >= 2, characters.first == "\"", characters.last == "\"" else { return nil }
+        var inner = "", index = 1
+        while index < characters.count - 1 {
+            if characters[index] == "\"" {
+                // Inside, a quote is only ever one doubled; one alone closes the run before the word ends.
+                guard characters[index + 1] == "\"", index + 1 < characters.count - 1 else { return nil }
+                index += 1
+            }
+            inner.append(characters[index])
+            index += 1
+        }
+        return inner
+    }
+
+    /// `text` in double quotes, a quote in it doubled: one word that reads back as `text`.
+    static func quoted(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
     /// The line a column is written as: its name, its type, then `null`, `unique`, `default …` and `pk` as it is,
-    /// then the words it kept that nothing read. What `read` reads back as the same column.
-    public static func print(_ column: Column) -> String {
-        var words = [column.name]
-        if !column.type.words.isEmpty { words.append(column.type.words) }
-        if column.nullable { words.append(null) }
-        if column.unique { words.append(unique) }
-        if let value = column.default { words += [Self.default, value] }
-        if column.primaryKey { words.append(primaryKey) }
-        if !column.unread.isEmpty { words.append(column.unread) }
-        return words.joined(separator: " ")
+    /// then the words it kept that nothing read. What `read` reads back as the same column: a name, a type or a default
+    /// that wouldn't read back as itself (a name or an enum's of several words, a default of several words that no cast
+    /// explains) is quoted, and nothing else is.
+    public static func print(_ column: Column) -> String { print(column, key: nil).line }
+
+    /// `column` printed with `key` (`→ customers.id`) after what it says and before the words it kept, so its line's first
+    /// arrow is the key's; the line, and where the key's target is in it.
+    public static func print(_ column: Column, key: String?) -> (line: String, key: NSRange?) {
+        func line(quoting: Set<Part>) -> (line: String, key: NSRange?) {
+            var words = [quoting.contains(.name) ? quoted(column.name) : column.name]
+            if !column.type.words.isEmpty {
+                words.append(quoting.contains(.type) ? quoted(column.type.words) : column.type.words)
+            } else if key == nil, !column.nullable, !column.unique, column.default == nil, !column.primaryKey,
+                      let next = Self.words(of: column.unread).first, !isFlag(next) {
+                // No type, and a word kept that isn't the grammar's own would be read as one: an empty type says there is none.
+                words.append(quoted(""))
+            }
+            if column.nullable { words.append(null) }
+            if column.unique { words.append(unique) }
+            if let value = column.default { words += [Self.default, quoting.contains(.default) ? quoted(value) : value] }
+            if column.primaryKey { words.append(primaryKey) }
+            var range: NSRange?
+            if let key {
+                words.append(arrow)
+                let before = (words.joined(separator: " ") as NSString).length + 1
+                range = NSRange(location: before, length: (key as NSString).length)
+                words.append(key)
+            }
+            if !column.unread.isEmpty { words.append(column.unread) }
+            return (words.joined(separator: " "), range)
+        }
+        func readsBack(_ line: String) -> Bool {
+            guard let read = read(line, id: column.id) else { return false }
+            return read.name == column.name && read.type.words == column.type.words && read.nullable == column.nullable
+                && read.unique == column.unique && read.primaryKey == column.primaryKey && read.default == column.default
+                && read.unread == [key.map { "\(arrow) \($0)" }, column.unread].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        }
+        let plain = line(quoting: [])
+        if readsBack(plain.line) { return plain }
+        var quoting: Set<Part> = []
+        if !reads(name: column.name) { quoting.insert(.name) }
+        if !column.type.words.isEmpty, !reads(type: column.type.words) { quoting.insert(.type) }
+        if let value = column.default, !reads(default: value) { quoting.insert(.default) }
+        let some = line(quoting: quoting)
+        return readsBack(some.line) ? some : line(quoting: [.name, .type, .default])
+    }
+
+    /// A part of a column's line a print may quote.
+    private enum Part { case name, type, `default` }
+
+    /// Whether `name` reads back as itself, alone as a line's first word.
+    private static func reads(name: String) -> Bool {
+        let words = placedWords(of: name)
+        return words.count == 1 && words[0].text == name && unquoted(name) == nil
+    }
+
+    /// A type's words as a line writes them: quoted where they wouldn't read back as the type alone (an enum's name of several
+    /// words), as they are where they would (`timestamp with time zone`).
+    public static func written(type: String) -> String { type.isEmpty || reads(type: type) ? type : quoted(type) }
+
+    /// Whether `type` reads back as itself, as a line's type.
+    private static func reads(type: String) -> Bool {
+        let words = placedWords(of: type)
+        guard let run = typeRun(words[...]) else { return false }
+        return run.count == words.count && !run.nullable && run.words == type
+    }
+
+    /// Whether `value` reads back as itself, as a line's default.
+    private static func reads(default value: String) -> Bool {
+        let words = placedWords(of: value)
+        guard !words.isEmpty else { return false }
+        let run = defaultRun(words[...])
+        return run.count == words.count && run.text == value
     }
 
     /// The columns a block of lines says, one a line, blank lines passed over, each a new id.
@@ -179,7 +311,13 @@ public enum ColumnGrammar {
             if after.isEmpty { return (table, nil) }
             guard after.hasPrefix(".") else { return nil }
             let column = String(after.dropFirst())
-            return (table, column.isEmpty ? nil : column)
+            return (table, column.isEmpty ? nil : unquoted(column) ?? column)
+        }
+        // A column in quotes after the dot (`customers."first name"`): the table is what's before the first `."`, which a table
+        // written plain never holds.
+        if word.hasSuffix("\""), let quote = word.range(of: ".\""), let column = unquoted(String(word[word.index(after: quote.lowerBound)...])),
+           !column.isEmpty, quote.lowerBound != word.startIndex {
+            return (String(word[..<quote.lowerBound]), column)
         }
         guard let dot = word.lastIndex(of: ".") else { return word.isEmpty ? nil : (word, nil) }
         let table = String(word[..<dot]), column = String(word[word.index(after: dot)...])
@@ -187,10 +325,20 @@ public enum ColumnGrammar {
         return (table, column.isEmpty ? nil : column)
     }
 
-    /// A key's target written: `customers.id`, a table's name that holds a dot, a space or a quote in quotes.
+    /// A key's target written: `customers.id`; a table's name or a column's that holds a dot, a space or a quote in quotes
+    /// (`"order lines".id`, `customers."first name"`), so the target reads back as one word naming the row.
     public static func written(table: String, column: String) -> String {
-        let plain = !table.isEmpty && !table.contains(where: { $0 == "." || $0 == "\"" || $0.isWhitespace || $0 == "(" || $0 == ")" || $0 == "'" })
-        return (plain ? table : "\"\(table.replacingOccurrences(of: "\"", with: ""))\"") + "." + column
+        let name = table.isEmpty || !plainTarget(table) ? "\"\(table.replacingOccurrences(of: "\"", with: ""))\"" : table
+        return name + "." + written(column: column)
+    }
+
+    /// A column's name as a key's target says it after the dot: in quotes (a quote in it doubled) where it wouldn't read as one word
+    /// there.
+    public static func written(column: String) -> String { column.isEmpty || plainTarget(column) ? column : quoted(column) }
+
+    /// Whether a name is a word of a key's target as it stands.
+    private static func plainTarget(_ name: String) -> Bool {
+        !name.contains(where: { $0 == "." || $0 == "\"" || $0.isWhitespace || $0 == "(" || $0 == ")" || $0 == "'" })
     }
 
     /// Whether a word is one of the grammar's own (so it can't be a type: `id pk` is a column with no type).
@@ -203,8 +351,10 @@ public enum ColumnGrammar {
     static func words(of line: String) -> [String] { placedWords(of: line).map(\.text) }
 
     /// The words of a line and where each is in it (UTF-16, as `NSRange` counts). A quote opens a quoted run only where
-    /// a word starts (or inside parentheses), as SQL's literals do, so an apostrophe in a name is a letter; a quote or
-    /// a parenthesis never closed is a letter too, and the line's other words stay words.
+    /// a word starts (or inside parentheses, or a double quote right after a dot: a key's `customers."first name"`), as SQL's
+    /// literals do, so an apostrophe in a name is a letter, and inside the run a
+    /// quote doubled is one of its characters (`'it''s a test'`, `"say ""hi"""`); a quote or a parenthesis never closed is a
+    /// letter too, and the line's other words stay words.
     public static func placedWords(of line: String) -> [(text: String, range: NSRange)] {
         var plain: Set<Int> = []
         while true {
@@ -222,17 +372,24 @@ public enum ColumnGrammar {
             if !word.isEmpty { words.append((word, NSRange(location: start, length: offset - start))) }
             word = ""
         }
-        for character in line {
+        let characters = Array(line)
+        var escaped = false
+        for (index, character) in characters.enumerated() {
             let width = character.utf16.count
             defer { offset += width }
             if let open = quote {
                 word.append(character)
-                if character == open { quote = nil }
+                // A quote doubled inside the run is one of its characters, as SQL writes one (`'it''s'`).
+                if escaped {
+                    escaped = false
+                } else if character == open {
+                    if index + 1 < characters.count, characters[index + 1] == open { escaped = true } else { quote = nil }
+                }
                 continue
             }
             if word.isEmpty { start = offset }
             switch character {
-            case _ where (character == "'" || character == "\"") && (word.isEmpty || depth > 0) && !plain.contains(offset):
+            case _ where (character == "'" || character == "\"") && (word.isEmpty || depth > 0 || (character == "\"" && word.hasSuffix("."))) && !plain.contains(offset):
                 quote = character
                 quoteAt = offset
                 word.append(character)

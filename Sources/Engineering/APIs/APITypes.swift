@@ -43,10 +43,11 @@ enum APITypes {
         return .pill(tint.color.withAlphaComponent(APIStyle.pillFill), ink: tint.ink)
     }
 
-    /// The type note a ref stands for: the one it holds; else, where its words were written before any type of that name was made
-    /// (or made by another route since), the type called so, the same one wherever it's asked (the first by id).
+    /// The type note a ref stands for: the one it holds, while it is a type; else, where its words were written before any type of
+    /// that name was made (or made by another route since), or the one it held is no type now (deleted and made again, or the ref
+    /// copied from another file), the type called so, the same one wherever it's asked (the first by id).
     static func resolved(_ ref: TypeRef, types: TypeIndex?) -> ShapeID? {
-        if let shape = ref.shape { return shape }
+        if let shape = ref.shape, types?.isType(shape) != false { return shape }
         guard let types, !ref.words.isEmpty else { return nil }
         return types.types(named: ref.words).min { $0.description < $1.description }
     }
@@ -110,10 +111,18 @@ enum APITypes {
         return items.isEmpty ? nil : LineOffers(range: range, query: typed, items: items)
     }
 
-    /// The path of the endpoint a line is of, as it's held; "" for a row not held yet.
+    /// The full path of the endpoint a line is of, as it's held (its header's prefix and its own path); "" for a row not held yet.
     static func path(of context: LineContext) -> String {
-        guard let row = context.row else { return "" }
-        return context.editor.document[context.shape]?.typed(as: API.self)?.props.endpoints.first { $0.id == row }?.endpoint?.path ?? ""
+        guard let row = context.row, let rows = context.editor.document[context.shape]?.typed(as: API.self)?.props.endpoints,
+              let index = rows.firstIndex(where: { $0.id == row }), rows[index].endpoint != nil else { return "" }
+        return APIGroups.fullPath(of: index, in: rows)
+    }
+
+    /// `path`, typed in the line of the row a context is of, as a full path: under the header the row is held under, if it is held.
+    static func fullPath(_ path: String, in context: LineContext) -> String {
+        guard let row = context.row, let rows = context.editor.document[context.shape]?.typed(as: API.self)?.props.endpoints,
+              let index = rows.firstIndex(where: { $0.id == row }), let header = APIGroups.header(of: index, in: rows) else { return path }
+        return APIGroups.joined(header.prefix, path)
     }
 
     /// The types the API names already (a body's, a response's), as it holds them now.

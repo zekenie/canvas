@@ -4,6 +4,7 @@ import Canvas
 import CoreText
 import Find
 import LineRows
+import Titles
 
 // Find over rows: a table's columns and an enum's values are found a text a row, in row order, each by its row's id (the
 // field), so stepping goes top to bottom and a folded table shows the rows with hits while Find is open (LineRows' peeks,
@@ -15,9 +16,10 @@ extension PluginID {
     public static let engineeringFind: PluginID = "engineering-find"
 }
 
-/// Which tables of the file name which shapes in a column's type (an enum, whether it is in the file or not), so a commit
-/// that reaches a shape reads again the tables that name it, wherever they are, at the cost of what the commit touched.
-/// Built from the file when Find first asks, and followed on every commit after; a file put in place is read afresh.
+/// Which tables of the file name which shapes in a column's type (an enum, whether it is in the file or not), and which words
+/// their types say (what an enum made later is found by at rest), so a commit that reaches a shape reads again the tables that
+/// name it, by its id or its name, wherever they are, at the cost of what the commit touched. Built from the file when Find first
+/// asks, and followed on every commit after; a file put in place is read afresh.
 @MainActor
 final class EnumUsers {
     private unowned let editor: CanvasEditor
@@ -26,16 +28,25 @@ final class EnumUsers {
     private var users: [ShapeID: Set<ShapeID>] = [:]
     /// For each table, the shapes its columns name.
     private var named: [ShapeID: Set<ShapeID>] = [:]
+    /// For each type's words, the tables with a column of that type; and for each table, its columns' types' words.
+    private var wordUsers: [String: Set<ShapeID>] = [:]
+    private var words: [ShapeID: Set<String>] = [:]
 
     init(editor: CanvasEditor) {
         self.editor = editor
     }
 
-    /// The tables that name a shape `changes` reaches: an enum renamed, deleted, restored or created, on any board.
+    /// The tables that name a shape `changes` reaches: an enum renamed, deleted, restored or created, on any board, by its id or
+    /// by its name, before the commit or after.
     func tablesNaming(_ changes: ChangeSet) -> Set<ShapeID> {
         build()
         var tables = Set<ShapeID>()
-        for id in touched(by: changes) { tables.formUnion(users[id] ?? []) }
+        for id in touched(by: changes) {
+            tables.formUnion(users[id] ?? [])
+            for record in [editor.shape(inFile: id), changes.before(id)].compactMap({ $0 }) where record.kind == DatabaseEnum.kind {
+                if let name = editor.registry.title(of: record) { tables.formUnion(wordUsers[name] ?? []) }
+            }
+        }
         return tables
     }
 
@@ -49,6 +60,8 @@ final class EnumUsers {
         built = true
         users = [:]
         named = [:]
+        wordUsers = [:]
+        words = [:]
         let file = editor.file
         for board in file.everyBoard {
             for record in file[board].shapes { read(record) }
@@ -62,7 +75,16 @@ final class EnumUsers {
             users[shape]?.remove(id)
             if users[shape]?.isEmpty == true { users[shape] = nil }
         }
+        for word in words.removeValue(forKey: id) ?? [] {
+            wordUsers[word]?.remove(id)
+            if wordUsers[word]?.isEmpty == true { wordUsers[word] = nil }
+        }
         guard let table = record?.typed(as: DatabaseTable.self) else { return }
+        let said = Set(table.props.columns.map(\.type.words).filter { !$0.isEmpty })
+        if !said.isEmpty {
+            words[id] = said
+            for word in said { wordUsers[word, default: []].insert(id) }
+        }
         let shapes = Set(table.props.columns.compactMap(\.type.shape))
         guard !shapes.isEmpty else { return }
         named[id] = shapes
@@ -92,12 +114,12 @@ enum RowFind {
             context.service(EnumUsers.self)?.tablesNaming(changes) ?? []
         }, texts: { shape, context in
             shape.props.columns.map { column in
-                let pill = TableDefinition.enumName(of: column, registry: context.registry, inFile: context.editor.shape(inFile:)) != nil
+                let pill = TableDefinition.enumName(of: column, in: shape.id, registry: context.registry, inFile: context.editor.shape(inFile:), names: context.editor.service(KitNames.self)) != nil
                 return FindableText(field: column.id.description, text: pill || column.type.words.isEmpty ? column.name : column.name + " " + column.type.words)
             }
         }, rects: { shape, field, ranges, context in
             guard let (column, row, bounds) = columnRow(shape, field: field, context) else { return ranges.map { _ in [] } }
-            let laid = ColumnRow(column, in: row, pill: TableDefinition.enumPill(of: column, registry: context.registry, inFile: context.editor.shape(inFile:)))
+            let laid = ColumnRow(column, in: row, pill: TableDefinition.enumPill(of: column, in: shape.id, registry: context.registry, inFile: context.editor.shape(inFile:), names: context.editor.service(KitNames.self)))
             let nameLength = (column.name as NSString).length
             return ranges.map { range in
                 var rects: [CGRect] = []
@@ -118,12 +140,12 @@ enum RowFind {
             context.service(EnumUsers.self)?.tablesNaming(changes) ?? []
         }, texts: { shape, context in
             shape.props.columns.compactMap { column in
-                TableDefinition.enumName(of: column, registry: context.registry, inFile: context.editor.shape(inFile:))
+                TableDefinition.enumName(of: column, in: shape.id, registry: context.registry, inFile: context.editor.shape(inFile:), names: context.editor.service(KitNames.self))
                     .map { FindableText(field: column.id.description, text: $0) }
             }
         }, rects: { shape, field, ranges, context in
             guard let (column, row, bounds) = columnRow(shape, field: field, context),
-                  let label = TableDefinition.enumPill(of: column, registry: context.registry, inFile: context.editor.shape(inFile:)),
+                  let label = TableDefinition.enumPill(of: column, in: shape.id, registry: context.registry, inFile: context.editor.shape(inFile:), names: context.editor.service(KitNames.self)),
                   let pill = ColumnRow(column, in: row, pill: label).pill else { return ranges.map { _ in [] } }
             let ring = pill.rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY)
             return ranges.map { _ in [ring] }

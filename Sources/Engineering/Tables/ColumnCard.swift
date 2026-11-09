@@ -36,13 +36,23 @@ extension TableLines {
 /// What a column's card writes, as the column's line would.
 @MainActor
 enum ColumnCard {
-    /// `column` with its type as `type` says (none: no type), read back through its line: a `?` after it is null, words after it
+    /// `column` with its type as `type` says (none: no type), read back through its line: the words typed where its line has its
+    /// type, so a `?` after it is null, a type of several words is SQL's or quoted as the line reads one, and words after it are
     /// the line's own (`not null`) or kept unread; the enum it names kept while its words stay its.
     static func retyped(_ column: Column, _ type: TypeRef?) -> Column {
-        var written = column
-        written.type = TypeRef(type?.words ?? "")
-        var read = normalized(written)
-        if let type, read.type.words == bare(ColumnGrammar.placedWords(of: type.words).first?.text ?? "") { read.type.shape = type.shape }
+        var untyped = column
+        untyped.type = TypeRef("")
+        let printed = ColumnGrammar.print(untyped) as NSString
+        let text = type?.words.trimmingCharacters(in: .whitespaces) ?? ""
+        let placed = ColumnGrammar.placedWords(of: printed as String)
+        // The empty type a print says no type with, where a word kept would be read as one, is the place the new type goes.
+        let tail = placed.dropFirst().first.flatMap { $0.text == ColumnGrammar.quoted("") ? NSMaxRange($0.range) : nil }
+        guard !text.isEmpty, let name = placed.first,
+              var read = ColumnGrammar.read(printed.substring(to: NSMaxRange(name.range)) + " " + text + printed.substring(from: tail ?? NSMaxRange(name.range)), id: column.id)
+        else { return normalized(untyped) }
+        read.onDelete = column.onDelete
+        read.onUpdate = column.onUpdate
+        if let type, read.type.words == ColumnGrammar.typeRun(ColumnGrammar.placedWords(of: text)[...])?.words { read.type.shape = type.shape }
         return read
     }
 
@@ -62,9 +72,6 @@ enum ColumnCard {
         read.type.shape = read.type.words == column.type.words ? column.type.shape : nil
         return read
     }
-
-    /// A type's words without the `?` that says null.
-    private static func bare(_ words: String) -> String { words.count > 1 && words.hasSuffix("?") ? String(words.dropLast()) : words }
 
     /// The row a column's key references, read from the key index, or the words its line's `→` keeps that name none.
     static func reference(of line: ColumnLine, in context: LineContext) -> ColumnReference? {
@@ -105,22 +112,27 @@ enum ColumnReference: Equatable {
 struct ColumnTypeGrammar: LineGrammar {
     func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<TypeRef> {
         let words = ColumnGrammar.placedWords(of: line.string)
-        guard let first = words.first else { return LineReading(row: nil) }
-        let bare = first.text.count > 1 && first.text.hasSuffix("?") ? String(first.text.dropLast()) : first.text
-        let named: ShapeID? = if let target = line.reference(at: NSRange(location: first.range.location, length: (bare as NSString).length)),
-                                 context.editor.shape(inFile: target.shape)?.kind == DatabaseEnum.kind {
-            target.shape
-        } else {
-            context.editor.service(KitNames.self)?.enumNamed(bare, near: context.shape)
+        guard !words.isEmpty else { return LineReading(row: nil) }
+        // Its type's words as a column's line reads them (several where SQL's are, a quoted name), then the grammar's own or plain.
+        var spans: [LineSpan] = [], named: ShapeID?, after = words[...]
+        if let run = ColumnGrammar.typeRun(words[...]) {
+            named = if let target = line.reference(at: run.inner), context.editor.shape(inFile: target.shape)?.kind == DatabaseEnum.kind {
+                target.shape
+            } else {
+                context.editor.service(KitNames.self)?.enumNamed(run.words, near: context.shape)
+            }
+            spans.append(LineSpan(run.range, named == nil ? .code : .pill(LineLooks.cardEnumFill, ink: LineLooks.cardEnumInk)))
+            after = words.dropFirst(run.count)
         }
-        var spans = [LineSpan(first.range, named == nil ? .code : .pill(LineLooks.cardEnumFill, ink: LineLooks.cardEnumInk))]
-        spans += words.dropFirst().map { LineSpan($0.range, ColumnGrammar.isFlag($0.text) ? .keyword : .plain) }
+        spans += after.map { LineSpan($0.range, ColumnGrammar.isFlag($0.text) ? .keyword : .plain) }
         return LineReading(row: TypeRef(words.map(\.text).joined(separator: " "), shape: named), spans: spans)
     }
 
     func print(_ type: TypeRef, in context: LineContext) -> LineText {
-        guard let id = type.shape, let name = context.editor.service(KitNames.self)?.name(of: id) else { return LineText(type.words) }
-        return LineText(name, references: [LineReference(range: NSRange(location: 0, length: (name as NSString).length), target: PartAddress(id))])
+        guard let id = type.shape, let name = context.editor.service(KitNames.self)?.name(of: id) else { return LineText(ColumnGrammar.written(type: type.words)) }
+        let written = ColumnGrammar.written(type: name)
+        let inner = written == name ? NSRange(location: 0, length: (name as NSString).length) : NSRange(location: 1, length: (written as NSString).length - 2)
+        return LineText(written, references: [LineReference(range: inner, target: PartAddress(id))])
     }
 
     func offers(at caret: Int, in line: LineText, reading: LineReading<TypeRef>, context: LineContext) -> LineOffers? {
@@ -186,12 +198,15 @@ struct ColumnReferenceGrammar: LineGrammar {
     }
 }
 
-/// A column's default, in its card: what it is as written, in code.
+/// A column's default, in its card: what it is as written, in code; a default in double quotes alone is the words between them,
+/// as its line reads one.
 struct ColumnDefaultGrammar: LineGrammar {
     func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<String> {
         let text = line.string.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return LineReading(row: nil) }
-        return LineReading(row: text, spans: ColumnGrammar.placedWords(of: line.string).map { LineSpan($0.range, .code) })
+        let words = ColumnGrammar.placedWords(of: text)
+        let value = words.count == 1 ? ColumnGrammar.unquoted(words[0].text) ?? text : text
+        return LineReading(row: value, spans: ColumnGrammar.placedWords(of: line.string).map { LineSpan($0.range, .code) })
     }
 
     func print(_ value: String, in context: LineContext) -> LineText { LineText(value) }
