@@ -24,7 +24,7 @@ extension TableDefinition: ShapeDefinition {
         let lines = KitPaper.rowsInView(rows.lines(columns.count), in: frame, context)
         // The table's keys, read once a frame and only for a table with rows in view.
         let keys = lines.isEmpty ? [:] : context.shapes.keys?.keys(of: shape.id) ?? [:]
-        let more = rows.more
+        let more = rows.more, names = lines.isEmpty ? nil : context.service(KitNames.self)
         for line in lines {
             if line == more?.line, let more {
                 MoreLine.draw(more.count, in: KitStyle.rowRect(line, in: frame), context)
@@ -32,13 +32,13 @@ extension TableDefinition: ShapeDefinition {
             }
             guard let index = rows.row(atLine: line), columns[index].id != rows.focused else { continue }
             rows.drawing(columns[index].id, in: context.cg) {
-                drawColumn(columns[index], of: shape.id, isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
+                drawColumn(columns[index], of: shape.id, names: names, isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
             }
         }
     }
 
     /// One column's row: its mark, its name, and its type at the right (the type wins the room: a name too long is cut).
-    private func drawColumn(_ column: Column, of table: ShapeID, isKey: Bool, in row: CGRect, _ context: RenderContext) {
+    private func drawColumn(_ column: Column, of table: ShapeID, names: KitNames?, isKey: Bool, in row: CGRect, _ context: RenderContext) {
         let cg = context.cg, middle = row.midY
         if column.primaryKey {
             RowMarks.draw(TableStyle.keySymbol, color: TableStyle.keyColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
@@ -47,8 +47,7 @@ extension TableDefinition: ShapeDefinition {
         } else if column.unique {
             RowMarks.draw(TableStyle.uniqueSymbol, color: TableStyle.uniqueColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
         }
-        let laid = ColumnRow(column, in: row, pill: Self.enumPill(of: column, in: table, registry: context.shapes.registry, inFile: context.shape(inFile:),
-                                                                  names: context.service(KitNames.self)))
+        let laid = ColumnRow(column, in: row, pill: Self.enumPill(of: column, in: table, registry: context.shapes.registry, inFile: context.shape(inFile:), names: names))
         if let null = laid.null { RowText.draw(null.line, at: null.x, middle: middle, in: cg) }
         if let pill = laid.pill { pill.label.draw(at: pill.rect.origin, in: cg) }
         if let type = laid.type { RowText.draw(type.line, at: type.x, middle: middle, room: type.width, in: cg) }
@@ -183,7 +182,7 @@ extension TableDefinition: CustomSkeleton {
         KitPaper.drawSkeleton(frame, in: context)
         let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
         var text: [CGRect] = [], pills: [CGRect] = [], fadedText: [CGRect] = [], fadedPills: [CGRect] = []
-        let more = rows.more
+        let more = rows.more, names = context.service(KitNames.self)
         for line in KitPaper.skeletonRowsInView(rows.lines(columns.count), in: frame, context) {
             if line == more?.line, let more {
                 if let bar = MoreLine.bar(more.count, in: KitStyle.rowRect(line, in: frame)) { text.append(bar) }
@@ -197,7 +196,7 @@ extension TableDefinition: CustomSkeleton {
             let type = KitPaper.bar(columns: SkeletonText.columns(of: column.type.words, upTo: TableStyle.skeletonMostColumns),
                                     column: TableStyle.skeletonTypeColumn, at: end, trailing: true, in: row, room: (end - start) / 2)
             if let type {
-                if Self.enumName(of: column, in: shape.id, registry: context.shapes.registry, inFile: context.shape(inFile:), names: context.service(KitNames.self)) != nil {
+                if Self.enumName(of: column, in: shape.id, registry: context.shapes.registry, inFile: context.shape(inFile:), names: names) != nil {
                     if taken { fadedPills.append(type) } else { pills.append(type) }
                 } else if taken { fadedText.append(type) } else { text.append(type) }
             }

@@ -155,7 +155,7 @@ extension EmptyBoardWindow {
         walk.press(.down)
         expectEqual(keys(editor), ["orders.customer_id -> customers.id"], "the first word is the target")
         expectEqual(table(editor, "orders")?.props.columns[1].unread, "extra", "the rest is the line's own")
-        expectEqual(w.line?.string, "customer_id uuid extra → customers.id")
+        expectEqual(w.line?.string, "customer_id uuid → customers.id extra", "the key first, so the line's first → is it")
         // Words that name no row: kept as the line's words, no key; the line, read again, makes none.
         card.go(to: "references")
         try require(card.field(of: "references")).selectAll(nil)
