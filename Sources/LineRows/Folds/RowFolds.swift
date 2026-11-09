@@ -138,6 +138,15 @@ public final class RowFolds {
         didChange(changed)
     }
 
+    /// Puts back `fold` on `id`, as `unfold` let it go: for a change that was refused.
+    func restore(_ fold: RowFold, of id: ShapeID) {
+        guard !fold.isEmpty, folds[id] == nil else { return }
+        folds[id] = fold
+        order.removeAll { $0 == id }
+        order.append(id)
+        didChange([id])
+    }
+
     /// Opens the "+N ›" line of `id`: every row its marks' fold hid shows, its closed headers stay closed.
     public func openMore(of id: ShapeID) {
         guard var fold = folds[id], fold.toMarked else { return }

@@ -433,15 +433,7 @@ final class ClipboardState {
         // added lives on its arrow, never on the table's record).
         let bound = shapes(of: landed, boundByChangesFrom: existing)
         let made = landed.filter { existing[$0] == nil }
-        // A shape only the push moved (one that grew above it in the same paste, `makeRoom`) is not one it changed: compared
-        // where it stands now.
-        func unmoved(_ record: AnyShapeRecord, to now: AnyShapeRecord?) -> AnyShapeRecord {
-            guard let origin = now?.box?.origin, record.box != nil else { return record }
-            var record = record
-            record.box?.origin = origin
-            return record
-        }
-        let changed = landed.filter { id in existing[id].map { unmoved($0, to: document[id]) != document[id] || bound.contains(id) } ?? false }
+        let changed = landed.filter { id in existing[id].map { differs($0, from: document[id]) || bound.contains(id) } ?? false }
         let touched = made + changed, shown = touched.isEmpty ? landed : touched
         let inside = Set(shown)
         editor.selectedShapeIDs = shown.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
@@ -454,6 +446,14 @@ final class ClipboardState {
         // Changes none of the shapes it found says (a pill on another board): said without counting what didn't change.
         guard !touched.isEmpty else { return editor.announce(ClipboardStyle.updated, priority: .low) }
         editor.announce(pastedSummary(made: made, changed: changed, labels: program.labels), priority: .low)
+    }
+
+    /// Whether `now` is not `old`, a move of its box aside: a shape only the push moved (one that grew above it in the same paste,
+    /// `makeRoom`) is not one the paste changed.
+    private func differs(_ old: AnyShapeRecord, from now: AnyShapeRecord?) -> Bool {
+        var old = old
+        if let origin = now?.box?.origin, old.box != nil { old.box?.origin = origin }
+        return old != now
     }
 
     /// Which of `shapes` a shape that changed since `old`, was made or was taken away is bound to first (an arrow of a key added,
@@ -470,7 +470,7 @@ final class ClipboardState {
             }, in: context)
             if let first, wanted.contains(first) { found.insert(first) }
         }
-        for record in document.shapes where !wanted.contains(record.id) && old[record.id] != record {
+        for record in document.shapes where !wanted.contains(record.id) && old[record.id].map({ differs($0, from: record) }) ?? true {
             visit(record)
             if let was = old[record.id] { visit(was) }
         }

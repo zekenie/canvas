@@ -117,6 +117,30 @@ extension EditorHarness {
         h.editor.paste()
         expectEqual(reads.recognizing, 2, "a change is read again")
     },
+    test("a reader that says what it reads of the file (`readsOfFile`) is asked again of the same pasteboard once that changes, and not before (review R45)") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let reads = Reads()
+        let h = try harness(pasteboard, [DrawPlugin(), TilesPlugin(), Contributor(id: "files") { r in
+            r.pasteReader("tiles", sniff: { $0.text?.hasPrefix("tiles ") == true },
+                          readsOfFile: { editor in editor.document.shapes.filter { $0.kind == Box.kind }.count }) { content, _ in
+                reads.recognizing += 1
+                return tiles(1)
+            }
+        }])
+        h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        pasteboard.setString("tiles 1", forType: .string)
+        h.editor.paste()
+        h.editor.paste()
+        expectEqual(reads.recognizing, 1, "read once while the file's boxes are as they were")
+        _ = h.add(Tile(CGRect(x: 0, y: 0, width: 50, height: 50)))
+        h.editor.paste()
+        expectEqual(reads.recognizing, 1, "a change to what it doesn't read leaves its reading")
+        _ = h.add(Box(slot(5)))
+        h.editor.paste()
+        h.editor.paste()
+        expectEqual(reads.recognizing, 2, "read again once what it reads changed, then once more kept")
+    },
     test("a paste lands beside the selection, selected, announced, in one step called Paste and the reader's name; the context menu's centers on its click and ⇧⌘V on the pointer") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }

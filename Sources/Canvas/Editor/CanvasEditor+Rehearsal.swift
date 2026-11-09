@@ -7,12 +7,15 @@ import CoreGraphics
 
 extension CanvasEditor {
     /// A new editor of this one's file as it is now, showing the same board through the same view (its size, what the
-    /// host covers of it, where the camera is headed) and calling the root what this one calls it, so a change worked
+    /// host covers of it, where the camera is headed, the view values kept of it: a table folded here is laid out folded there,
+    /// so a push measured on the copy is the one the person would see) and calling the root what this one calls it, so a change worked
     /// out on it lands where it would land here. What it commits reaches nothing of this one, and its clock stands
     /// still (`StoppedScheduler`), so nothing its services would do later ever happens. Its boards are this file's,
     /// sharing what neither writes, as any copy of a board does.
     public func rehearsal() -> CanvasEditor {
         let copy = CanvasEditor(registry: registry, file: file, showing: board, scheduler: StoppedScheduler())
+        // The folds the person has: a service already made hears them restored, one made later reads them as it is.
+        copy.restoreViewValues(viewValueStore)
         copy.nameRoot(rootName)
         copy.coveredTop = coveredTop
         copy.coveredEdges = coveredEdgesAhead?() ?? coveredEdges

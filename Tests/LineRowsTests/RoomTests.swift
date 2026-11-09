@@ -78,6 +78,25 @@ import TestKit
         expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [below], "back in its place")
         expect(b.editor.editedShapeOverflow == nil)
     },
+    test("a tally whose stored height is a row's, edited at a row with no waiting line shown and no line wider, is not lifted over the tally under its rows; once a row commits and its rows at rest grow, it still isn't (review R25)") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green", "blue", "pink", "gold"])           // stores 240 by 40, lays out to 120 at rest
+        let under = b.tally("pears", ["bosc"], at: CGPoint(x: 100, y: 150))            // inside the rows' room at rest, under the box it stores
+        let overlap = CGRect(x: 120, y: 150, width: 40, height: 10)
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [id, under], "at rest")
+        b.begin(id, at: CGPoint(x: 130, y: 120))
+        expect(b.focus?.hasPrefix("row") == true, "the caret in a row: \(b.focus ?? "none")")
+        expect(b.editor.editedShapeOverflow == nil, "laid out as it is at rest: no room beyond it")
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [id, under], "not lifted from a box a row tall")
+        b.press(.escape)
+        b.begin(id)
+        b.type("plum")
+        b.press(.return)
+        b.press(.escape)
+        b.begin(id, at: CGPoint(x: 130, y: 120))
+        expect(b.editor.editedShapeOverflow == nil, "a row more at rest: the frame at rest is its own, never lifted over the tally it pushed")
+        b.press(.escape)
+    },
     test("a line wider than the tally, committed, pushes only what is under the tally at rest, never what is under its widening") {
         let b = try Bench()
         let id = b.tally("apples", ["red", "green"])                                  // 100…360 across, ends at 160

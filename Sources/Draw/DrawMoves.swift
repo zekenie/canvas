@@ -420,7 +420,8 @@ public struct CrossingArrows {
                 for (next, at) in tries {
                     let out = at.map { route.landing(of: size, at: next, against: $0, in: surroundings, avoiding: avoiding) }
                         ?? route.landing(of: size, at: next, in: surroundings, avoiding: avoiding)
-                    guard let out else { continue }
+                    // One in a frame nobody may change is no spot: the first one, which was allowed, stays where none else is clear.
+                    guard let out, !out.above.contains(where: { isReadOnly($0, in: startMoves ? destDoc : sourceDoc) }) else { continue }
                     let end = CGPoint(x: out.rect.minX, y: out.rect.midY)
                     let crossesPill = from.map { from in (planned[board] ?? []).contains { Surroundings.crosses(from, end, $0.insetBy(dx: 1, dy: 1)) } } ?? false
                     if clear(out.rect), !crossesPill {

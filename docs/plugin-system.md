@@ -15955,7 +15955,9 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   as its bottom went down (or as far as leaves the room its kind keeps below it, where the gap was
   less), and pushes what it reaches the same way, one pass top to bottom (a shape two reach moves by
   the larger); a shape the body placed against the growth already (`placedAgainstGrowth`: what
-  `canvas draw` solved against the grown rooms) moves only by the push of the shape above it. What a container holds goes with it, arrows bound to it follow. A
+  `canvas draw` solved against the grown rooms) moves only by the push of the shape above it; a body
+  that lets go of a view the layout reads live as it writes (rows dropped into a folded table unfold it) says what the shape was
+  at rest when it began (`restedAs(_:for:)`), so the push is for all it shows now. What a container holds goes with it, arrows bound to it follow. A
   container whose members the push takes past its bottom less the gap grows to hold them the gap
   inside, and pushes in its own container; innermost first. Where it stops the person takes over:
   read-only shapes stay and push nothing, a read-only container doesn't grow, a shape the step put in

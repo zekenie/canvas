@@ -224,7 +224,8 @@ extension CanvasEditor {
         }
         guard let made else { return [] }
         selectedShapeIDs = made
-        revealIfOffscreen(made)
+        // The old versions stay in view with the copies, where both fit: v1's rows are what the person picks from next.
+        revealIfOffscreen(made, keeping: apis)
         announce(APIStyle.newVersionStep)
         return made
     }

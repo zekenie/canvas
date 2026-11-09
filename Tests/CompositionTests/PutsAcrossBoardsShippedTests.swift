@@ -14,6 +14,7 @@ import Locking
 import References
 import Selection
 import SlashCommands
+import StickyNotes
 import ShippedTesting
 import TestKit
 import Titles
@@ -141,6 +142,42 @@ private func did(_ result: JSON) -> [String] { result["changes"]?.arrayValue?.co
             expectEqual(kept.props.start.binding?.part, column)
         }
     },
+    test("R3: a cut column pasted on one board, and again on another: the first is the move, the second a copy of what the first landed, which is looked up on its own board") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        _ = try drawnInProcess(#"""
+            table "orders" columns: "id uuid pk\nnote text\ntotal_cents int"
+            subboard "billing" below "orders"
+            subboard "archive" right of "billing"
+            """#, on: editor)
+        let orders = try require(table(editor, "orders"))
+        let column = orders.props.columns[1].id
+        @MainActor func boardOf(_ title: String) throws -> BoardID {
+            BoardID(owner: try require(editor.document.shapes.first { $0[TitleProperty.self] == title }).id)
+        }
+        let billing = try boardOf("billing"), archive = try boardOf("archive")
+        w.window.makeFirstResponder(w.canvas)
+        editor.undoHistory.seal()
+        let walk = w.walk()
+        editor.selectedShapeIDs = [orders.id]
+        editor.selectItems([AnyHashable(column)], of: orders.id)
+        walk.press(Chord("x", .command))
+        expect(table(editor, "orders")?.props.columns.contains { $0.id == column } == false, "cut: the column is gone from orders")
+        expect(editor.showBoard(billing))
+        w.window.makeFirstResponder(w.canvas)
+        editor.selectedShapeIDs = []
+        walk.press(Chord("v", .command))
+        expectEqual(editor.contents(of: billing).shapes.compactMap { $0.typed(as: DatabaseTable.self) }.count, 1, "the first paste, on billing: the column's table")
+        expect(editor.showBoard(archive))
+        w.window.makeFirstResponder(w.canvas)
+        editor.selectedShapeIDs = []
+        walk.press(Chord("v", .command))
+        expectEqual(editor.contents(of: archive).shapes.compactMap { $0.typed(as: DatabaseTable.self) }.count, 1, "the second, on archive: a table of the column")
+        expectEqual(editor.contents(of: billing).shapes.compactMap { $0.typed(as: DatabaseTable.self) }.count, 1, "billing's keeps its column: a copy, not a second move")
+        expectEqual(undoTitle(w.window), "Undo Paste Column")
+    },
     test("R4: a paste refused after it widened a table it found on another board (a new table it would put in a locked database here) leaves that table, the file and Undo as they were") {
         let w = try kitWindow(#"""
             table "orders" columns: "id uuid pk"
@@ -264,6 +301,35 @@ private func did(_ result: JSON) -> [String] { result["changes"]?.arrayValue?.co
         expectEqual(byTitle["Billing API v2"]?.props.endpoints.compactMap { $0.endpoint?.path }, ["/statements"], "the second's endpoints, never dropped")
         expectEqual(byTitle["Billing API v2"]?.props.version, "2.0")
     },
+    test("R12: two files of one major version, one title spaced differently, paste as two APIs, the later numbered, not titled by a version the first has too") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("paste-openapi-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func spec(_ title: String, _ version: String, _ path: String) -> String {
+            """
+            openapi: 3.0.0
+            info: {title: '\(title)', version: '\(version)'}
+            paths:
+              /\(path):
+                get:
+                  responses:
+                    '200': {description: ok}
+            """
+        }
+        let one = folder.appendingPathComponent("a.yaml"), two = folder.appendingPathComponent("b.yaml")
+        try spec("Billing API", "1.0", "invoices").write(to: one, atomically: true, encoding: .utf8)
+        try spec("Billing  API ", "1.4", "statements").write(to: two, atomically: true, encoding: .utf8)
+        let pasteboard = ShippedPlugins.pasteboard
+        pasteboard.clearContents()
+        pasteboard.writeObjects([one as NSURL, two as NSURL])
+        expect(commandV(w))
+        let apis = editor.document.shapes.compactMap { $0.typed(as: API.self) }
+        expectEqual(apis.compactMap { $0[TitleProperty.self] }.sorted(), ["Billing API", "Billing API 2"], "the put reads the spaced title as the same: numbered, as v1 is the first's too")
+        expectEqual(apis.flatMap { $0.props.endpoints.compactMap { $0.endpoint?.path } }.sorted(), ["/invoices", "/statements"])
+    },
     test("R42: a schema pasted again with columns added to a table that grows over the one below it: only it is said and selected, never the one it pushed") {
         let w = try kitWindow()
         defer { w.board.close() }
@@ -280,6 +346,27 @@ private func did(_ result: JSON) -> [String] { result["changes"]?.arrayValue?.co
         expect(try require(table(editor, "t5")).props.frame.minY > t5Was, "t5 pushed below t1's new bottom")
         expectEqual(editor.announcements.last, "Updated Table")
         expectEqual(editor.selectedShapeIDs.compactMap { editor.document[$0]?[TitleProperty.self] }, ["t1"], "the one it changed, not the one it pushed")
+    },
+    test("a paste that widens a table folded to its marks, with a column its fold hides, pushes nothing: the put is drawn with the person's folds") {
+        let w = try kitWindow(#"""
+            table "orders" columns: "id uuid pk\nnote text\ntotal int"
+            """#)
+        defer { w.board.close() }
+        let editor = w.editor
+        let orders = try require(table(editor, "orders"))
+        editor.rowFolds?.fold([orders.id])
+        let folded = try require(editor.shapeContext.frame(of: orders.id))
+        _ = try drawnInProcess(#"table "refunds" columns: "id uuid pk""#, on: editor)
+        let refunds = try require(table(editor, "refunds")).id
+        editor.transact("Place") { $0.update(refunds) { $0.box?.origin = CGPoint(x: folded.minX, y: folded.maxY + 30) } }
+        editor.undoHistory.seal()
+        let placed = try require(editor.shapeContext.frame(of: refunds))
+        pasteboardHolds("CREATE TABLE orders (id uuid PRIMARY KEY, note text, total int, placed_at_in_the_shoppers_own_time_zone timestamp with time zone);")
+        expect(commandV(w))
+        expectEqual(table(editor, "orders")?.props.columns.count, 4, "the column added")
+        expect((table(editor, "orders")?.props.frame.width ?? 0) > orders.props.frame.width, "the table widened")
+        expectEqual(editor.rowFolds?.isFolded(orders.id), true, "still folded")
+        expectEqual(editor.shapeContext.frame(of: refunds)?.minY, placed.minY, "the fold shows no row more: nothing pushed")
     },
     test("R43 and R44: a paste's keys to one table of another board share one pill; a key to a column the same paste adds to that table is drawn the first time") {
         let w = try kitWindow(#"""
@@ -304,6 +391,39 @@ private func did(_ result: JSON) -> [String] { result["changes"]?.arrayValue?.co
         expectEqual(undoTitle(w.window), "Undo Paste SQL")
         editor.undo()
         expectEqual(table(editor, "customers")?.props.columns.map(\.name), ["id", "email"], "one Undo takes both boards' changes")
+        expectEqual(pills(editor, on: billing).count, 0)
+    },
+    test("R42: a note under a table that grows, pushed by the paste and mentioning another pasted table, does not make that table one the paste changed") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        var schema = ["CREATE TABLE t1 (id int PRIMARY KEY, a text);", "CREATE TABLE t2 (id int PRIMARY KEY);"]
+        pasteboardHolds(schema.joined(separator: "\n"))
+        expect(commandV(w))
+        _ = try drawnInProcess(#"sticky-note "memo" below "t1" (gap: 10) text: "see @[t2]""#, on: editor)
+        editor.undoHistory.seal()
+        let t1Was = try require(table(editor, "t1")).props.frame
+        let memoID = try require(editor.document.shapes.first { $0.kind == StickyNote.kind }).id
+        let memoWas = try require(editor.document[memoID]?.box)
+        schema[0] = "CREATE TABLE t1 (id int PRIMARY KEY, a text, b text, c text, d text, e text, f text, g text, h text, i text, j text);"
+        pasteboardHolds(schema.joined(separator: "\n"))
+        expect(commandV(w))
+        let t1 = try require(table(editor, "t1"))
+        expect(t1.props.frame.height > t1Was.height, "t1 grew")
+        expect(try require(editor.document[memoID]?.box).minY > memoWas.minY, "the memo under it pushed")
+        expectEqual(editor.selectedShapeIDs.compactMap { editor.document[$0]?[TitleProperty.self] }, ["t1"], "the table that grew, not t2, which the pushed memo mentions")
+    },
+    test("R43: draw's `columns:` with two keys to a table on another board makes one pill for it, as `share:` would, and one drawn again is unchanged") {
+        let w = try kitWindow(#"""
+            subboard "billing"
+            """#)
+        defer { w.board.close() }
+        let editor = w.editor
+        let billing = try board(editor, "billing")
+        _ = try drawnInProcess(#"table "customers" in "billing" columns: "id uuid pk\ncode text unique""#, on: editor)
+        _ = try drawnInProcess(#"table "statements" columns: "id uuid pk\nbilling_id uuid → customers.id\nshipping_code text → customers.code""#, on: editor)
+        expectEqual(pills(editor, on: .root).count, 1, "one pill for customers, shared by both keys")
+        expectEqual(keys(editor), ["statements.billing_id -> customers.id", "statements.shipping_code -> customers.code"])
         expectEqual(pills(editor, on: billing).count, 0)
     },
     test("R45: the same SQL pasted once the file has an enum one of its columns names is measured with the enum's pill, as a fresh paste is") {
@@ -350,6 +470,28 @@ private func did(_ result: JSON) -> [String] { result["changes"]?.arrayValue?.co
         let now = try require(editor.shapeContext.frame(of: orders.id)), under = try require(editor.shapeContext.frame(of: items))
         expect(now.maxY > folded.maxY, "the keyed column shows in the fold: \(folded) \(now)")
         expect(under.minY >= now.maxY + 60 - 0.5, "pushed by the line its key shows: \(now) \(under)")
+    },
+    test("R41: a key the step lets go is no longer a mark: the folded table reads a line shorter in the step that deleted it, asked again as the log grows") {
+        let w = try kitWindow(#"""
+            table "customers" columns: "id uuid pk"
+            table "orders" right of "customers" (gap: 200) columns: "id uuid pk\nnote text\ntotal int → customers.id"
+            """#)
+        defer { w.board.close() }
+        let editor = w.editor
+        let orders = try require(table(editor, "orders"))
+        editor.rowFolds?.fold([orders.id])
+        let withKey = try require(editor.shapeContext.frame(of: orders.id))
+        let key = try require(keyArrows(editor).first).id
+        var inside: [CGRect] = []
+        editor.transact("Let Go") { transaction in
+            // Laid out in the step (a shape the step wrote is, one it didn't reads the size the editor kept).
+            transaction.update(orders.id) { $0.box?.origin.x += 1 }
+            transaction.delete([key])
+            inside.append(transaction.shapes.frame(of: orders.id) ?? .zero)
+            transaction.update(orders.id) { $0.box?.origin.x += 1 }
+            inside.append(transaction.shapes.frame(of: orders.id) ?? .zero)
+        }
+        expect(inside.allSatisfy { $0.height < withKey.height - KitStyle.rowHeight / 2 }, "a line shorter without the key: \(withKey.height) \(inside.map(\.height))")
     },
     test("paste-1: a pasted schema laid out by its keys: each table beside, above, below or corner to corner with the tables it keys to, so no key's run passes under a card") {
         let w = try kitWindow()
@@ -417,29 +559,34 @@ private func did(_ result: JSON) -> [String] { result["changes"]?.arrayValue?.co
             return old.insetBy(dx: 2, dy: 2).contains(CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
         }
         expect(!crosses, "v2's writes line runs clear of v1")
+        let shown = editor.cameraTarget.toWorld(editor.unobscuredViewport)
+        expect(shown.intersects(copy) && shown.intersects(old), "v1 stays in view with v2: \(shown) \(old) \(copy)")
     },
-    test("W-apis-1: rows typed into an API above a table push the table so its pill stays clear of the API's waiting line") {
-        let w = try kitWindow(#"""
-            api "orders API" endpoints: "GET /orders"
-            table "orders" below "orders API" (gap: 40) columns: "id uuid pk"
-            """#)
-        defer { w.board.close() }
-        let editor = w.editor
-        let api = try require(editor.document.shapes.first { $0[TitleProperty.self] == "orders API" }).id
-        let orders = try require(table(editor, "orders")).id
-        let walk = w.walk()
-        editor.selectedShapeIDs = [api]
-        editor.beginEditing(api)
-        w.window.settle()
-        for line in ["POST /orders", "GET /orders/{id}"] {
-            w.type(line, with: walk)
-            walk.press(.return)
+    test("W-apis-1: rows typed into an API above a table push the table so its pill stays clear of the API's waiting line, at 100%, 75% and 50% zoom") {
+        for zoom in [1, 0.75, 0.5] as [CGFloat] {
+            let w = try kitWindow(#"""
+                api "orders API" endpoints: "GET /orders"
+                table "orders" below "orders API" (gap: 40) columns: "id uuid pk"
+                """#)
+            defer { w.board.close() }
+            let editor = w.editor
+            editor.camera = Camera(origin: .zero, zoom: zoom)
+            let api = try require(editor.document.shapes.first { $0[TitleProperty.self] == "orders API" }).id
+            let orders = try require(table(editor, "orders")).id
+            let walk = w.walk()
+            editor.selectedShapeIDs = [api]
+            editor.beginEditing(api)
             w.window.settle()
-            let pill = try require(editor.adornmentFrames(of: orders).first { $0.adornment.placement == .aboveTopLeft }?.rect, "orders' pill")
-            let overflow = editor.editedShapeOverflow?.areas ?? []
-            expect(!overflow.contains { $0.intersects(pill) }, "the waiting line clear of orders' pill after \(line): \(overflow) \(pill)")
+            for line in ["POST /orders", "GET /orders/{id}"] {
+                w.type(line, with: walk)
+                walk.press(.return)
+                w.window.settle()
+                let pill = try require(editor.adornmentFrames(of: orders).first { $0.adornment.placement == .aboveTopLeft }?.rect, "orders' pill")
+                let overflow = editor.editedShapeOverflow?.areas ?? []
+                expect(!overflow.contains { $0.intersects(pill) }, "the waiting line clear of orders' pill after \(line) at \(zoom): \(overflow) \(pill)")
+            }
+            walk.press(.escape)
         }
-        walk.press(.escape)
     },
     test("a pill a move plans for one key is reused by another key of the move only where that one's line to it is clean: beside, a pill of its own; below, the one pill") {
         for beside in [true, false] {

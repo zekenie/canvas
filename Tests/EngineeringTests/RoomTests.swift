@@ -135,10 +135,11 @@ extension EditorHarness {
             expectEqual(b.columnNames(items), ["id", "order_id", "qty"])
         }
     },
-    test("a column dragged into a table folded to its marks pushes what's under it by the row it lands (it peeks through the fold), then the table unfolds (review R9)") {
+    test("a column dragged into a table folded to its marks pushes what's under it for every row the table shows once it unfolds, not only the one it lands (review R9)") {
         let b = try KitBench()
         let orders = b.table("orders", ["id uuid pk", "customer_id uuid", "status text", "total_cents int"])
-        let items = b.table("order_items", ["id uuid pk", "order_id uuid", "qty int", "note text"], at: CGPoint(x: 520, y: 100))
+        let items = b.table("order_items", ["id uuid pk", "order_id uuid", "qty int", "note text", "a text", "b text", "c text", "d text", "e text"],
+                            at: CGPoint(x: 520, y: 100))
         b.editor.rowFolds?.fold([items])
         b.window.settle()
         let folded = try require(b.h.frame(items))
@@ -149,11 +150,12 @@ extension EditorHarness {
         b.click(at: status)
         b.drag(from: status, to: CGPoint(x: b.rect(ofRow: 0, in: items).midX, y: b.rect(ofRow: 0, in: items).maxY - 3))
         b.h.release()
-        expectEqual(b.columnNames(items).count, 5, "the column landed")
+        expectEqual(b.columnNames(items).count, 10, "the column landed")
         expectEqual(b.undoName, "Move Column")
         expectEqual(b.editor.rowFolds?.isFolded(items), false, "unfolded once it landed")
-        let pushed = try require(b.h.frame(refunds)).minY
-        expect(pushed >= refundsAt + KitStyle.rowHeight - 0.5, "pushed by the row it gained in the fold: \(refundsAt) → \(pushed)")
+        let pushed = try require(b.h.frame(refunds)).minY, unfolded = try require(b.h.frame(items))
+        expect(unfolded.maxY - folded.maxY > 5 * KitStyle.rowHeight, "the table unfolded shows rows the fold hid")
+        expect(pushed >= unfolded.maxY + 20 - 0.5, "what's under it clears the unfolded table, the gap of 20 kept: \(refundsAt) → \(pushed), table to \(unfolded.maxY)")
         b.editor.undo()
         expectEqual(b.h.frame(refunds)?.minY, refundsAt, "one Undo puts it back")
     },

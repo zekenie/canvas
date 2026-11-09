@@ -2,6 +2,7 @@ import Canvas
 import Clipboard
 import Draw
 import Foundation
+import Titles
 import Types
 
 // ⌘V of OpenAPI: what the reader read (`OpenAPIReader`), as the draw program Draw puts down (`DrawPut`, decided 16). The API an
@@ -74,24 +75,28 @@ public enum OpenAPIPaste {
 
     /// Each document's API's title: its own (else `APIStyle.pastedTitle`), but one an earlier document of the paste has already
     /// (two files of one spec, v1 and v2 of "Billing API") its major version added as New Version names one ("Billing API v2"),
-    /// else a number, so each is an API of its own and the put never joins the second into the first (review R12).
+    /// when that differs from the version of the document that holds the plain title, else a number ("Billing API 2"), so each is
+    /// an API of its own and the put never joins the second into the first (review R12). Titles are the same as the put reads
+    /// them: whitespace folded, case kept (`TitleProperty.folded`).
     @MainActor
     static func titles(of documents: [OpenAPIDocument]) -> [String] {
-        var used: Set<String> = [], titles: [String] = []
+        var used: Set<String> = [], majors: [String: String] = [:], titles: [String] = []
         for document in documents {
-            let base = document.title.isEmpty ? APIStyle.pastedTitle : document.title
+            let base = TitleProperty.folded(document.title) ?? APIStyle.pastedTitle
+            let major = String(document.version.drop { $0 == "v" || $0 == "V" }.prefix { $0.isNumber })
             var title = base
-            if used.contains(title.lowercased()) {
-                let major = document.version.drop { $0 == "v" || $0 == "V" }.prefix { $0.isNumber }
-                if !major.isEmpty, !used.contains("\(base) v\(major)".lowercased()) {
+            if used.contains(base) {
+                if !major.isEmpty, major != majors[base], !used.contains("\(base) v\(major)") {
                     title = "\(base) v\(major)"
                 } else {
                     var number = 2
-                    while used.contains("\(base) \(number)".lowercased()) { number += 1 }
+                    while used.contains("\(base) \(number)") { number += 1 }
                     title = "\(base) \(number)"
                 }
+            } else {
+                majors[base] = major
             }
-            used.insert(title.lowercased())
+            used.insert(title)
             titles.append(title)
         }
         return titles

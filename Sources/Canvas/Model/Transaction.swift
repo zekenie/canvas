@@ -97,6 +97,14 @@ public struct Transaction {
     /// under the table's new bottom): `makeRoom()` moves one only by what pushed the shape above it, never again by that
     /// shape's own growth, so the gap the body left is kept.
     public var placedAgainstGrowth: Set<ShapeID> = []
+
+    /// States that `id` was `frame` tall when this step began, at rest, where the body also changes what it shows with no write (a
+    /// fold let go as rows are dropped in: a view the layout reads live, so the step's two readings would both see it unfolded):
+    /// `makeRoom()` then measures its growth from that frame, and pushes what's below for all it shows now (review R9).
+    public mutating func restedAs(_ frame: CGRect, for id: ShapeID) {
+        guard let origin = document[id]?.box?.origin else { return }
+        roomBaselines[id] = (origin, frame)
+    }
     /// Boards going in with the shapes inserted here that own them, and the boards under those: what
     /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
     /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
