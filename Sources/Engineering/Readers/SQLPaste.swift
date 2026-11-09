@@ -49,28 +49,29 @@ public enum SQLPaste {
 
     /// What ⌘V puts down of the pasteboard's SQL: nil when no table and no enum reads.
     @MainActor
-    static func read(_ content: PasteContent, keys: KeyChannel) -> DrawPut? {
-        text(of: content).flatMap { program(of: $0, keys: keys) }
+    static func read(_ content: PasteContent, keys: KeyChannel, fileEnums: Set<String> = []) -> DrawPut? {
+        text(of: content).flatMap { program(of: $0, keys: keys, fileEnums: fileEnums) }
     }
 
-    /// What a paste of `text` puts down: nil when no table and no enum reads.
+    /// What a paste of `text` puts down: nil when no table and no enum reads. `fileEnums`: the names of the enums the file has, which
+    /// a column of the paste may name too (drawn as a pill, so measured as one).
     @MainActor
-    static func program(of text: String, keys: KeyChannel) -> DrawPut? {
+    static func program(of text: String, keys: KeyChannel, fileEnums: Set<String> = []) -> DrawPut? {
         let schema = SQLReader.read(text)
-        return schema.isEmpty ? nil : put(schema, keys: keys)
+        return schema.isEmpty ? nil : put(schema, keys: keys, fileEnums: fileEnums)
     }
 
     /// The program that puts `schema` down: its enums on rows of their own, then its tables as their keys lay them out (`laidOut`),
     /// four to a row, each table's keys the edges it implies.
     @MainActor
-    static func put(_ schema: SQLSchema, keys: KeyChannel) -> DrawPut {
+    static func put(_ schema: SQLSchema, keys: KeyChannel, fileEnums: Set<String> = []) -> DrawPut {
         func rows(_ shapes: [DrawPut.Shape]) -> [[DrawPut.Shape]] {
             stride(from: 0, to: shapes.count, by: shapesARow).map { Array(shapes[$0..<min($0 + shapesARow, shapes.count)]) }
         }
         let enums = schema.order.compactMap { item -> DrawPut.Shape? in
             if case .enumType(let index) = item { enumType(schema.enums[index]) } else { nil }
         }
-        let tables = laidOut(schema).map { table(schema.tables[$0], of: schema, keys: keys) }
+        let tables = laidOut(schema).map { table(schema.tables[$0], of: schema, keys: keys, fileEnums: fileEnums) }
         return DrawPut(rows: rows(enums) + rows(tables))
     }
 
@@ -95,7 +96,7 @@ public enum SQLPaste {
 
     /// A table's statement: its title, its schema's database, its columns as JSON, its keys as edges.
     @MainActor
-    private static func table(_ table: SQLTable, of schema: SQLSchema, keys: KeyChannel) -> DrawPut.Shape {
+    private static func table(_ table: SQLTable, of schema: SQLSchema, keys: KeyChannel, fileEnums: Set<String>) -> DrawPut.Shape {
         let keyed = Set(table.keys.map(\.column))
         let columns: [Any] = table.columns.map { column in
             var item: [String: Any] = [
@@ -128,10 +129,11 @@ public enum SQLPaste {
         var shape = shape(DatabaseTable.kind, table.name)
         shape.json = [(key: "columns", text: json(columns))]
         shape.edges = edges
-        // As wide as its longest line, as it reads (an enum the paste makes a pill); one the file has keeps the width it has.
+        // As wide as its longest line, as it reads (an enum the paste makes, or the file has, a pill); one the file has keeps the width
+        // it has.
         var shown = table.columns
         for index in shown.indices { shown[index].type.words = typeWords(shown[index].type.words, in: schema, from: table.name.schema) }
-        let enums = Set(schema.enums.map { typeWords($0.name.description, in: schema) })
+        let enums = Set(schema.enums.map { typeWords($0.name.description, in: schema) }).union(fileEnums)
         shape.size = DrawPut.Dimensions(width: TableDrawing.wholeWidth(of: shown, enums: enums))
         return shape
     }

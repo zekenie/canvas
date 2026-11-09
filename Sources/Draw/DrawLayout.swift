@@ -42,6 +42,21 @@ extension Drawing {
                 resized[existing.id] = placed
             }
         }
+        // A pill landed clear of the board as it was, before the run restated a shape (said after it) taller, is landed again where
+        // such a shape, or another pill landed, is in its way.
+        for index in items.indices {
+            guard let from = items[index].landedFrom, let rect = items[index].placed else { continue }
+            let near = resized[from.near]
+            let others = resized.filter { $0.key != from.near }.map(\.value)
+                + items.indices.filter { $0 != index && items[$0].landedFrom != nil }.compactMap { items[$0].placed }
+            let wanted = rect.insetBy(dx: -LayoutProblem.horizontalClearance, dy: -LayoutProblem.verticalClearance)
+            guard others.contains(where: { $0.intersects(wanted) }) || near.map({ $0.intersects(rect) }) == true,
+                  let line = context.geometry(of: from.near)?.parts.frame(from.row)?.rect,
+                  let surroundings = Surroundings(on: target.board, moving: rect.size, in: editor),
+                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: near, avoiding: others) else { continue }
+            items[index].exact = clean.rect.origin
+            items[index].placed = clean.rect
+        }
         let filed = ObstacleIndex(target.paintOrder(), document: document, context: context, excluding: excluded, resized: resized)
         // The pills a program's run put at spots of their own (a far pill landed where its line is clean) are in the way of what else
         // the run places, as the board's shapes are; numbered after the board's, they are no shape, which a zone or a push names by.
@@ -114,8 +129,9 @@ extension Drawing {
                         let them = items[other]
                         if let theirs = them.free {
                             refs.append(.free(theirs))
-                        } else if let existing = them.existing, let placed = them.placed {
-                            refs.append(fixedShape(existing, rect: placed, gap: them.shape.gap))
+                        } else if let placed = them.placed {
+                            // Where it stays, or where a program's run puts it exactly (a shape it makes, not on the board yet).
+                            refs.append(fixedShape(them.existing ?? them.record, rect: placed, gap: them.shape.gap))
                         }
                         if target.part?.isCorner == true {
                             outline = Drawing.outline(of: them.record, at: CGRect(origin: .zero, size: them.room), in: registry)
@@ -335,6 +351,38 @@ extension Drawing {
                                               "\(subject(of: item)) was resized where it is, and now overlaps \(named(first)) — place it to move it clear"))
                 }
             }
+        }
+        landPillsByTheirLines()
+    }
+
+    /// A pill the solver put beside the shape it is joined from, at one of its rows (a key's, a call's: an edge naming no side), in a
+    /// run that places shapes of its own, is landed again once they are placed: where its line from the row is clean, among them
+    /// (`Surroundings.landing(of:joinedFrom:of:)`), as an editor's pick lands one. The shape it is joined from may be one the run
+    /// places (a pasted table): its row is read from the shape as it will be. Where nowhere is clean, it stays where the solver put it.
+    private mutating func landPillsByTheirLines() {
+        let registry = registry, context = target.shapes
+        var itemOf: [ShapeID: Int] = [:]
+        for index in items.indices where items[index].existing == nil { itemOf[items[index].record.id] = index }
+        for index in items.indices {
+            guard items[index].exact == nil, let from = items[index].landedFrom, let rect = items[index].placed else { continue }
+            let bounds: CGRect, line: CGRect
+            if let near = itemOf[from.near] {
+                guard let placed = items[near].placed else { continue }
+                // The shape alone, where its record (as it will be) says it is.
+                let alone = ShapeContext(document: CanvasDocument(shapes: [items[near].record]), registry: registry, camera: context.camera)
+                guard let row = alone.geometry(of: from.near)?.parts.frame(from.row)?.rect else { continue }
+                (line, bounds) = (row, placed)
+            } else {
+                guard let row = context.geometry(of: from.near)?.parts.frame(from.row)?.rect, let near = context.geometry(of: from.near)?.bounds else { continue }
+                (line, bounds) = (row, near)
+            }
+            let others = items.indices.filter { $0 != index && $0 != itemOf[from.near] }.compactMap { items[$0].placed }
+            guard let surroundings = Surroundings(on: target.board, moving: rect.size, in: editor),
+                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: bounds, avoiding: others) else { continue }
+            items[index].placed = clean.rect
+            items[index].zones = clean.above
+            items[index].record.box = CGRect(origin: CGPoint(x: clean.rect.minX - items[index].roomOffset.x, y: clean.rect.minY - items[index].roomOffset.y),
+                                             size: items[index].size)
         }
     }
 

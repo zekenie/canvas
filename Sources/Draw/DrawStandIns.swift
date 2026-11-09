@@ -617,8 +617,14 @@ extension Drawing {
                 ?? route.standIns.make(kind, standingFor: target.id, label: label), record.box != nil else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(said)")
         }
-        // A program's run puts it exactly where it says, as a shape statement's shape (`DrawOptions.places`, by the edge's line).
-        let exact = options.places[statement.line]
+        // A program's run puts it exactly where it says, as a shape statement's shape (`DrawOptions.places`, by the edge's line): not
+        // where an edge a shape's values imply is on the shape's own line, which is the shape's place (a pasted table's key's pill
+        // was put on the table).
+        let onShapesLine = script.statements.contains { line in
+            if case .shape = line.body { return line.line == statement.line }
+            return false
+        }
+        let exact = onShapesLine ? nil : options.places[statement.line]
         if !placed.clauses.isEmpty || placed.container != nil || exact != nil {
             let size = record.box!.size
             var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: placed.clauses, container: placed.container),
@@ -659,7 +665,7 @@ extension Drawing {
         // Joined to a row of a shape that stays, by an edge that names no side, in a run that places no box of its own (only pills
         // landed so): where its line from the row is clean, as an editor's pick lands one (`Surroundings.landing(of:joinedFrom:of:)`),
         // so a calls arrow meets the pill's side, level with its row (E4 panel 4), never its bottom from below. Else as below.
-        if item == nil, !moves, side == nil, let nearRow, !items.contains(where: { $0.moves && $0.exact == nil }),
+        if item == nil, !moves, !movesWithRun(near), side == nil, let nearRow, !items.contains(where: { $0.moves && $0.exact == nil }),
            let line = self.target.shapes.geometry(of: near)?.parts.frame(nearRow)?.rect,
            let surroundings = Surroundings(on: self.target.board, moving: size, in: editor),
            let clean = surroundings.landing(of: size, joinedFrom: line, of: near,
@@ -669,6 +675,7 @@ extension Drawing {
             standIn.standsFor = said
             standIn.implied = true
             standIn.exact = clean.rect.origin
+            standIn.landedFrom = (near, nearRow)
             items.append(standIn)
             return (record.id, nil)
         }
@@ -680,6 +687,8 @@ extension Drawing {
         standIn.targets = targets
         standIn.standsFor = said
         standIn.implied = true
+        // From a row, naming no side: landed again where its line is clean once the run's shapes are placed (`place()`).
+        if side == nil, let nearRow { standIn.landedFrom = (item.map { items[$0].record.id } ?? near, nearRow) }
         items.append(standIn)
         return (record.id, nil)
     }

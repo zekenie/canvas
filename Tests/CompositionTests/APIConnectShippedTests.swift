@@ -81,7 +81,9 @@ private let stripeAPI = #"""
 /// connect 24, wave 8: a far pill an arrow from a row reaches lands where the arrow reads clean: below the shape it leaves (the
 /// line meeting the pill's top), else level with the row (the pill's middle at the row's middle, the line meeting its near side);
 /// the straight line from the row to where it meets the pill crosses no other shape, and the pill is in the clear view.
-@MainActor func expectClean(_ arrowID: ShapeID, from near: ShapeID, row: PartID, in editor: CanvasEditor, view: Bool = true,
+/// `lastRow`: the row is the shape's last, the room under it the waiting line's while the shape is edited (a straight line down is then
+/// right).
+@MainActor func expectClean(_ arrowID: ShapeID, from near: ShapeID, row: PartID, in editor: CanvasEditor, view: Bool = true, lastRow: Bool = false,
                                     _ what: String) throws {
     let arrow = try require(editor.document[arrowID]?.typed(as: Arrow.self))
     let pillID = try require(arrow.props.end.binding?.shapeID)
@@ -106,6 +108,10 @@ private let stripeAPI = #"""
             return rest.contains(CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
         }
         expect(!cuts, "\(what): the line from the row cuts across the rows under it")
+        // Nor runs down the shape's own side where rows are under it: the pill is wholly beside the row's end, or level with the row.
+        let alongSide = !lastRow && shape.maxY - line.maxY > line.height / 2 && abs(end.x - start.x) < 1 && start.x >= shape.minX - 1 && start.x <= shape.maxX + 1
+            && abs(end.y - start.y) > 1
+        expect(!alongSide, "\(what): the line from the row runs along the shape's side, over the rows under it: \(start) \(end)")
     }
     for record in editor.document.shapes where ![near, pillID, arrowID].contains(record.id) && record.kind != Arrow.kind {
         guard let bounds = editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.contains(shape) else { continue }
@@ -430,6 +436,37 @@ private let stripeAPI = #"""
         let ids = Set(editor.document.shapes.map(\.id))
         try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls"#)
         expectEqual(Set(editor.document.shapes.map(\.id)), ids, "drawn again: nothing twice")
+    },
+    test("connect 24: in one script, a clean pill is in the way of a later pill, and of a note the script restates taller afterwards: neither lands on it") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            database "shop" size: 1600x1800
+            subboard "payments provider" right of "shop"
+            """#)
+        try w.draw(#"""
+            table "orders" in "shop" columns: "id uuid pk\ntotal_cents int"
+            sticky-note "ledger" in "shop" right of "orders" (gap: wide) top level with "orders" size: 260x40
+            api "orders API" in "shop" right of "ledger" (gap: 20) top level with "orders" server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /orders/{id}\nPOST /orders/{id}/refunds → 201"
+            """#)
+        try w.draw(#"api "Stripe API" in "payments provider" server: "api.stripe.com bearer" endpoints: "POST /v1/refunds → 200""#)
+        try w.draw(#"""
+            edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
+            edge "orders API" -> "Stripe API"
+            sticky-note "ledger" size: 260x900
+            """#)
+        let pillsOnBoard = editor.document.shapes.filter { $0.kind == Reference.kind }
+        expect(pillsOnBoard.count >= 1, "pills were made")
+        let shop = try require(shape(editor, "shop")).id
+        for record in pillsOnBoard {
+            let frame = try require(editor.shapeContext.geometry(of: record.id)?.bounds)
+            for other in editor.document.shapes where other.id != record.id && other.id != shop && other.kind != Arrow.kind {
+                guard let bounds = editor.shapeContext.geometry(of: other.id)?.bounds else { continue }
+                expect(!bounds.intersects(frame), "a pill at \(frame) is on \(other.kind) at \(bounds)")
+            }
+        }
     },
     test("E7 panels 4 to 7, by the keys: ↑ to the refunds row, ⌘L, ref, ↩ picks refunds, ↩ takes writes, Escape; one Undo the plain arrow, two none") {
         let w = try EmptyBoardWindow()

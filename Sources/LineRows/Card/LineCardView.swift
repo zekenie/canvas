@@ -316,7 +316,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         focus = aimed
         if let responder = responder(of: aimed), let window, window.firstResponder !== responder {
             window.makeFirstResponder(responder)
-            if let field = responder as? LineField { field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0)) }
+            if let field = responder as? LineField { field.placing { field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0)) } }
         }
         needsDisplay = true
     }
@@ -380,7 +380,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         if let kept = responder(of: stop) as? LineField, let window, window.firstResponder !== kept {
             window.makeFirstResponder(kept)
         }
-        if let kept = responder(of: stop) as? LineField { kept.setSelectedRange(NSRange(location: (kept.string as NSString).length, length: 0)) }
+        if let kept = responder(of: stop) as? LineField { kept.placing { kept.setSelectedRange(NSRange(location: (kept.string as NSString).length, length: 0)) } }
     }
 
     /// A commit the file couldn't take while it was delivering one: made a turn later, if the line still has words to write.

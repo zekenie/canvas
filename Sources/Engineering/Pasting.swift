@@ -11,8 +11,8 @@ import Types
 extension PluginRegistrar {
     /// ⌘V of SQL ("Paste SQL"): a text with `CREATE TABLE` or `AS ENUM`, or a `.sql` file, read when one table or enum reads.
     mutating func sqlPaste() {
-        pasteReader(SQLPaste.name, sniff: { SQLPaste.sniffs($0) }, read: { content, _ in
-            SQLPaste.read(content, keys: SQLPaste.foreignKeys)
+        pasteReader(SQLPaste.name, sniff: { SQLPaste.sniffs($0) }, read: { content, editor in
+            SQLPaste.read(content, keys: SQLPaste.foreignKeys, fileEnums: Set((editor.service(KitNames.self)?.enums ?? []).map(\.name)))
         })
     }
 
@@ -32,9 +32,9 @@ extension SQLPaste {
     }
 
     /// What ⌘V of `text` puts down, Draw to put it down (`Draw.put`): its tables and enums by their titles, in rows of four, each
-    /// table's keys the edges it implies; nil when no table and no enum reads.
+    /// table's keys the edges it implies; nil when no table and no enum reads. `fileEnums`: the names of the enums the file has.
     @MainActor
-    public static func program(of text: String) -> DrawPut? {
-        program(of: text, keys: foreignKeys)
+    public static func program(of text: String, fileEnums: Set<String> = []) -> DrawPut? {
+        program(of: text, keys: foreignKeys, fileEnums: fileEnums)
     }
 }

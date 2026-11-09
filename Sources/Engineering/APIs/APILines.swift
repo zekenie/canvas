@@ -154,13 +154,18 @@ struct APILineGrammar: LineGrammar {
         let begin = words[first].range.location
         guard caret <= NSMaxRange(words[first].range) else { return nil }
         var query = (line.string as NSString).substring(with: NSRange(location: begin, length: caret - begin))
+        var quoted = false
         if let quote = query.first, quote == "\"" || quote == "'" {
             query.removeFirst()
+            quoted = true
             // Its closing quote is no letter of the name: `"Refund Request"` names Refund Request.
             if query.last == quote { query.removeLast() }
         }
         guard !EndpointGrammar.isStatusPrefix(query) else { return nil }
-        return APITypes.offers(query, range: words[first].range, quoting: true, stems: stems, context)
+        var offers = APITypes.offers(query, range: words[first].range, quoting: true, stems: stems, context)
+        // The list sits at the name's first letter, past the opening quote, with the caret before or after the closing one.
+        if quoted { offers?.anchor = begin + 1 }
+        return offers
     }
 
     /// What a path's last segment may be, typed so far over `word`: the file's tables by name (each lit while highlighted), then what

@@ -185,9 +185,12 @@ public enum OpenAPIPaste {
     /// its title, so a body's field reads `payment_id`, as the wire and the table beside it say it (E1 panel 4's `total_cents`),
     /// never its words (`payment id`). A property that is `true` or `false` is left as it is.
     public static func titled(_ schema: SchemaValue) -> SchemaValue {
+        let instances: Set<String> = ["example", "examples", "default", "const", "enum"]
         switch schema {
         case .object(let members):
             return .object(members.map { member in
+                // What is data, not a schema (an example with a `properties` key of its own), is left as written.
+                if instances.contains(member.key) || member.key.hasPrefix("x-") { return member }
                 guard member.key == "properties", case .object(let properties) = member.value else {
                     return SchemaMember(key: member.key, value: titled(member.value))
                 }

@@ -151,11 +151,15 @@ public struct LineOffers: Equatable {
     public var range: NSRange
     public var query: String
     public var items: [LineOffer]
+    /// Where the list is anchored where that isn't the caret less the query's length (the query leaves out a quote the range
+    /// has): a place in the line, the start of what's typed.
+    public var anchor: Int?
 
-    public init(range: NSRange, query: String, items: [LineOffer]) {
+    public init(range: NSRange, query: String, items: [LineOffer], anchor: Int? = nil) {
         self.range = range
         self.query = query
         self.items = items
+        self.anchor = anchor
     }
 
     /// As the caret list takes them.

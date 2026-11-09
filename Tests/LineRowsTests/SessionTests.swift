@@ -56,6 +56,13 @@ import TextEditing
         b.field.setSelectedRange(NSRange(location: 1, length: 0))
         b.press(.return)
         expectEqual(b.view?.stops, [.row(b.rows(id)[0].id), .row(ids[0]), .waiting, .row(ids[1])], "mid-line: below")
+        // Back up from the empty line, Return again: below. An empty line has no column to carry, so the row is entered at its end,
+        // never at a start nothing the person did put the caret at.
+        b.press(.up)
+        expectEqual(b.focus, "row red")
+        expectEqual(b.field.selectedRange().location, ("red 3" as NSString).length, "at the row's end")
+        b.press(.return)
+        expectEqual(b.view?.stops, [.row(b.rows(id)[0].id), .row(ids[0]), .waiting, .row(ids[1])], "below the row, as before")
         b.press(.escape)
     },
     test("Return commits a typed line as its own step, Add Entry, and opens a line under it; on the empty line it ends editing; announced") {

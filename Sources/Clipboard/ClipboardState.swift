@@ -427,7 +427,11 @@ final class ClipboardState {
         }
         let kinds = editor.registry.containingKinds, document = editor.document
         // What it made and what it changed are selected, and said; a paste that changed nothing selects all it found, and says so.
-        let made = landed.filter { existing[$0] == nil }, changed = landed.filter { id in existing[id].map { $0 != document[id] } ?? false }
+        // A shape counts as changed where its record did, or where a shape the put changed or made is bound to it (a key re-aimed or
+        // added lives on its arrow, never on the table's record).
+        let bound = shapes(of: landed, boundByChangesFrom: existing)
+        let made = landed.filter { existing[$0] == nil }
+        let changed = landed.filter { id in existing[id].map { $0 != document[id] || bound.contains(id) } ?? false }
         let touched = made + changed, shown = touched.isEmpty ? landed : touched
         let inside = Set(shown)
         editor.selectedShapeIDs = shown.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
@@ -437,8 +441,31 @@ final class ClipboardState {
             editor.announce(ClipboardStyle.nothingChanged, priority: .low)
             return
         }
-        // Only arrows changed (a key re-aimed): the shapes it restated are what it updated.
-        editor.announce(pastedSummary(made: made, changed: touched.isEmpty ? landed : changed, labels: program.labels), priority: .low)
+        // Changes none of the shapes it found says (a pill on another board): said without counting what didn't change.
+        guard !touched.isEmpty else { return editor.announce(ClipboardStyle.updated, priority: .low) }
+        editor.announce(pastedSummary(made: made, changed: changed, labels: program.labels), priority: .low)
+    }
+
+    /// Which of `shapes` a shape that changed since `old`, was made or was taken away is bound to first (an arrow of a key added,
+    /// re-aimed or let go: the shape it starts from, which its kind lists first; the shape it points to is not what changed),
+    /// by what its kind says (`remappingReferences`), the shape before and after.
+    private func shapes(of shapes: [ShapeID], boundByChangesFrom old: CanvasDocument) -> Set<ShapeID> {
+        let wanted = Set(shapes), document = editor.document, context = editor.shapeContext
+        var found: Set<ShapeID> = []
+        func visit(_ record: AnyShapeRecord) {
+            var first: ShapeID?
+            _ = record.remappingReferences({ id in
+                first = first ?? id
+                return id
+            }, in: context)
+            if let first, wanted.contains(first) { found.insert(first) }
+        }
+        for record in document.shapes where !wanted.contains(record.id) && old[record.id] != record {
+            visit(record)
+            if let was = old[record.id] { visit(was) }
+        }
+        for was in old.shapes where document[was.id] == nil { visit(was) }
+        return found
     }
 
     /// What a put did, for VoiceOver: the kinds it made and the kinds whose shapes it changed, by their labels ("Pasted 2 Tables and

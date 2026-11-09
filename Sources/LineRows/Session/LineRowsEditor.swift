@@ -524,10 +524,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
         place()
         if stop != .title {
             switch caret {
-            case .start: field.setSelectedRange(NSRange(location: 0, length: 0))
-            case .end: field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0))
-            case .x(let x): field.placeSelection(at: CGPoint(x: x - clip.frame.minX + slide, y: field.bounds.midY))
+            // Arrived by a key: the caret placed is no move of the caret to the end of a dashed name, which asks the list.
+            case .start: field.placing { field.setSelectedRange(NSRange(location: 0, length: 0)) }
+            case .end: field.placing { field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0)) }
+            case .x(let x): field.placing { field.placeSelection(at: CGPoint(x: x - clip.frame.minX + slide, y: field.bounds.midY)) }
             case .point(let point, let clicks):
+                // A click is the person's own move of the caret: it asks again where it lands.
                 let origin = origin
                 let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
                 field.placeSelection(at: field.convert(local, from: self), selectingWord: clicks >= 2)
@@ -1018,7 +1020,9 @@ final class LineSession<Model: LineModel>: LineRowsView {
         guard let at = stops.firstIndex(of: focus) else { return }
         let to = at + delta
         guard stops.indices.contains(to) else { return }
-        let x = field.caretFrame.map { $0.minX - slide + clip.frame.minX }
+        // An empty line has no column to carry: the caret is at its start only because there is nothing else, and a row entered there
+        // would take Return for the start's (a line above it): the row is entered at its end.
+        let x = field.string.isEmpty ? nil : field.caretFrame.map { $0.minX - slide + clip.frame.minX }
         go(to: stops[to], at: x.map(Caret.x) ?? .end)
     }
 
@@ -1070,7 +1074,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let caret = field.selectedRange()
         guard write([.move(held, to: to)], coalescing: LineMoveRun(shape: id, row: row)) else { return }
         show(.row(row), at: .start)
-        field.setSelectedRange(NSRange(location: min(caret.location, (field.string as NSString).length), length: 0))
+        field.placing { field.setSelectedRange(NSRange(location: min(caret.location, (field.string as NSString).length), length: 0)) }
     }
 
     /// ⇧↩: the line written, editing ends, and a shape of the kind goes beside this one, edited (Insert's beside).

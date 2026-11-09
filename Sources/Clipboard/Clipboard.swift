@@ -100,6 +100,8 @@ public enum ClipboardStyle {
     public static let duplicateOffset: CGFloat = 16
     /// What a paste that changed nothing says (a schema pasted again as it is): no step.
     static let nothingChanged = "Nothing changed"
+    /// What a paste says that changed shapes it found none of (only what is bound to them).
+    static let updated = "Updated"
 }
 
 // MARK: The context menu

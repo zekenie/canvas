@@ -207,6 +207,12 @@ private let paymentsSQL = """
         try paste(sql, in: h)
         expectEqual(h.editor.document[landed[0]]?.box?.width, 300, "found: its width as the person left it")
     },
+    test("paste 03: a column typed as an enum the file has (not the paste) is measured as the pill it is drawn as, wider than its words") {
+        let sql = "CREATE TABLE shipments (id int PRIMARY KEY, carrier_service_level_name carrier_service_level);"
+        let plain = try require(SQLPaste.program(of: sql)), known = try require(SQLPaste.program(of: sql, fileEnums: ["carrier_service_level"]))
+        let was = try require(plain.sizes.values.first?.width), now = try require(known.sizes.values.first?.width)
+        expect(now != was, "measured as the pill it is drawn as, not as its words: \(now) for \(was)")
+    },
     test("a key's row: the column it names; REFERENCES t alone the pasted table's primary key, else asked of the table the put finds (the file's), and no edge where it has none; the paste lands whole") {
         let h = try pasteHarness()
         h.add(DatabaseTable(frame: CGRect(x: 100, y: 100, width: 260, height: 44), columns: [Column(name: "code", type: TypeRef("text"), primaryKey: true)]),

@@ -187,7 +187,7 @@ private let shop = #"""
         expectEqual(w.editor.undoHistory.undoName, "Add Column", "the pill and the key in the row's step")
         // The column and its pill arrive in one step: the pill is landed by the row as the step leaves it (connect 24).
         let key = try require(arrows(w.editor, on: board).first { $0.props.end.binding?.shapeID == pill.id })
-        try expectClean(key.id, from: statements.id, row: try require(column(w.editor, "statements", "customer_id")), in: w.editor, "a typed key")
+        try expectClean(key.id, from: statements.id, row: try require(column(w.editor, "statements", "customer_id")), in: w.editor, lastRow: true, "a typed key")
         w.editor.undo()
         expectEqual(pills(w.editor, on: board).count, 0, "one undo takes the column, its key and the pill")
         expect(!keys(w.editor).contains { $0.hasPrefix("statements.") })

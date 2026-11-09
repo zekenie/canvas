@@ -211,6 +211,9 @@ private let payments = """
         expectEqual(arrow.props.end.binding?.shapeID, pill.id, "the key ends at the pill")
         expectEqual(arrow.props.end.binding?.part, customers.props.columns.first { $0.name == "id" }?.id, "the column on the binding")
         expectEqual(undoTitle(w.window), "Undo Paste SQL")
+        // The pill is landed once the paste's table is placed, where its line from customer_id is clean (connect 24).
+        let customerID = try require(editor.contents(of: billing).shapes.first { $0[TitleProperty.self] == "statements" }?.typed(as: DatabaseTable.self)?.props.columns.first { $0.name == "customer_id" }?.id)
+        try expectClean(arrow.id, from: statements.id, row: customerID, in: editor, view: false, "a pasted key to another board")
         expect(commandV(w), "the same paste again")
         expectEqual(pills().map(\.id), [pill.id], "the same pill")
         expectEqual(keyArrows().map(\.id), [arrow.id], "the same arrow")
@@ -315,6 +318,28 @@ private let payments = """
         editor.undo()
         let t3 = try require(table(editor, "t3"))
         expectEqual(t3.props.columns.map(\.name), ["id", "name"], "the change undone, not an empty step")
+    },
+    test("paste 04: pasted again with only a key re-aimed or added, the table the key starts from is what changed: said \"Updated Table\", and it alone selected") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        let tables = ["CREATE TABLE accounts (id int PRIMARY KEY);", "CREATE TABLE customers (id int PRIMARY KEY);"]
+        pasteboardHolds((tables + ["CREATE TABLE orders (id int PRIMARY KEY, owner_id int REFERENCES customers (id));", "CREATE TABLE notes (id int PRIMARY KEY, order_id int);"]).joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Pasted 4 Tables")
+        editor.selectedShapeIDs = []
+        // The key of orders aimed at accounts instead: nothing in any table's own record changes.
+        pasteboardHolds((tables + ["CREATE TABLE orders (id int PRIMARY KEY, owner_id int REFERENCES accounts (id));", "CREATE TABLE notes (id int PRIMARY KEY, order_id int);"]).joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Updated Table")
+        expectEqual(editor.selectedShapeIDs.compactMap { editor.document[$0]?[TitleProperty.self] }, ["orders"], "the table the key starts from, alone")
+        editor.selectedShapeIDs = []
+        // A key added to a column that had none.
+        pasteboardHolds((tables + ["CREATE TABLE orders (id int PRIMARY KEY, owner_id int REFERENCES accounts (id));", "CREATE TABLE notes (id int PRIMARY KEY, order_id int REFERENCES orders (id));"]).joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Updated Table")
+        expectEqual(editor.selectedShapeIDs.compactMap { editor.document[$0]?[TitleProperty.self] }, ["notes"])
     },
     test("the kit off: ⌘V of SQL does nothing and Paste is off; on, it pastes") {
         let w = try EmptyBoardWindow()

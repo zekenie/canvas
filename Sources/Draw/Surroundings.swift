@@ -269,8 +269,11 @@ public struct Surroundings {
         guard size.width.isFinite, size.height.isFinite, row.isFinite, !row.isNull,
               let bounds = nearBounds ?? reading.shapes.geometry(of: near)?.bounds, bounds.isFinite, !bounds.isNull else { return nil }
         let own = obstacle(near)
-        // What holds `near` (a frame it is in) is a region the pill may sit on, never in its way.
-        func inWay(_ obstacle: LayoutProblem.Obstacle) -> Bool { obstacle.id != own && !obstacle.rect.contains(bounds) }
+        // What holds `near` (a frame or a database it is in) is a region the pill may sit wholly on, or wholly off, never across its
+        // edge; a line may run over it. Every other shape is in the way of the pill, and of the line.
+        func holds(_ obstacle: LayoutProblem.Obstacle) -> Bool { obstacle.id != own && obstacle.rect.contains(bounds) }
+        func inWay(_ obstacle: LayoutProblem.Obstacle) -> Bool { obstacle.id != own && !holds(obstacle) }
+        func straddles(_ obstacle: LayoutProblem.Obstacle, _ rect: CGRect) -> Bool { holds(obstacle) && obstacle.rect.intersects(rect) && !obstacle.rect.contains(rect) }
         let reach = PlacingStyle.pillReach, width = size.width, height = size.height
         // The rows of `near` under the one the arrow leaves: a line slid in under the shape must not cut across them.
         let below = CGRect(x: bounds.minX, y: row.maxY, width: bounds.width, height: max(0, bounds.maxY - row.maxY))
@@ -280,7 +283,8 @@ public struct Surroundings {
             for end in [row.minX, row.maxX] {
                 let outward: CGFloat = end == row.minX ? -1 : 1
                 // Under the row's end, else slid out from under the shape, else in: the line still meets the top, steep as it is, but
-                // only where it leaves the shape's body alone (the row is its last).
+                // only where it leaves the shape's body alone (the row is its last): straight down from the end of a row with rows
+                // under it runs along the shape's own side, so there the pill goes beside the row instead.
                 for (slide, inward) in [(CGFloat(0), false), (outward * width / 2, false), (-outward * width / 2, true), (outward * width, false)] {
                     let middle = end + slide
                     // The row leaves by the end facing the pill's middle: this one.
@@ -288,6 +292,7 @@ public struct Surroundings {
                     let rect = CGRect(x: middle - width / 2, y: bounds.maxY + out, width: width, height: height)
                     let from = CGPoint(x: end, y: row.midY), to = CGPoint(x: middle, y: rect.minY)
                     if inward, Self.crosses(from, to, below) { continue }
+                    if slide == 0, below.height > row.height / 2 { continue }
                     spots.append((rect, from, to))
                 }
             }
@@ -304,7 +309,7 @@ public struct Surroundings {
         for spot in spots {
             if let view = reading.view, !view.contains(spot.rect) { continue }
             let wanted = spot.rect.insetBy(dx: -LayoutProblem.horizontalClearance, dy: -LayoutProblem.verticalClearance)
-            guard !grid.obstacles(in: wanted).contains(where: { inWay($0) && $0.rect.intersects(wanted) }),
+            guard !grid.obstacles(in: wanted).contains(where: { ($0.rect.intersects(wanted) && inWay($0)) || straddles($0, spot.rect) }),
                   !planned.contains(where: { $0.intersects(wanted) }) else { continue }
             let line = CGRect(x: min(spot.from.x, spot.to.x), y: min(spot.from.y, spot.to.y),
                               width: abs(spot.to.x - spot.from.x), height: abs(spot.to.y - spot.from.y)).insetBy(dx: -1, dy: -1)
@@ -312,7 +317,7 @@ public struct Surroundings {
                   !planned.contains(where: { Self.crosses(spot.from, spot.to, $0) }) else { continue }
             // Raised above what holds `near` that it sits on, as draw raises a shape over the zones it lands on.
             let shapes = reading.document.shapes
-            let holders = grid.obstacles(in: spot.rect).filter { $0.id != own && $0.rect.contains(bounds) && shapes.indices.contains($0.id) }
+            let holders = grid.obstacles(in: spot.rect).filter { holds($0) && shapes.indices.contains($0.id) }
                 .sorted { $0.id < $1.id }.map { shapes[$0.id].id }
             return Landing(board: reading.board, rect: spot.rect, above: holders)
         }

@@ -103,6 +103,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     }
 
     private var isShowing = false
+    /// The session is placing the caret (arriving on a row), not the person moving it.
+    private var isPlacing = false
     /// While a line break is inserted as a space instead.
     private var isOneLining = false
     private var isSubstituting = false
@@ -467,7 +469,17 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         closedAt = nil
         // The caret come to the end of a name that stands for nothing yet (a dashed pill: a type not made) opens its offers, so
         // "New type X" is a Return away again.
-        if open != nil || caretEndsDashedName { refreshOffers() }
+        // Arriving on a line is no move of the caret to its end: Tab and the arrows go on, never to a list (`placing`).
+        if open != nil || (!isPlacing && caretEndsDashedName) { refreshOffers() }
+    }
+
+    /// Runs `body`, in which the caret is placed by the session (a row's arrival, a card's line coming to its end), not moved by the
+    /// person: a caret placed at the end of a dashed name opens no list there.
+    public func placing(_ body: () -> Void) {
+        let was = isPlacing
+        isPlacing = true
+        defer { isPlacing = was }
+        body()
     }
 
     /// Whether the caret, with nothing selected, is at the end of a dashed highlight: words that name nothing yet.
@@ -531,10 +543,13 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         return open.listed[row].item.label
     }
 
+    /// Where the open list is anchored in the line (UTF-16): the start of what's typed, as the offers say it.
+    public var listAnchorLocation: Int? { listAnchor?.location }
+
     private var listAnchor: NSRange? {
         guard let offers = open?.offers else { return nil }
         let caret = selectedRange().location
-        let start = max(offers.range.location, caret - (offers.query as NSString).length)
+        let start = offers.anchor ?? max(offers.range.location, caret - (offers.query as NSString).length)
         return start <= (string as NSString).length ? NSRange(location: start, length: 0) : nil
     }
 

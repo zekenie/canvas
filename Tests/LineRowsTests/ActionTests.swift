@@ -95,4 +95,30 @@ import TextEditing
         a.field.setSelectedRange(NSRange(location: 6, length: 0))
         expect(a.field.listedOffers.isEmpty, "a solid pill names something: nothing opens")
     },
+    test("apis 16: the list anchors at the offers' anchor where the query leaves out a quote their range has, else at the query's start") {
+        let a = ActionField()
+        a.field.show(LineText("\"Refund\""), caret: 8)
+        a.field.offering = {
+            LineOffers(range: NSRange(location: 0, length: 8), query: "Refund", items: [LineOffer(CaretCompletion(label: "Refunds", insert: "Refunds"))], anchor: 1)
+        }
+        a.field.refreshOffers()
+        expectEqual(a.field.listedOffers, ["Refunds"])
+        expectEqual(a.field.listAnchorLocation, 1, "after the opening quote, the caret being after the closing one")
+        a.field.offering = {
+            LineOffers(range: NSRange(location: 0, length: 8), query: "Refund", items: [LineOffer(CaretCompletion(label: "Refunds", insert: "Refunds"))])
+        }
+        a.field.refreshOffers()
+        expectEqual(a.field.listAnchorLocation, 2, "without it, the caret less the query's length")
+    },
+    test("apis 18: a caret the session places at the end of a dashed name (arriving on a row by Tab or ↑ ↓) opens nothing, so Tab and the arrows go on; the person moving it there does") {
+        let a = ActionField()
+        a.isDefault = true
+        a.field.show(LineText("Refund more"))
+        a.field.highlights = [TextHighlight(range: NSRange(location: 0, length: 6), fill: .clear, stroke: .gray, isDashed: true)]
+        a.field.placing { a.field.setSelectedRange(NSRange(location: 6, length: 0)) }
+        expect(a.field.listedOffers.isEmpty, "placed: nothing opens")
+        a.field.setSelectedRange(NSRange(location: 3, length: 0))
+        a.field.setSelectedRange(NSRange(location: 6, length: 0))
+        expectEqual(a.field.highlightedOffer, "New tally Refund more", "moved there: the offers")
+    },
 ])

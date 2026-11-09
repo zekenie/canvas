@@ -279,6 +279,21 @@ extension KitBench {
         expectEqual(b.view?.stops.firstIndex(of: .waiting), b.view?.stops.firstIndex(of: .row(ids[0])).map { $0 + 1 }, "below: \(rows)")
         b.press(.escape)
     },
+    test("apis 26: ↑ from the empty waiting line enters the row at its end, so Return opens the line below it, never above") {
+        let b = try KitBench()
+        let api = b.api("orders API", ["GET /orders/{id}", "POST /orders/{id}/refunds"])
+        let ids = b.rows(api).map(\.id)
+        b.begin(api)
+        b.view?.go(to: .row(ids[1]))
+        b.press(.return)
+        expectEqual(b.view?.focus, .waiting)
+        b.press(.up)
+        expectEqual(b.view?.focus, .row(ids[1]))
+        expectEqual(b.field.selectedRange().location, (b.field.string as NSString).length, "at its end")
+        b.press(.return)
+        expectEqual(b.view?.stops.firstIndex(of: .waiting), b.view?.stops.firstIndex(of: .row(ids[1])).map { $0 + 1 }, "below")
+        b.press(.escape)
+    },
     test("apis 31 to 33: ⌥↑ on the first header past endpoints under none takes the nearest it covers, a row a press, full paths kept; one it doesn't cover stays above; past none it covers, nothing") {
         let b = try KitBench()
         let api = b.api("orders API", ["GET /orders/{id}", "GET /customers/{id}", "POST /orders/{id}/refunds", "/orders", "PATCH /{id}"])

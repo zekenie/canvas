@@ -25,10 +25,17 @@ private let row = CGRect(x: 0, y: 100, width: 400, height: 24)
 @MainActor private let reach = PlacingStyle.pillReach
 
 @MainActor let pillLandingTests = Suite("A far pill landed by its line", [
-    test("nothing round it: below the shape, under the row's left end, a reach down (E4 panel 4)") {
+    test("nothing round it: below the shape, wholly left of the row's left end where rows are under it (E4 panel 4), a reach down") {
         let a = ShapeID()
         let h = try harness(box(a, near))
         let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a))
+        expectEqual(landing.rect, CGRect(x: -200, y: 200 + reach, width: 200, height: 40), "straight down would run along the shape's own side")
+    },
+    test("the shape's last row: below, under the row's left end, the line straight down") {
+        let a = ShapeID()
+        let h = try harness(box(a, near))
+        let last = CGRect(x: 0, y: 176, width: 400, height: 24)
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: last, of: a))
         expectEqual(landing.rect, CGRect(x: -100, y: 200 + reach, width: 200, height: 40))
     },
     test("a shape below: right of it, level with the row, the pill's middle at the row's middle") {
@@ -49,8 +56,16 @@ private let row = CGRect(x: 0, y: 100, width: 400, height: 24)
         let k = ShapeID(), a = ShapeID()
         let h = try harness(corral(k, CGRect(x: -1000, y: -1000, width: 3000, height: 3000)), box(a, near, in: k))
         let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a))
-        expectEqual(landing.rect, CGRect(x: -100, y: 200 + reach, width: 200, height: 40))
+        expectEqual(landing.rect, CGRect(x: -200, y: 200 + reach, width: 200, height: 40))
         expectEqual(landing.above, [k])
+    },
+    test("a frame's bottom edge within the first reach below: never a pill across the edge, wholly in the frame or wholly out of it") {
+        let k = ShapeID(), a = ShapeID()
+        let edge = CGRect(x: -1000, y: -1000, width: 3000, height: 1000 + 200 + reach + 20)
+        let h = try harness(corral(k, edge), box(a, near, in: k))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a))
+        expect(edge.contains(landing.rect) || !edge.intersects(landing.rect), "not across the edge: \(landing.rect) \(edge)")
+        expectEqual(landing.above, edge.contains(landing.rect) ? [k] : [], "raised above the frame only where it sits on it")
     },
     test("below, slid in under the shape, would cut across the rows under the row (a tall shape, a top row): taken only where the row is the last, else the pill goes level with the row") {
         let a = ShapeID(), left = ShapeID(), right = ShapeID()
