@@ -124,7 +124,9 @@ extension TableDefinition: LaidOutBox {
 }
 
 /// Makes room as its rows grow: a table gaining a column pushes what is below it in its database down, in the same step.
-extension TableDefinition: MakesRoomAsItGrows {}
+extension TableDefinition: MakesRoomAsItGrows {
+    var roomKeptBelow: CGFloat { KitStyle.roomKeptBelow }
+}
 
 /// Its stored height is kept in step with its rows wherever it's made from properties (`canvas draw`), so the box it
 /// stores is the table as it's laid out.

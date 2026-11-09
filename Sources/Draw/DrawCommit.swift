@@ -218,6 +218,9 @@ extension Drawing {
 
         // Room made below what the run grew (a table given columns), now, so what's read back is where it ends and the
         // report says what moved; the step's own run after the body finds nothing more.
+        // What the solver placed was placed against the rooms laid out with the run's records, grown already: pushed only by
+        // what pushes the shape it hangs from, never by that shape's growth a second time (a `below "orders" (gap: 20)` keeps 20).
+        transaction.placedAgainstGrowth.formUnion(items.filter { $0.free != nil && $0.exact == nil }.map(\.record.id))
         let pushed = transaction.makeRoom()
 
         // What it did, and what it should say, read from one context taken once every write is done (a context

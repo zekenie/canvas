@@ -1685,7 +1685,7 @@ struct Drawing {
                             toName: toName, attributes: attributes, settings: settings, identity: identity)
         if !measuring {
             item.standIn = try routeEdge(edge, statement, written: written, from: fromFound, to: toFound, fromName: fromName, toName: toName, via: via,
-                                         identity: identity, parts: (fromPart, toPart))
+                                         identity: identity, parts: (fromPart, toPart), implied: implied != nil)
         }
         for (from, to) in edge.bothHeads ? [(from, to), (to, from)] : [(from, to)] { edgesByEnds[EdgeEnds(from: from, to: to), default: []].append(edges.count) }
         edges.append(item)

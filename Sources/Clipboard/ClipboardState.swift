@@ -46,8 +46,9 @@ final class ClipboardState {
     /// for none this app can read, and whether the pasteboard holds this app's data at all (then nothing else is read).
     private var content: (changeCount: Int, file: CanvasFile, source: PasteSource, isApps: Bool)?
     /// What the readers (`PasteReaders`) have read of the pasteboard, as of its change count and the kits the file had on (whose readers
-    /// are asked) when it was first asked: each reader's reading once, by its place among them.
-    private var readings: (changeCount: Int, kits: Set<KitID>, content: PasteContent, results: [Int: PasteResult?])?
+    /// are asked) when it was first asked: each reader's reading once, by its place among them, with what it read of the file
+    /// (`PasteReader.readsOfFile`), read again once that changed.
+    private var readings: (changeCount: Int, kits: Set<KitID>, content: PasteContent, results: [Int: (file: AnyHashable?, result: PasteResult?)])?
 
     /// Where what a paste puts down came from.
     enum PasteSource {
@@ -291,11 +292,12 @@ final class ClipboardState {
             let reader = entry.value
             if let sniff = reader.sniff, !sniff(content) { continue }
             let result: PasteResult?
-            if let known = readings?.results[place] {
-                result = known
+            let file = reader.readsOfFile?(editor)
+            if let known = readings?.results[place], known.file == file {
+                result = known.result
             } else {
                 result = reader.read(content, editor)
-                readings?.results[place] = .some(result)
+                readings?.results[place] = (file, result)
             }
             if let result, !result.isEmpty { return (reader.name, result) }
         }
@@ -431,7 +433,15 @@ final class ClipboardState {
         // added lives on its arrow, never on the table's record).
         let bound = shapes(of: landed, boundByChangesFrom: existing)
         let made = landed.filter { existing[$0] == nil }
-        let changed = landed.filter { id in existing[id].map { $0 != document[id] || bound.contains(id) } ?? false }
+        // A shape only the push moved (one that grew above it in the same paste, `makeRoom`) is not one it changed: compared
+        // where it stands now.
+        func unmoved(_ record: AnyShapeRecord, to now: AnyShapeRecord?) -> AnyShapeRecord {
+            guard let origin = now?.box?.origin, record.box != nil else { return record }
+            var record = record
+            record.box?.origin = origin
+            return record
+        }
+        let changed = landed.filter { id in existing[id].map { unmoved($0, to: document[id]) != document[id] || bound.contains(id) } ?? false }
         let touched = made + changed, shown = touched.isEmpty ? landed : touched
         let inside = Set(shown)
         editor.selectedShapeIDs = shown.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }

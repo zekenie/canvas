@@ -71,7 +71,8 @@ import TestKit
         expectEqual(b.editor.shape(at: CGPoint(x: 130, y: 170)), id, "and hit there first")
         let overflow = try require(b.editor.editedShapeOverflow)
         expectEqual(overflow.id, id)
-        expectEqual(overflow.areas, [CGRect(x: 100, y: 140, width: 240, height: 40)], "its room under the box it stores, the waiting line's")
+        expectEqual(overflow.areas, [CGRect(x: 100, y: 160, width: 240, height: 20)],
+                    "its room under its frame at rest, the waiting line's alone: never from the box it stores, a row shorter (review R25)")
         expectEqual(b.frame(below)?.origin, CGPoint(x: 100, y: 170), "nothing moved")
         b.press(.escape)
         expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [below], "back in its place")

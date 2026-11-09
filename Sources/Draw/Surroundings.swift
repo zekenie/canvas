@@ -69,6 +69,17 @@ public struct PutBeside: Sendable, Equatable {
         return both.width <= clear.width && both.height <= clear.height
     }
 
+    /// Whether the least pan that brings `rect` and `beside` (each with its row above) into `clear` takes any of `shown` (rects
+    /// wholly in `clear` now) out of it.
+    func pansAway(from shown: [CGRect], toShow rect: CGRect, beside: CGRect, in clear: CGRect) -> Bool {
+        let both = withRow(rect).union(withRow(beside))
+        let dx = both.minX < clear.minX ? both.minX - clear.minX : both.maxX > clear.maxX ? both.maxX - clear.maxX : 0
+        let dy = both.minY < clear.minY ? both.minY - clear.minY : both.maxY > clear.maxY ? both.maxY - clear.maxY : 0
+        guard dx != 0 || dy != 0 else { return false }
+        let panned = clear.offsetBy(dx: dx, dy: dy)
+        return shown.contains { clear.contains($0) && !panned.contains($0) }
+    }
+
     private func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
 }
 
@@ -99,6 +110,9 @@ public enum PlacingStyle {
     /// Between two such labels on lines from one start to pills one above the other: the pills are spaced so the labels, halfway
     /// along, are this far apart.
     public static let labelSpacing: CGFloat = 16
+    /// How far another arrow's line keeps from the label a pill's arrow will carry, as a move places the pill (connect new-4: a
+    /// calls line never runs under the reads pill).
+    public static let labelClearance: CGFloat = 6
 
     /// The sides of `bounds` a shape whose arrows reach `reached` may go on so they run clean: the one facing it (along the axis
     /// it lies further out on; overlapping, the way its middle lies, by each axis's share of `bounds`), then below; facing above,
@@ -204,7 +218,7 @@ public struct Surroundings {
             fixed.append(LayoutProblem.Fixed(rect: holding, obstacle: obstacle(holder)))
             held = LayoutProblem.Holder(.fixed(1), written: "in \(Self.holder)", direct: true)
         }
-        var best: (rect: CGRect, gap: CGFloat, zones: [ShapeID], seen: Bool)?
+        var best: (rect: CGRect, gap: CGFloat, zones: [ShapeID], seen: Int)?
         let view = put.flatMap { put in reading.view.map { put.clear(of: $0) } }
         for side in sides {
             var clauses = [LayoutProblem.ResolvedClause(relation: .direction(side), targets: [LayoutProblem.ResolvedTarget(.fixed(0), written: Self.target)],
@@ -217,9 +231,20 @@ public struct Surroundings {
                                      fixed: fixed, avoiding: avoiding)
             else { continue }
             let gap = Self.gap(from: bounds, to: placed.rect, side)
-            let seen = view.map { put?.shows(placed.rect, in: $0, beside: bounds) ?? true } ?? true
-            // A side in view beats one out of it; among sides alike that way, the nearer, the earlier on a tie.
-            let better = best.map { best in seen != best.seen ? seen : gap < best.gap - Self.slack } ?? true
+            // How it's seen: in the clear view (3: as it is, or once the view pans to it with the shape it's beside, a put that
+            // pans); by a pan that takes a shape the view shows whole out of it (1: UX walk 3 tables-1, Insert ▸ Enum beside orders
+            // panned customers off screen), or not at all (0).
+            var seen = 3
+            if let view, let put {
+                if !put.shows(placed.rect, in: view, beside: bounds) {
+                    seen = 0
+                } else if put.panned, put.pansAway(from: grid.obstacles(in: view).map(\.rect), toShow: placed.rect, beside: bounds, in: view) {
+                    seen = 1
+                }
+            }
+            // A side seen beats one seen by a pan that loses what's in view, which beats one out of it; among sides alike that
+            // way, the nearer, the earlier on a tie.
+            let better = best.map { best in seen != best.seen ? seen > best.seen : gap < best.gap - Self.slack } ?? true
             if better { best = (placed.rect, gap, placed.zones, seen) }
         }
         guard let best else {

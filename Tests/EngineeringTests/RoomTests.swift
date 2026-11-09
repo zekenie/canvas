@@ -5,6 +5,7 @@ import CoreGraphics
 import Engineering
 import Geometry
 import Keyboard
+import LineRows
 import Selection
 import TestKit
 
@@ -35,7 +36,7 @@ extension EditorHarness {
         h.editor.transact("Add Column") { $0.update(customers, as: DatabaseTable.self) { $0.props.columns.append(column("name text")) } }
         let grown = try require(h.frame(customers)).maxY - top.maxY
         expect(grown > 0, "a line taller")
-        expectEqual(h.frame(products)?.minY, was + grown, "the gap of 40 kept")
+        expectEqual(h.frame(products)?.minY, top.maxY + grown + max(40, KitStyle.roomKeptBelow), "the gap of 40 kept, at least the room it keeps below (a waiting line and a pill)")
         expectEqual(h.frame(beside)?.minY, top.maxY + 10, "not under it")
         expectEqual(h.editor.holder(of: products), shop)
         expectEqual(h.editor.undoHistory.undoName, "Add Column")
@@ -62,7 +63,8 @@ extension EditorHarness {
         h.editor.transact("Add Value") { $0.update(status, as: DatabaseEnum.self) { $0.props.values.append(EnumValue(text: "paid")) } }
         let enumGrowth = try require(h.frame(status)).maxY - statusBottom
         expect(enumGrowth > 0)
-        expectEqual(h.frame(refunds)?.minY, refundsWas + enumGrowth, "the gap of 30 kept")
+        expectEqual(h.frame(refunds)?.minY, statusBottom + enumGrowth + max(30, KitStyle.roomKeptBelow), "the gap of 30 kept, at least the room it keeps below")
+        expect(refundsWas < statusBottom + KitStyle.roomKeptBelow, "a gap short of that room: made up")
 
         let paymentsWas = try require(h.frame(payments)).minY
         let lines = ["POST /orders", "GET /orders/{id}", "DELETE /orders/{id}", "GET /refunds", "POST /refunds", "GET /payments",
@@ -70,7 +72,8 @@ extension EditorHarness {
         h.editor.transact("Paste Endpoints") { $0.update(api, as: API.self) { $0.props.endpoints += lines.compactMap { EndpointGrammar.read($0) } } }
         let apiGrowth = try require(h.frame(api)).maxY - apiBottom
         let moved = try require(h.frame(payments))
-        expectEqual(moved.minY, paymentsWas + apiGrowth, "the gap of 20 kept")
+        expectEqual(moved.minY, apiBottom + apiGrowth + max(20, KitStyle.roomKeptBelow), "the gap of 20 made up to the room an API keeps below it (UX walk 3 apis-1)")
+        expect(moved.minY > paymentsWas + apiGrowth)
         let edge = try require(h.editor.document[shop]?.box)
         expect(moved.maxY > 500 - Settlement.gap, "the push took it past the database's bottom: \(moved.maxY)")
         expectEqual(edge.maxY, moved.maxY + Settlement.gap, "the database grows to hold it the gap inside")
@@ -123,7 +126,7 @@ extension EditorHarness {
             expectEqual(b.columnNames(items).count, 4, "the column landed, \(how)")
             let growth = try require(b.h.frame(items)).maxY - itemsBottom
             expect(growth > 0, "the table it landed in is a line taller, \(how)")
-            expectEqual(b.h.frame(refunds)?.minY, itemsBottom + 20 + growth, "pushed by the line, the gap of 20 kept, \(how)")
+            expectEqual(b.h.frame(refunds)?.minY, itemsBottom + growth + max(20, KitStyle.roomKeptBelow), "pushed by the line, the gap of 20 made up to the room it keeps below, \(how)")
             expect(try require(b.h.frame(orders)).maxY < ordersBottom, "the table it left is a line shorter, \(how)")
             expectEqual(b.h.frame(under)?.minY, underAt, "and pulls nothing up, \(how)")
             expectEqual(b.undoName, dragged ? "Move Column" : "Paste Column", "one step, as Edit says it")
@@ -131,5 +134,27 @@ extension EditorHarness {
             expectEqual(b.h.frame(refunds)?.minY, itemsBottom + 20, "one Undo puts the move and the push back, \(how)")
             expectEqual(b.columnNames(items), ["id", "order_id", "qty"])
         }
+    },
+    test("a column dragged into a table folded to its marks pushes what's under it by the row it lands (it peeks through the fold), then the table unfolds (review R9)") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk", "customer_id uuid", "status text", "total_cents int"])
+        let items = b.table("order_items", ["id uuid pk", "order_id uuid", "qty int", "note text"], at: CGPoint(x: 520, y: 100))
+        b.editor.rowFolds?.fold([items])
+        b.window.settle()
+        let folded = try require(b.h.frame(items))
+        let refunds = b.table("refunds", ["id uuid pk"], at: CGPoint(x: 520, y: folded.maxY + 20))
+        let refundsAt = try require(b.h.frame(refunds)).minY
+        let status = b.middle(ofRow: 2, in: orders)
+        b.click(at: status)
+        b.click(at: status)
+        b.drag(from: status, to: CGPoint(x: b.rect(ofRow: 0, in: items).midX, y: b.rect(ofRow: 0, in: items).maxY - 3))
+        b.h.release()
+        expectEqual(b.columnNames(items).count, 5, "the column landed")
+        expectEqual(b.undoName, "Move Column")
+        expectEqual(b.editor.rowFolds?.isFolded(items), false, "unfolded once it landed")
+        let pushed = try require(b.h.frame(refunds)).minY
+        expect(pushed >= refundsAt + KitStyle.rowHeight - 0.5, "pushed by the row it gained in the fold: \(refundsAt) → \(pushed)")
+        b.editor.undo()
+        expectEqual(b.h.frame(refunds)?.minY, refundsAt, "one Undo puts it back")
     },
 ])

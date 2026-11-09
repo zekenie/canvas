@@ -87,6 +87,23 @@ final class KeyIndex {
     /// The columns of `table` that start a key, each with the row it goes to.
     func keys(of table: ShapeID) -> [PartID: PartAddress] { held(table).mapValues(\.target) }
 
+    /// The columns of `table` that start a key, as `reading` reads the file: mid-transaction, those the transaction wrote a key
+    /// arrow from too (a key typed in the step that folds it to its marks), which the index, of the committed file, hasn't heard
+    /// (review R41); what `makeRoom` measures a folded table by. Only the keys added are read off the reading's writes.
+    func keys(of table: ShapeID, in reading: LayoutReading) -> [PartID: PartAddress] {
+        var keys = keys(of: table)
+        guard !reading.isCommitted, !reading.changes.isEmpty else { return keys }
+        let registry = editor.registry
+        for id in Set(reading.changes) {
+            guard let record = reading.shape(inFile: id) else { continue }
+            for edge in registry.edges(of: record) where edge.type == type && edge.isConnection && edge.source == table {
+                guard let part = edge.sourcePart, keys[part] == nil else { continue }
+                keys[part] = PartAddress(edge.target, part: edge.targetPart)
+            }
+        }
+        return keys
+    }
+
     /// The row `column` of `table`'s key goes to, by address, so its name is read live where it's said
     /// (`editor.accessibleName(of:)`: "id in customers"); nil for a column with no key.
     func target(of column: PartID, in table: ShapeID) -> PartAddress? { held(table)[column]?.target }

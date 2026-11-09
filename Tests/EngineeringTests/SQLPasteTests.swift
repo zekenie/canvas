@@ -227,7 +227,7 @@ private let paymentsSQL = """
         expect(boxes[4].minY > boxes[0].maxY, "the rest below")
         expect(boxes[1].minX > boxes[0].maxX && boxes[2].minX > boxes[1].maxX, "no keys: left to right in paste order")
     },
-    test("paste 02: a pg_dump laid out by its keys: from the table most keys name, each table after the one it keys to most, so keys join neighbors") {
+    test("paste 02: a pg_dump laid out by its keys: orders, which four tables key to, in the middle of what keys to it; each table beside, above, below or corner to corner with the tables it keys to, in columns, so no key passes under a card (UX walk 3 paste-1)") {
         // A dump's alphabet: categories, customers, order_items, orders, payments, products, shipments.
         let sql = """
             CREATE TABLE categories (id int PRIMARY KEY);
@@ -247,8 +247,28 @@ private let paymentsSQL = """
         let titles = tops.map { top in
             shapes.filter { $0.box?.minY == top }.sorted { $0.box!.minX < $1.box!.minX }.compactMap { $0[TitleProperty.self] }
         }
-        expectEqual(titles, [["order_status"], ["orders", "customers", "order_items", "payments"], ["shipments", "products", "categories"]],
-                    "orders, which three tables key to, first; its neighbors in paste order; products after order_items, categories after products")
+        expectEqual(titles, [["order_status"], ["customers", "orders", "order_items", "products"], ["payments", "shipments", "categories"]],
+                    "orders in the middle of the tables that key to it; products beside order_items, categories under them")
+        // In columns: each of the second row under the one of the first in its column.
+        @MainActor func box(_ title: String) throws -> CGRect { try require(shapes.first { $0[TitleProperty.self] == title }?.box) }
+        expectEqual(try box("payments").minX, try box("customers").minX)
+        expectEqual(try box("shipments").minX, try box("orders").minX, "right under orders")
+        expectEqual(try box("categories").minX, try box("order_items").minX)
+        // Every key joins two tables next to each other, or corner to corner: its straight run passes under no card.
+        let keys = [("order_items", "orders"), ("order_items", "products"), ("orders", "customers"), ("payments", "orders"),
+                    ("products", "categories"), ("shipments", "orders")]
+        for (from, to) in keys {
+            let a = try box(from), b = try box(to)
+            let run = (CGPoint(x: a.midX, y: a.midY), CGPoint(x: b.midX, y: b.midY))
+            for other in shapes where ![from, to].contains(other[TitleProperty.self] ?? "") && other.kind == DatabaseTable.kind {
+                let card = try require(other.box).insetBy(dx: 4, dy: 4)
+                let under = (1..<40).contains { step in
+                    let t = CGFloat(step) / 40
+                    return card.contains(CGPoint(x: run.0.x + (run.1.x - run.0.x) * t, y: run.0.y + (run.1.y - run.0.y) * t))
+                }
+                expect(!under, "\(from) → \(to) passes under \(other[TitleProperty.self] ?? "?")")
+            }
+        }
     },
     test("paste 03: a table made as wide as its longest line, a dump's long type whole; capped; one the file has keeps its width") {
         let h = try pasteHarness()

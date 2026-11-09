@@ -188,6 +188,10 @@ public struct CrossingArrows {
         private var new: [PartAddress: ShapeID] = [:], away: [PartAddress: ShapeID] = [:], carriers: [ShapeID: ShapeID] = [:]
         /// The last pill planned beside each start: the next goes past it.
         private var last: [ShapeID: CGRect] = [:]
+        /// The runs this plan has planned from each start to a pill it puts down, with the label each will carry where it will be
+        /// (estimated: halfway along the straight run, the size the arrow's label is drawn now, its channel's title): what a pill
+        /// planned after keeps its own run and label clear of, as it does of the arrows the move leaves as they are.
+        private var runs: [ShapeID: [(from: CGPoint, to: CGPoint, label: CGRect?)]] = [:]
         /// The boxes of the pills planned on each board: what the next on that board keeps clear of.
         private var planned: [BoardID: [CGRect]] = [:]
         private var sourceIndex: StandInRoute.Index?
@@ -376,15 +380,89 @@ public struct CrossingArrows {
                 spot.step = spot.after == nil ? max(spot.step, gap) : max(spot.step, below)
                 against = nil
             }
-            let landing = against.map { route.landing(of: size, at: spot, against: $0, in: surroundings, avoiding: avoiding) }
+            var landing = against.map { route.landing(of: size, at: spot, against: $0, in: surroundings, avoiding: avoiding) }
                 ?? route.landing(of: size, at: spot, in: surroundings, avoiding: avoiding)
+            // Clear of the lines and labels already at the start (connect new-3 and new-4): a pill whose run, or whose label halfway
+            // along it, would lie on another arrow's line or label from the start (a calls line under the reads pill) goes farther
+            // out along its side, a label's room at a time, as far as `PlacingStyle.pillSteps` times; none clear, where it was.
+            let from = runStart(line, of: start, startMoves: startMoves)
+            let others = linesAndLabels(at: start, startMoves: startMoves)
+            let theirs = others.labels + (runs[start] ?? []).compactMap(\.label)
+            let theirLines = others.lines + (runs[start] ?? []).map { [$0.from, $0.to] }
+            func clear(_ rect: CGRect) -> Bool {
+                guard let from else { return true }
+                let to = CGPoint(x: rect.minX, y: rect.midY)
+                let own = label.map { CGRect(x: (from.x + to.x - $0.width) / 2, y: (from.y + to.y - $0.height) / 2, width: $0.width, height: $0.height) }
+                if theirs.contains(where: { Surroundings.crosses(from, to, $0.insetBy(dx: 1, dy: 1)) || (own?.intersects($0) ?? false) }) { return false }
+                guard let own else { return true }
+                let kept = own.insetBy(dx: -PlacingStyle.labelClearance, dy: -PlacingStyle.labelClearance)
+                return !theirLines.contains { points in zip(points, points.dropFirst()).contains { Surroundings.crosses($0, $1, kept) } }
+            }
+            if let first = landing, !clear(first.rect) {
+                let room = (label?.width ?? GapName.normal.value) + PlacingStyle.labelEndRoom
+                let startBounds = startMoves ? nearBox : surroundings.reading.shapes.geometry(of: start)?.bounds
+                // Farther along the column, then a column farther out beside the start, each a label's room at a time.
+                var tries: [(StandInSpot, CGRect?)] = (1...PlacingStyle.pillSteps).map { step in
+                    var farther = spot
+                    farther.step += room * CGFloat(step)
+                    return (farther, against)
+                }
+                if let previous = last[start] {
+                    // Below the last pill of the column, shifted out: its label clears what runs down from the row.
+                    tries += (1...PlacingStyle.pillSteps).map { step in
+                        (StandInSpot(near: start, direction: .right, after: start, step: below, level: .left), previous.offsetBy(dx: room * CGFloat(step), dy: 0))
+                    }
+                } else if let startBounds {
+                    tries += (1...PlacingStyle.pillSteps).map { step in
+                        (StandInSpot(near: start, direction: .right, step: gap + room * CGFloat(step)), startBounds)
+                    }
+                }
+                for (next, at) in tries {
+                    let out = at.map { route.landing(of: size, at: next, against: $0, in: surroundings, avoiding: avoiding) }
+                        ?? route.landing(of: size, at: next, in: surroundings, avoiding: avoiding)
+                    guard let out else { continue }
+                    let end = CGPoint(x: out.rect.minX, y: out.rect.midY)
+                    let crossesPill = from.map { from in (planned[board] ?? []).contains { Surroundings.crosses(from, end, $0.insetBy(dx: 1, dy: 1)) } } ?? false
+                    if clear(out.rect), !crossesPill {
+                        landing = out
+                        break
+                    }
+                }
+            }
             // A pill that would sit in a frame nobody may change goes unmade, rather than stopping the move.
             guard let landing, !landing.above.contains(where: { isReadOnly($0, in: startMoves ? destDoc : sourceDoc) }) else { return nil }
             made.box = landing.rect
             planned[board, default: []].append(landing.rect)
             last[start] = landing.rect
             pills.append((made, startMoves, true))
+            if let from {
+                let to = CGPoint(x: landing.rect.minX, y: landing.rect.midY)
+                let own = label.map { CGRect(x: (from.x + to.x - $0.width) / 2, y: (from.y + to.y - $0.height) / 2, width: $0.width, height: $0.height) }
+                runs[start, default: []].append((from, to, own))
+            }
             return made.id
+        }
+
+        /// Where a run from `start` to a pill beside it on its right begins: the right end of the row it leaves from, else the
+        /// middle of the start's right side, where the start will be. Nil for a start with nothing drawn.
+        private mutating func runStart(_ line: Line?, of start: ShapeID, startMoves: Bool) -> CGPoint? {
+            if let line, let row = rowRect(line, of: start, startMoves: startMoves) { return CGPoint(x: row.maxX, y: row.midY) }
+            let bounds = startMoves ? finalBox(of: start) : surroundings(on: source)?.reading.shapes.geometry(of: start)?.bounds
+            return bounds.map { CGPoint(x: $0.maxX, y: $0.midY) }
+        }
+
+        /// The lines (each as its outline's points) and labels of the arrows at `start` this move leaves as they are, where they are
+        /// drawn: what a pill planned beside the start keeps its run and its label off.
+        private mutating func linesAndLabels(at start: ShapeID, startMoves: Bool) -> (lines: [[CGPoint]], labels: [CGRect]) {
+            guard let surroundings = surroundings(on: source) else { return ([], []) }
+            let offset = startMoves ? delta : .zero
+            var lines: [[CGPoint]] = [], labels: [CGRect] = []
+            for tie in index().tied[start] ?? [] where !crossing.contains(tie.arrow) {
+                guard let geometry = surroundings.reading.shapes.geometry(of: tie.arrow) else { continue }
+                lines.append(Self.drawn(geometry.outline).map { CGPoint(x: $0.x + offset.x, y: $0.y + offset.y) })
+                if let label = geometry.label { labels.append(label.offsetBy(dx: offset.x, dy: offset.y)) }
+            }
+            return (lines, labels)
         }
 
         /// The row of `start` a line leaves from, where it will be (moved by the move's offset where the start moves).
@@ -435,6 +513,28 @@ public struct CrossingArrows {
             let boxes = movers.compactMap { finalBox(of: $0) }
             movedBoxes = boxes
             return boxes
+        }
+
+        /// An arrow's line as it is drawn, from its outline: three points (its start, the middle of its arc and its end) are the arc
+        /// through them, a point every sixteenth of the way along; any other outline as it is.
+        static func drawn(_ outline: [CGPoint]) -> [CGPoint] {
+            guard outline.count == 3 else { return outline }
+            let (a, b, c) = (outline[0], outline[1], outline[2])
+            let d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y))
+            guard abs(d) > 1e-6 else { return outline }
+            let aa = a.x * a.x + a.y * a.y, bb = b.x * b.x + b.y * b.y, cc = c.x * c.x + c.y * c.y
+            let center = CGPoint(x: (aa * (b.y - c.y) + bb * (c.y - a.y) + cc * (a.y - b.y)) / d,
+                                 y: (aa * (c.x - b.x) + bb * (a.x - c.x) + cc * (b.x - a.x)) / d)
+            let radius = hypot(a.x - center.x, a.y - center.y)
+            func angle(_ p: CGPoint) -> CGFloat { atan2(p.y - center.y, p.x - center.x) }
+            // From a's angle to c's, the way that passes b's.
+            let start = angle(a), through = angle(b), end = angle(c)
+            func sweep(_ from: CGFloat, _ to: CGFloat) -> CGFloat { var s = to - from; while s < 0 { s += 2 * .pi }; return s }
+            let total = sweep(start, through) <= sweep(start, end) ? sweep(start, end) : sweep(start, end) - 2 * .pi
+            return (0...16).map { step in
+                let t = start + total * CGFloat(step) / 16
+                return CGPoint(x: center.x + radius * cos(t), y: center.y + radius * sin(t))
+            }
         }
 
         /// The board read once, with the moving shapes left out of the origin's.

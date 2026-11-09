@@ -58,7 +58,9 @@ public enum OpenAPIPaste {
     @MainActor
     static func program(_ documents: [OpenAPIDocument], typeKind: ShapeKind?) -> DrawPut {
         var rows: [[DrawPut.Shape]] = []
-        for document in documents {
+        for (document, title) in zip(documents, titles(of: documents)) {
+            var document = document
+            document.title = title
             rows.append([api(document, typeKind: typeKind)])
             guard let typeKind else { continue }
             let types = laidOut(document.types).map { type(document.types[$0], kind: typeKind) }
@@ -68,6 +70,31 @@ public enum OpenAPIPaste {
         // What it puts down of that kind is types, not notes: so VoiceOver hears it.
         if let typeKind { put.labels[typeKind.rawValue] = APIStyle.pastedTypeLabel }
         return put
+    }
+
+    /// Each document's API's title: its own (else `APIStyle.pastedTitle`), but one an earlier document of the paste has already
+    /// (two files of one spec, v1 and v2 of "Billing API") its major version added as New Version names one ("Billing API v2"),
+    /// else a number, so each is an API of its own and the put never joins the second into the first (review R12).
+    @MainActor
+    static func titles(of documents: [OpenAPIDocument]) -> [String] {
+        var used: Set<String> = [], titles: [String] = []
+        for document in documents {
+            let base = document.title.isEmpty ? APIStyle.pastedTitle : document.title
+            var title = base
+            if used.contains(title.lowercased()) {
+                let major = document.version.drop { $0 == "v" || $0 == "V" }.prefix { $0.isNumber }
+                if !major.isEmpty, !used.contains("\(base) v\(major)".lowercased()) {
+                    title = "\(base) v\(major)"
+                } else {
+                    var number = 2
+                    while used.contains("\(base) \(number)".lowercased()) { number += 1 }
+                    title = "\(base) \(number)"
+                }
+            }
+            used.insert(title.lowercased())
+            titles.append(title)
+        }
+        return titles
     }
 
     /// The order a document's types are put down in, by what refers to what (`ReaderLayout.walk`): from the type most `$ref`s and

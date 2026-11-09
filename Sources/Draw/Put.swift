@@ -53,6 +53,10 @@ public struct DrawPut: Sendable {
     /// What a kind the put makes is called where the put is announced (a note that is a type: "Type"), by the kind's id; a kind not
     /// here goes by its registered label.
     public var labels: [String: String] = [:]
+    /// The column of the grid each statement of `block` is in, by its `line`, where the block is a grid (`init(grid:)`): each
+    /// column as wide as its widest, so a shape lands under the one of the row above in its column, a cell left empty kept.
+    /// Empty: each row is laid left to right, one after another.
+    public var columns: [Int: Int] = [:]
 
     public init(script: Script, block: [[Int]], edges: [Int: [Edge]] = [:], late: [Int: [LateValue]] = [:],
                 admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], sizes: [Int: Dimensions] = [:]) {
@@ -171,12 +175,21 @@ public struct DrawPut: Sendable {
 
     /// Shapes in layout rows, numbered in order from 1: each row left to right, the rows top to bottom.
     public init(rows: [[Shape]]) {
+        self.init(grid: rows.map { $0.map(Optional.some) })
+        columns = [:]
+    }
+
+    /// Shapes in a grid, numbered in order from 1: each row left to right, the rows top to bottom, each shape in the column its
+    /// place in its row says (`columns`); a nil is a cell left empty, so a shape lands under another of a row above.
+    public init(grid rows: [[Shape?]]) {
         var statements: [Statement] = [], block: [[Int]] = [], edges: [Int: [Edge]] = [:], late: [Int: [LateValue]] = [:]
-        var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], sizes: [Int: Dimensions] = [:]
+        var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], sizes: [Int: Dimensions] = [:], columns: [Int: Int] = [:]
         for row in rows {
             var lines: [Int] = []
-            for shape in row {
+            for (column, shape) in row.enumerated() {
+                guard let shape else { continue }
                 let line = statements.count + 1
+                columns[line] = column
                 let attributes = shape.values.map { Attribute(key: $0.key, value: .quoted($0.text)) }
                     + shape.json.map { Attribute(key: $0.key, value: .json($0.text)) }
                 let body = ShapeStatement(word: shape.kind, name: shape.name, attributes: attributes)
@@ -190,6 +203,7 @@ public struct DrawPut: Sendable {
             if !lines.isEmpty { block.append(lines) }
         }
         self.init(script: Script(statements: statements, styles: []), block: block, edges: edges, late: late, admits: admits, sizes: sizes)
+        self.columns = columns
     }
 
     /// Whether it puts nothing down.
@@ -303,7 +317,7 @@ private struct Putting {
         for item in planned { if let id = item.id { options.keys[id.description] = id } }
         for (title, ids) in inside where bare[title] == nil && ids.count == 1 { options.keys[title] = ids[0] }
 
-        // Runs by board: the shown board's first, with every new shape and edge; a shape the file has elsewhere is restated on its
+        // Runs by board: the shown board's, with every new shape and edge; a shape the file has elsewhere is restated on its
         // own board.
         var boards: [BoardID] = [shown]
         for item in planned where !boards.contains(item.board) { boards.append(item.board) }
@@ -328,32 +342,37 @@ private struct Putting {
         // beside it are placed against the width it will have, never under it.
         let widening = widenings(planned, scripts, implied: implied, options: options)
         let editor = editor, shown = shown, step = step
-        func drawn(_ ready: DrawOptions) throws(DrawError) {
-            if scripts.count == 1 {
-                var run = ready
-                run.board = shown
-                run.implied = implied[shown] ?? [:]
-                _ = try draw(parsed: scripts[0].script, dryRun: false, reveal: false, program: program, options: run, in: editor)
-            } else {
-                let copy = editor.rehearsal()
-                for item in scripts {
-                    var run = ready
-                    run.board = item.board
-                    run.implied = implied[item.board] ?? [:]
-                    if item.board != shown { run.places = [:] }
-                    _ = try draw(parsed: item.script, dryRun: false, reveal: false, program: program, options: run, in: copy)
+        func run(_ item: (board: BoardID, script: Script, lines: [Int: Int]), _ ready: DrawOptions, on target: CanvasEditor) throws(DrawError) {
+            var run = ready
+            run.board = item.board
+            run.implied = implied[item.board] ?? [:]
+            if item.board != shown { run.places = [:] }
+            _ = try draw(parsed: item.script, dryRun: false, reveal: false, program: program, options: run, in: target)
+        }
+        // One step with the widening, where a caller hasn't grouped the put already. A put of one board that widens nothing draws
+        // on the board itself; any other is drawn on a rehearsal and taken in whole, so a put refused after its widening (a holder
+        // that takes nothing, the board changed under it) leaves nothing, no widening and no step.
+        do {
+            try editor.undoHistory.group(step) {
+                if scripts.count == 1, widening.isEmpty {
+                    try layOut(planned, scripts, options: &options, on: editor)
+                    try run(scripts[0], options, on: editor)
+                    return
                 }
+                let copy = editor.rehearsal()
+                for (id, board, box) in widening { copy.transact(on: board, step) { $0.update(id) { $0.box = box } } }
+                try layOut(planned, scripts, options: &options, on: copy)
+                // The runs that restate shapes on other boards first, so the shown board's new shapes and keys read the far shapes as
+                // the put writes them (a key to a column the same paste adds there); then the shown board's; then, again, each other
+                // board's whose values imply edges, which may reach a shape the shown board's run has just made (drawn again, a
+                // restated shape is unchanged).
+                let others = scripts.filter { $0.board != shown }
+                for item in others { try run(item, options, on: copy) }
+                for item in scripts where item.board == shown { try run(item, options, on: copy) }
+                for item in others where !(implied[item.board] ?? [:]).isEmpty { try run(item, options, on: copy) }
                 guard editor.adopt(copy, named: step, byAgent: false) else {
                     throw DrawError("the board changed while it was put down, so nothing was", reason: ScriptError.Reason.busy.rawValue, hint: "try again")
                 }
-            }
-        }
-        // One step with the widening, where a caller hasn't grouped the put already.
-        do {
-            try editor.undoHistory.group(step) {
-                for (id, board, box) in widening { editor.transact(on: board, step) { $0.update(id) { $0.box = box } } }
-                try layOut(planned, scripts, options: &options)
-                try drawn(options)
             }
         } catch let error as DrawError {
             throw error
@@ -544,8 +563,10 @@ private struct Putting {
 
     /// Measures the new shapes, lays the block's out in rows at draw's normal gap, lands the box around them as Insert lands a
     /// shape, and gives each its place (`DrawOptions.places`, by the line of its run's statement).
+    /// `target` is the editor it is drawn on: the board itself, or a rehearsal of it with the widening in.
     private func layOut(_ planned: [Planned], _ scripts: [(board: BoardID, script: Script, lines: [Int: Int])],
-                        options: inout DrawOptions) throws(DrawError) {
+                        options: inout DrawOptions, on target: CanvasEditor) throws(DrawError) {
+        let editor = target
         guard let shownRun = scripts.first(where: { $0.board == shown }) else { return }
         let isNew = Set(planned.filter(\.isNew).map(\.original))
         let rows = block.block.map { $0.filter { isNew.contains($0) && shownRun.lines[$0] != nil } }.filter { !$0.isEmpty }
@@ -562,6 +583,20 @@ private struct Putting {
         for item in drawing.items { rooms[item.statement.line] = item.room }
 
         let gap = GapName.normal.value
+        // A grid's columns (`DrawPut.columns`), each as wide as its widest new shape; one that holds none takes no room.
+        var columnX: [Int: CGFloat] = [:]
+        if !block.columns.isEmpty {
+            var widest: [Int: CGFloat] = [:]
+            for original in rows.joined() {
+                guard let column = block.columns[original], let line = shownRun.lines[original] else { continue }
+                widest[column] = max(widest[column] ?? 0, rooms[line]?.width ?? 0)
+            }
+            var x: CGFloat = 0
+            for column in widest.keys.sorted() {
+                columnX[column] = x
+                x += widest[column]! + gap
+            }
+        }
         var offsets: [Int: CGPoint] = [:]
         var width: CGFloat = 0, y: CGFloat = 0
         for (number, row) in rows.enumerated() {
@@ -569,6 +604,7 @@ private struct Putting {
             for original in row {
                 let line = shownRun.lines[original]!
                 let size = rooms[line] ?? .zero
+                if let column = block.columns[original], let at = columnX[column] { x = at }
                 offsets[line] = CGPoint(x: x, y: y)
                 x += size.width + gap
                 height = max(height, size.height)

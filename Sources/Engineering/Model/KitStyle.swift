@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Palette
 
@@ -83,6 +84,10 @@ public enum KitStyle {
         let radius = max(0, min(cornerRadius, rect.width / 2, rect.height / 2))
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
+
+    /// The room a table, an enum or an API keeps clear below it as it grows (`MakesRoomAsItGrows.roomKeptBelow`): its waiting
+    /// line, a row, and the title's pill of the shape below (Adornments' row above a shape), so typing rows never covers it.
+    public static var roomKeptBelow: CGFloat { rowHeight + AdornmentLayout.rowGap + AdornmentLayout.rowHeight }
 
     /// How tall a shape of `rows` rows is: the insets and a row each, and room for one when there are none.
     public static func height(rows: Int) -> CGFloat {

@@ -227,8 +227,15 @@ extension RowDragSession: Session {
         case .board(let origin): editor.moveRows(rows, of: source, to: .board(origin: origin))
         case .into(let target, let before, _):
             let folded = editor.rowFolds?.isFolded(target) == true
-            // A folded target shows every row once they land in it, so they stay in sight.
-            if editor.moveRows(rows, of: source, to: .into(target, before: before)) != nil, folded { editor.rowFolds?.unfold([target]) }
+            // A folded target shows every row once they land in it, so they stay in sight. The rows peek through its fold as they
+            // land, so the step measures the target with them shown and pushes what's below by their room (review R9); the
+            // unfold after is a view, as any is.
+            if folded { editor.rowFolds?.peek(Set(rows), of: target) }
+            let moved = editor.moveRows(rows, of: source, to: .into(target, before: before)) != nil
+            if folded {
+                editor.rowFolds?.release(of: target)
+                if moved { editor.rowFolds?.unfold([target]) }
+            }
         }
     }
 

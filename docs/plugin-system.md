@@ -2542,7 +2542,8 @@ and endpoints on any board (through a pill for the endpoint, drawing its method'
 and highlighted); the card's method line, Change Method ▸ in the selection's menu and Space on the row are its keys, each
 "Change Method". The card's deprecated is "Deprecate Endpoint" (the chip hollow, the words faint); `/new-version` marks
 the API deprecated and puts a copy beside it, its title's and server's version bumped, its rows under their ids and the
-arrows its rows start copied; `/group-by-prefix` runs `APIGroups.byPrefix`, the paste's rule, on the API's full paths.
+arrows its rows start copied (the copy on the side of the old one facing what those arrows reach, or below it, so they never
+cross the old version: Placing's `sides(of:facing:)`); `/group-by-prefix` runs `APIGroups.byPrefix`, the paste's rule, on the API's full paths.
 One endpoint taken out is the `endpoint` kind, the row's card drawn open, under the row's id so its arrows follow; it is
 written as lines for moves alone, so its chip drags it back into an API:
 
@@ -2578,8 +2579,12 @@ nowhere is left out (a key the column had stays), and the paste lands anyway. Th
 table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
 brought into it, and VoiceOver hears what was made and what changed (a paste again as it was: "Nothing changed", no step);
 SQL that reads as nothing says "Nothing to paste". The reader orders what it puts by the keys (enums on rows of their own,
-then the tables from the one most keys name, each after the one it keys to most, four to a row), and makes each table as wide
-as its longest line (`DrawPut.Shape.size`), so a dump reads as a schema, not an alphabet.
+then the tables from the one most keys name, each after the one it keys to most, put in a grid four columns wide where each
+lands beside, above, below or corner to corner with the tables it keys to: `ReaderLayout.grid`, `DrawPut(grid:)`), and makes
+each table as wide as its longest line (`DrawPut.Shape.size`), so a dump reads as a schema, not an alphabet, and no key runs
+under a card. The reader says what of the file it reads (`readsOfFile`: the file's enums, which measure a column typed as
+one), so its reading, kept per pasteboard change, is read again when that changes. Two OpenAPI files of one title paste as
+two APIs, the later titled by its version.
 
 **Paste OpenAPI.** ⌘V of an OpenAPI 3 file (`.yaml`, `.yml` or `.json`) or its text is the kit's second reader. YAML is
 read by a subset reader of the kit's own (`YAMLReader`) into Types' ordered `SchemaValue`, JSON by Types' reader, so
@@ -2745,7 +2750,7 @@ target shaking; a row keeps its id (a new one only where the target holds it), a
 through the core's `moveParts` (`PartsMoved` hears it). On the pasteboard (the editor's: Clipboard's) rows are a
 board file of the source holding only them, their lines as text beside it: `copyRows` carries the arrows they start,
 `cutRows` every arrow bound to them, counted in its step ("Cut Columns and 2 Arrows"), and `pasteRows` lands them
-as `moveRows` does, a cut's paste a move (its arrows back under their ids) while neither the shape they were cut from nor the one a first paste put them in holds them.
+as `moveRows` does, a cut's paste a move (its arrows back under their ids) while neither the shape they were cut from nor the one a first paste put them in holds them, on any board.
 While a shape is edited, ⇧↑ ⇧↓ select rows whole (the first the caret's row), which ⌫, ⌥↑ ⌥↓, ⌘C ⌘X ⌘V act on,
 and Escape leaves selected as items. The selection's menu offers the take-out of rows selected.
 
@@ -15937,8 +15942,9 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   A refusal changes nothing there, and the caller throws, dropping the move; the nudges are that
   board's, where nothing glides. On the transaction's own board it's `settle(_:)`.
 - **Making room** (`MakingRoom.swift`) is settling's one exception to "a shape that grows later
-  stays where it is", for the kinds that opt in (`MakesRoomAsItGrows`, a capability with no
-  requirements: the engineering kit's table, enum and API). When a step writes such a shape taller
+  stays where it is", for the kinds that opt in (`MakesRoomAsItGrows`, a capability whose one
+  requirement has a default, `roomKeptBelow`: the engineering kit's table, enum and API, which keep
+  a row and a title's pill clear below them). When a step writes such a shape taller
   at rest (laid out without the values plugins set for it while it's handled, `setLayoutInput`: an
   editing view's waiting line, a drag's fade, so only a write pushes; a provider answers as at rest,
   `LayoutReading.isResting`: the width while typing nothing, a fold kept for the shape being
@@ -15946,8 +15952,10 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   was below its old bottom, overlaps it across (its widest, before and after), and that its new
   bottom comes nearer than `Style.roomReach` (32 world units whatever the zoom, twice the containers'
   gap, which clears a title's row at 84% zoom and up) moves down by as much
-  as its bottom went down, and pushes what it reaches the same way, one pass top to bottom (a shape
-  two reach moves by the larger). What a container holds goes with it, arrows bound to it follow. A
+  as its bottom went down (or as far as leaves the room its kind keeps below it, where the gap was
+  less), and pushes what it reaches the same way, one pass top to bottom (a shape two reach moves by
+  the larger); a shape the body placed against the growth already (`placedAgainstGrowth`: what
+  `canvas draw` solved against the grown rooms) moves only by the push of the shape above it. What a container holds goes with it, arrows bound to it follow. A
   container whose members the push takes past its bottom less the gap grows to hold them the gap
   inside, and pushes in its own container; innermost first. Where it stops the person takes over:
   read-only shapes stay and push nothing, a read-only container doesn't grow, a shape the step put in

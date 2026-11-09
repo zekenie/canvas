@@ -51,6 +51,7 @@ private let shop = """
         w.mouseClick(at: CGPoint(x: top.midX, y: top.minY + 8))
         walk.press(.return)
         expectEqual(editor.editingShapeID, customers)
+        let initial = try frame(editor, products).minY
         var tops: [CGFloat] = []
         for line in ["street text", "city text", "postcode text", "country char(2)"] {
             w.type(line, with: walk)
@@ -62,12 +63,14 @@ private let shop = """
         let grown = try frame(editor, customers), below = try frame(editor, products)
         let line = (grown.height - top.height) / 4
         expect(line > 0)
-        // 90, then 90 less a line twice; at under a line and the reach it's pushed, the gap it has kept.
-        expectEqual(tops[0], below.minY - 2 * line, "the first: 90 - a line is no nearer than a line and the reach")
-        expectEqual(tops[1], tops[0])
+        // 90, then 90 less a line; nearer than a line and the room a table keeps below it (a waiting line and a pill, UX walk 3
+        // apis-1) it's pushed, the gap it has kept.
+        expect(90 >= line + max(32, KitStyle.roomKeptBelow) && 90 - line < line + max(32, KitStyle.roomKeptBelow))
+        expectEqual(tops[0], initial, "the first: 90 is no nearer than a line and the room kept below")
+        expectEqual(tops[1], tops[0] + line, "pushed")
         expectEqual(tops[2], tops[1] + line, "pushed")
         expectEqual(tops[3], tops[2] + line, "pushed")
-        expectEqual(below.minY - grown.maxY, 90 - 2 * line, "the gap it had when the push began, kept")
+        expectEqual(below.minY - grown.maxY, 90 - line, "the gap it had when the push began, kept")
         expectEqual(editor.holder(of: products), shopID)
         let pill = try require(editor.adornmentFrames(of: products).first { $0.adornment.placement == .aboveTopLeft }?.rect, "products' pill")
         expect(!pill.intersects(grown), "products' pill clear of customers' rows: \(pill) \(grown)")
@@ -169,7 +172,9 @@ private let shop = """
         expect(w.window.performKeyEquivalent(with: w.window.keyEvent("v", code: 9, modifiers: [.command])), "⌘V takes it")
         let growth = try frame(editor, payments).maxY - bottom
         expect(growth > 0, "a column more")
-        expectEqual(try frame(editor, refunds).minY, was + growth, "the gap of 30 kept")
+        expectEqual(try frame(editor, refunds).minY, bottom + growth + max(30, KitStyle.roomKeptBelow),
+                    "the gap of 30 made up to the room a table keeps below it, for its waiting line and refunds' pill")
+        expect(was < bottom + KitStyle.roomKeptBelow)
         expectEqual(undoTitle(w.window), "Undo Paste SQL")
         editor.undo()
         expectEqual(try frame(editor, refunds).minY, was)
