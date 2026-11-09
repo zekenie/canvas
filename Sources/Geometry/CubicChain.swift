@@ -59,7 +59,7 @@ public struct CubicChain: Sendable, Hashable {
     private func samples(segments: Int) -> [(t: CGFloat, point: CGPoint)] {
         var result: [(t: CGFloat, point: CGPoint)] = [(0, start)]
         for (index, piece) in pieces.enumerated() {
-            let count = piece.isStraight ? 1 : max(segments, 1)
+            let count = piece.isEvenLine ? 1 : max(segments, 1)
             for step in 1...count {
                 let local = CGFloat(step) / CGFloat(count)
                 result.append((global(index, local), piece.point(at: local)))
@@ -120,6 +120,14 @@ public struct CubicChain: Sendable, Hashable {
 }
 
 extension Cubic {
+    /// Whether it is `CubicChain.line(from:to:)`'s: controls a third of the way from each end, so even speed along it (a
+    /// collinear cubic with its controls elsewhere eases, and is measured as a curve is).
+    var isEvenLine: Bool {
+        let chord = end - start
+        let scale = max(chord.length, 1)
+        return control1.distance(to: start + chord / 3) < 1e-6 * scale && control2.distance(to: start + chord * (2.0 / 3)) < 1e-6 * scale
+    }
+
     /// Whether its controls lie on the line between its ends (`CubicChain.line(from:to:)`'s, or one that draws as straight).
     public var isStraight: Bool {
         let chord = end - start, length = chord.length

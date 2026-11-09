@@ -106,7 +106,14 @@ private let billing = #"""
         if !orders.insetBy(dx: 4, dy: 4).contains(paperPoint) { paperPoint = under - CGPoint(x: 0, y: 8) }
         let on = pixel(rep, at: editor.camera.toView(under)), paper = pixel(rep, at: editor.camera.toView(paperPoint))
         expect(on[0] < paper[0] - 15, "drawn across the table, faint: \(on) on paper \(paper)")
-        expect(on[0] > 90, "but faint, under its words: \(on)")
+        expect(on[0] > 90, "but faint: \(on)")
+        // Over a row's words (its two ends) the line is left out, so it never strikes through a name or a type; the middle shows.
+        let geometry = try require(editor.shapeContext.geometry(of: try table(editor, "orders").id))
+        let leftEnd = try require(body.flattened(segments: 400).first { $0.x >= orders.minX + 6 })
+        if let row = geometry.parts.shownFrames.first(where: { $0.rect.minY + 2 < leftEnd.y && leftEnd.y < $0.rect.maxY - 2 }) {
+            let word = pixel(rep, at: editor.camera.toView(leftEnd)), rowPaper = pixel(rep, at: editor.camera.toView(CGPoint(x: leftEnd.x, y: row.rect.minY + 1)))
+            expect(abs(word[0] - rowPaper[0]) <= 8, "no line through a row's name end: \(word) beside \(rowPaper)")
+        }
     },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {
         let editor = try billingEditor()
@@ -203,6 +210,86 @@ private let billing = #"""
         let body = try require(geometry.levelBody)
         expectEqual(body.end, CGPoint(x: clear.maxX, y: clear.midY), "payments' amount_cents row's right side, facing refunds")
         expectEqual(geometry.end, body.end, "a marked end: no gap")
+    },
+    test("inside a database a row's side with no room is the side its key is drawn at, and the bundles pick a line's entry row by that same side; the database resized, they are worked out again (review U9-R5, U9-R6)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"database "shop" size: 700x500"#)
+        try w.draw(#"""
+            table "customers" in "shop" columns: "id uuid pk\nname text"
+            table "orders" in "shop" columns: "id uuid pk\ncustomer_id uuid\ntotal int"
+            table "items" in "shop" columns: "id uuid pk\norder_id uuid"
+            """#)
+        let editor = w.editor
+        let shop = try require(editor.document.shapes.first { $0[TitleProperty.self] == "shop" }).id
+        let (customers, orders, items) = (try table(editor, "customers"), try table(editor, "orders"), try table(editor, "items"))
+        @MainActor func place(_ id: ShapeID, _ frame: CGRect) { editor.transact("Place") { $0.update(id, as: DatabaseTable.self) { $0.props.frame = frame } } }
+        place(customers.id, CGRect(x: 100, y: 100, width: 240, height: 116))
+        place(orders.id, CGRect(x: 400, y: 100, width: 260, height: 116))
+        place(items.id, CGRect(x: 400, y: 300, width: 260, height: 92))
+        @MainActor func resize(maxX: CGFloat) {
+            editor.transact("Resize") { $0.update(shop, as: Database.self) { $0.props.frame = CGRect(x: 80, y: 60, width: maxX - 80, height: 500) } }
+        }
+        @MainActor func foreignKey(_ from: (ShapeRecord<DatabaseTable>, Int), _ to: (ShapeRecord<DatabaseTable>, Int?)) -> ShapeID {
+            var arrow = ShapeRecord(Arrow(start: .bound(ArrowBinding(shapeID: from.0.id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true,
+                                                                       part: from.0.props.columns[from.1].id)),
+                                          end: .bound(ArrowBinding(shapeID: to.0.id, normalizedAnchor: CGPoint(x: to.1 == nil ? 0.5 : 0, y: 0.5), isPrecise: to.1 != nil,
+                                                                   isExact: to.1 != nil, part: to.1.map { to.0.props.columns[$0].id })), endArrowhead: false))
+            arrow[ChannelProperty.self] = ForeignKey.id
+            editor.transact("Add Arrow") { $0.insert(AnyShapeRecord(arrow)) }
+            return arrow.id
+        }
+        let (o, i, c) = (try table(editor, "orders"), try table(editor, "items"), try table(editor, "customers"))
+        // orders.id to items.id, stacked tables sided together; customers.id to orders as a whole, from the left.
+        resize(maxX: 680)
+        let key = foreignKey((o, 0), (i, 0)), whole = foreignKey((c, 0), (o, nil))
+        // 12 to the right of orders' rows inside the database, 312 to their left of its own edge: both leave the left.
+        let narrow = try require(editor.arrowGeometry(of: key))
+        expectEqual(narrow.partSide(at: .start), .left, "no room right of orders inside the database: it leaves the left")
+        let taken = try require(editor.connectionBundle(of: whole)?.entries[.end], "the line into orders from the left comes in clear of the key's row there")
+        expect(taken != o.props.columns[0].id, "not the row the key leaves by")
+        // The database widened: the right has room, the key leaves it, and nothing is at the left to come in clear of.
+        resize(maxX: 900)
+        expectEqual(try require(editor.arrowGeometry(of: key)).partSide(at: .start), .right, "room right: the right")
+        expectEqual(editor.connectionBundle(of: whole)?.entries[.end], nil, "worked out again with the database: the first row is clear")
+    },
+    test("one row's keys to two tables at one height are parted in the board's order, whatever a set's order is (review U9-C6)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        for (round, names) in [["alpha", "beta"], ["gamma", "delta"], ["omega", "eta"]].enumerated() {
+            try w.draw(#"table "src_\#(names[0])" columns: "id uuid pk\nref_a uuid\nref_b uuid""#)
+            try w.draw(#"table "\#(names[0])" columns: "id uuid pk""#)
+            try w.draw(#"table "\#(names[1])" columns: "id uuid pk""#)
+            let (src, first, second) = (try table(editor, "src_\(names[0])"), try table(editor, names[0]), try table(editor, names[1]))
+            // Aligned: one height, so only the board's order tells them apart.
+            let top = CGFloat(100 + round * 600)
+            editor.transact("Place") {
+                $0.update(src.id, as: DatabaseTable.self) { $0.props.frame = CGRect(x: 0, y: top, width: 200, height: 100) }
+                $0.update(first.id, as: DatabaseTable.self) { $0.props.frame = CGRect(x: 500, y: top, width: 200, height: 70) }
+                $0.update(second.id, as: DatabaseTable.self) { $0.props.frame = CGRect(x: 800, y: top, width: 200, height: 70) }
+            }
+            // Two rows of src each to both tables: each far end is fanned (two rows into it), each row's keys part for two places.
+            var ids: [[ShapeID]] = []
+            for row in [1, 2] {
+                var made: [ShapeID] = []
+                for target in [first, second] {
+                    var arrow = ShapeRecord(Arrow(start: .bound(ArrowBinding(shapeID: src.id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true,
+                                                                               part: src.props.columns[row].id)),
+                                                  end: .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true,
+                                                                           part: target.props.columns[0].id)), endArrowhead: false))
+                    arrow[ChannelProperty.self] = ForeignKey.id
+                    editor.transact("Add Arrow") { $0.insert(AnyShapeRecord(arrow)) }
+                    made.append(arrow.id)
+                }
+                ids.append(made)
+            }
+            for made in ids {
+                expectEqual(made.map { editor.connectionBundle(of: $0)?.parting?.index }, [0, 1], "in the board's order: \(names)")
+            }
+        }
     },
     test("a key's ends have no head to toggle: the Shape menu leaves Toggle Arrowhead out, a plain arrow keeps it") {
         let editor = try billingEditor()

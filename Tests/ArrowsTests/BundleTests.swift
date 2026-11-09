@@ -173,6 +173,19 @@ import TestKit
         } }
         expectClose(try b.geometry(two).middle, before, within: 1e-6)
     },
+    test("two connections made at the sides of two shapes (precise, straight, bound as wholes) take their slots' bows, drawn apart, not on one line (review U9-C3)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        func side(_ id: ShapeID, x: CGFloat) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: x, y: 0.5), isPrecise: true, isExact: false))
+        }
+        let one = b.h.add(Arrow(start: side(b.left, x: 1), end: side(b.right, x: 0)))
+        let two = b.h.add(Arrow(start: side(b.left, x: 1), end: side(b.right, x: 0)))
+        answers.answers = [one: ConnectionBundle(slot: 0, slots: 2), two: ConnectionBundle(slot: 1, slots: 2)]
+        b.h.editor.connectionBundlesDidChange([one, two])
+        let (first, second) = (try b.geometry(one).middle, try b.geometry(two).middle)
+        expect(first.distance(to: second) > 10, "drawn apart: \(first), \(second)")
+    },
     test("a fanned arrow's label is edited where it is drawn, slid toward its start (review R22)") {
         let answers = BundleAnswers()
         let b = try bundleBoard(answers)

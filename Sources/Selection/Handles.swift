@@ -110,7 +110,10 @@ final class PointingHandleSession {
 
 extension PointingHandleSession: Session {
     /// A resize handle's resize cursor, else the closed hand.
-    func cursor(in editor: CanvasEditor) -> CanvasCursor? { (handle.base as? ResizeHandle)?.cursor ?? .closedHand }
+    func cursor(in editor: CanvasEditor) -> CanvasCursor? {
+        guard let resize = handle.base as? ResizeHandle else { return .closedHand }
+        return resize.cursor(axes: editor.document[shapeID].map { editor.registry.resizedAxes(of: $0) } ?? .both)
+    }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         guard pointer.view.distance(to: origin) > Style.dragThreshold, let next = dragSession(in: editor) else { return }

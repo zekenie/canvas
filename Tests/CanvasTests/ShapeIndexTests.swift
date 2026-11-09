@@ -12,6 +12,25 @@ import TestKit
     var hitTests: [ShapeID] = []
 }
 
+/// A shape painted just below its anchor that follows the containment of the shape it clings to, as a key does of its ends.
+struct Cling: ShapeProps {
+    static let kind: ShapeKind = "cling"
+    static let properties = Properties<Cling> {
+        Property("target", \.target)
+    }
+    var target: ShapeID?
+}
+
+struct ClingDefinition: ShapeDefinition, PaintOrderAnchored {
+    func render(_ shape: ShapeRecord<Cling>, in context: RenderContext) {}
+    func geometry(of shape: ShapeRecord<Cling>, in context: ShapeContext) -> ShapeGeometry {
+        ShapeGeometry(outline: [], bounds: .zero, isClosed: false)
+    }
+    func paintAnchor(of shape: ShapeRecord<Cling>, in document: CanvasDocument) -> ShapeID? { shape.props.target }
+    func paintsBelowAnchor(_ shape: ShapeRecord<Cling>, in document: CanvasDocument) -> Bool { true }
+    func paintAnchorFollowsContainment(of shape: ShapeRecord<Cling>) -> [ShapeID] { shape.props.target.map { [$0] } ?? [] }
+}
+
 /// A 10 × 10 square on its host's top-right corner (at the origin without one): its geometry looks
 /// the host up, as a connector's looks up the shapes it joins.
 struct Marker: ShapeProps {
@@ -329,5 +348,51 @@ struct IndexKinds: CanvasPlugin {
             expectEqual(context.solidBounds(of: ids[1]), nil, "a box, but not one this app can read")
             expectEqual(context.solidBounds(of: ids[2]), CGRect(x: 0, y: 0, width: 10, height: 10), "the box that loaded")
         }
+    },
+    test("a container change builds the paint list again only where it reaches a shape an anchored one follows, or a container holding one (review R26)") {
+        #if DEBUG
+        let h = try EditorHarness(plugins: [FixturesPlugin(), CorralsPlugin(), Contributor(id: "clings") { $0.shape(ClingDefinition()) }])
+        let outer = h.add(Corral(CGRect(x: 700, y: -50, width: 1300, height: 600)))
+        let corral = h.add(Corral(CGRect(x: 800, y: 0, width: 400, height: 300)))
+        let a = h.add(Box(CGRect(x: 20, y: 40, width: 100, height: 60)))
+        let loose = h.add(Box(CGRect(x: 420, y: 40, width: 100, height: 60)))
+        let cling = h.add(Cling(target: a))
+        _ = h.editor.paintOrder()
+        var built = h.editor.paintListsBuilt
+        h.editor.transact { $0.setContainer(loose, to: corral) }
+        _ = h.editor.paintOrder()
+        expectEqual(h.editor.paintListsBuilt, built, "a shape nothing clings to")
+        h.editor.transact { $0.setContainer(corral, to: outer) }
+        _ = h.editor.paintOrder()
+        expectEqual(h.editor.paintListsBuilt, built, "a container holding none that is clung to")
+        h.editor.transact { $0.setContainer(a, to: corral) }
+        _ = h.editor.paintOrder()
+        expect(h.editor.paintListsBuilt > built, "the shape clung to joined a container: built again")
+        built = h.editor.paintListsBuilt
+        h.editor.transact { $0.setContainer(corral, to: nil) }
+        _ = h.editor.paintOrder()
+        expect(h.editor.paintListsBuilt > built, "a container holding it left another")
+        // The anchored shape goes: nothing follows the shape, so its containment is nothing to the list.
+        h.editor.transact { $0.delete([cling]) }
+        _ = h.editor.paintOrder()
+        built = h.editor.paintListsBuilt
+        h.editor.transact { $0.setContainer(a, to: outer) }
+        _ = h.editor.paintOrder()
+        expectEqual(h.editor.paintListsBuilt, built, "no one clings to it now")
+        #endif
+    },
+    test("the shapes painted below their anchor are listed from a list a commit dropped, brought up to date first; a board with none lists none at no cost (review U9-C5)") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "clings") { $0.shape(ClingDefinition()) }])
+        let a = h.add(Box(CGRect(x: 20, y: 40, width: 100, height: 60)))
+        let view = CGRect(x: -100, y: -100, width: 1000, height: 1000)
+        expect(h.editor.shapesPaintedBelowAnchor(in: view).isEmpty, "none on the board")
+        let cling = h.add(Cling(target: a))
+        // A reorder drops the list; the first answer after it is the new list's.
+        let other = h.add(Box(CGRect(x: 200, y: 40, width: 100, height: 60)))
+        h.editor.transact { $0.bringToFront(a) }
+        _ = other
+        expectEqual(h.editor.shapesPaintedBelowAnchor(in: view).map(\.id), [cling])
+        let order = h.editor.paintOrder().map(\.id)
+        expectEqual(order.firstIndex(of: cling), order.firstIndex(of: a).map { $0 - 1 }, "just below its anchor")
     },
 ])

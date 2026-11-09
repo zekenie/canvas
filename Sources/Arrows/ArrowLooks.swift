@@ -139,15 +139,20 @@ struct ArrowDrawing: @unchecked Sendable {
     let ends: [Mark]
     /// Every mark's strokes together; empty with none.
     let marks: CGPath
-    /// Its visible ends, and whether it is a level curve (an end at a row): far out, its skeleton is the straight line between
-    /// them.
+    /// Its visible ends, and whether far out its skeleton is the straight line between them: a level curve (an end at a row) whose
+    /// ends face each other. One that leaves and comes back by one side (a C between stacked tables) stays the curve, which a
+    /// straight line would lay along the tables' shared edge (review U9-E2).
     let start: CGPoint
     let end: CGPoint
-    let isLevel: Bool
+    let straightensFarOut: Bool
+    /// Its heads closed, as that straight line takes them: along the line, not along the curve it no longer draws.
+    let straightTriangles: CGPath
 
     init(_ geometry: ArrowGeometry, detail: ArrowDetail) {
         whole = geometry.bodyPath
-        (start, end, isLevel) = (geometry.start, geometry.end, geometry.isLevel)
+        (start, end) = (geometry.start, geometry.end)
+        let faces = geometry.levelBody.map { $0.tangent(at: 0).dot($0.tangent(at: 1)) > 0 } ?? false
+        straightensFarOut = geometry.isLevel && faces
         let heads = CGMutablePath(), triangles = CGMutablePath()
         for head in geometry.arrowheads(strokeWidth: detail.width) {
             for path in [heads, triangles] {
@@ -159,6 +164,18 @@ struct ArrowDrawing: @unchecked Sendable {
         }
         self.heads = heads
         self.triangles = triangles
+        let straight = CGMutablePath()
+        if straightensFarOut {
+            let length = min(max(geometry.start.distance(to: geometry.end) / 5, detail.width), detail.width * 3)
+            for end in [ArrowEnd.start, .end] where end == .start ? geometry.startArrowhead : geometry.endArrowhead {
+                let tip = geometry.visiblePoint(at: end), base = tip.moved(toward: geometry.visiblePoint(at: end.opposite), by: length)
+                straight.move(to: base.rotated(around: tip, by: .pi / 6))
+                straight.addLine(to: tip)
+                straight.addLine(to: base.rotated(around: tip, by: -.pi / 6))
+                straight.closeSubpath()
+            }
+        }
+        straightTriangles = straight
         let marks = CGMutablePath()
         var ends: [Mark] = []
         // The stretches of the line a circle sits on, as distances from its start: the line is not drawn inside it.
@@ -182,19 +199,19 @@ struct ArrowDrawing: @unchecked Sendable {
 
     /// The marks drawn zoomed out at `zoom`, each once it reaches `ArrowStyle.skeletonMarkLength` view points along the line,
     /// and the body they're drawn on: cut where a circle drawn is, else whole.
-    /// Below `ArrowStyle.straightSkeletonZoom` a level curve is one straight line from its end to its end, with no marks or
+    /// Below `ArrowStyle.straightSkeletonZoom` a level curve whose ends face each other is one straight line from its end to its end, with no marks or
     /// level reaches (UX walk 3 tables-4: three keys between two tables 75 apart knotted into a scribble at 10%), as other kinds'
     /// skeletons simplify further farther out.
     @MainActor
-    func skeleton(atZoom zoom: CGFloat) -> (body: CGPath, marks: [CGPath]) {
-        if isLevel, zoom < ArrowStyle.straightSkeletonZoom {
+    func skeleton(atZoom zoom: CGFloat) -> (body: CGPath, marks: [CGPath], triangles: CGPath) {
+        if straightensFarOut, zoom < ArrowStyle.straightSkeletonZoom {
             let line = CGMutablePath()
             line.move(to: start)
             line.addLine(to: end)
-            return (line, [])
+            return (line, [], straightTriangles)
         }
         let shown = ends.filter { $0.reach * zoom >= ArrowStyle.skeletonMarkLength }
-        return (shown.contains(where: \.isCut) ? body : whole, shown.map(\.path))
+        return (shown.contains(where: \.isCut) ? body : whole, shown.map(\.path), triangles)
     }
 }
 
@@ -229,9 +246,14 @@ extension ArrowDefinition {
     static func spread(of bundle: ConnectionBundle?, for arrow: Arrow) -> ArrowSpread? {
         guard let bundle, !bundle.isPlain else { return nil }
         var spread = ArrowSpread()
-        // Decided by what the arrow holds, never by its ends' precision, which a nudge or a move alone sets: bound at both ends to
-        // shapes as wholes, it is one of a pair (review R39: made precise by a move, it took a slot's bow and jumped).
-        let paired = [arrow.start, arrow.end].allSatisfy { $0.binding.map { $0.part == nil } ?? false }
+        // Decided by what the arrow holds, never by a nudge's or a move's precision (review R39: made precise by a move, it took a
+        // slot's bow and jumped): bound at both ends to shapes as wholes, and either bowed a pair's step already (a later one of its
+        // pair) or imprecise at both ends (the first, which `pairBend` left straight). One made at its ends' sides (a port's, precise
+        // and straight) is no pair's: it takes its slot's bow, or two of them would be drawn on one line (review U9-C3).
+        let whole = [arrow.start, arrow.end].allSatisfy { $0.binding.map { $0.part == nil } ?? false }
+        let ratio = arrow.bend / ArrowStyle.pairBend
+        let bowed = ratio != 0 && ratio == ratio.rounded() && abs(ratio) < 1_000
+        let paired = whole && (bowed || [arrow.start, arrow.end].allSatisfy { $0.binding.map { !$0.isPrecise } ?? false })
         if !paired {
             spread.bend = CGFloat(bundle.slotOffset) * ArrowStyle.slotSpacing
             spread.slotShift = CGFloat(bundle.slotOffset) * ArrowStyle.slotEndShift

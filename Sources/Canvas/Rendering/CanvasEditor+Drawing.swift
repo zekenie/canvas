@@ -75,7 +75,7 @@ extension CanvasEditor {
         if !outlines.tinted.isEmpty {
             for index in outlines.tinted.indices {
                 let group = outlines.tinted[index]
-                let under = group.shapes.filter { shapeIndex.paintsBelowAnchor($0) }
+                let under = group.shapes.filter { shapeIndex.paintsBelowAnchor($0, in: shapes) }
                 guard !under.isEmpty else { continue }
                 for id in under { beneath[id, default: []].append(group) }
                 let lifted = Set(under)
@@ -83,15 +83,27 @@ extension CanvasEditor {
             }
         }
         let lifted = liftedWhileEdited(in: shapes)
+        // The shape edited, painted above what its widening overlaps: a margin round it, as far out as its outline stands and is
+        // stroked, is left unpainted by those shapes, so no sliver of what it covers shows between its edge and its ring, and what
+        // is under them (a database's surface, the canvas) shows there as it is (UX walk 3 tables-new-1; a fill of the canvas's
+        // colour was a grey halo inside a database, review U9-C2). A container is the surface and a shape anchored to another
+        // (a key bound to the edited table) is drawn to it, so both are left whole.
+        var hole: CGRect?
+        if let lifted {
+            let margin = (outlineStandoff + Style.indicatorWidth) / zoom
+            hole = lifted.frame.insetBy(dx: -margin, dy: -margin)
+        }
+        let everywhere = drawn.insetBy(dx: -1_000_000, dy: -1_000_000)
         for record in paintOrder(in: drawn) {
-            // The shape edited, painted above what its widening overlaps: a margin of the canvas round it first, as far out as its
-            // outline stands and is stroked, so no sliver of what it covers shows between its edge and its ring (UX walk 3
-            // tables-new-1).
-            if let lifted, lifted.id == record.id {
-                let margin = (outlineStandoff + Style.indicatorWidth) / zoom
-                Style.canvasBackground.setFill()
-                CGRect(x: lifted.frame.minX - margin, y: lifted.frame.minY - margin, width: lifted.frame.width + 2 * margin,
-                       height: lifted.frame.height + 2 * margin).fill()
+            if let hole, record.id != lifted?.id, !registry.isContainer(record), !(registry.definition(for: record.kind) is any PaintOrderAnchored),
+               let frame = shapes.frame(of: record), frame.intersects(hole) {
+                context.saveGState()
+                context.addRect(everywhere)
+                context.addRect(hole)
+                context.clip(using: .evenOdd)
+                drawShape(record, in: shapes)
+                context.restoreGState()
+                continue
             }
             drawShape(record, in: shapes)
             for group in beneath[record.id] ?? [] {

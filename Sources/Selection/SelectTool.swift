@@ -24,7 +24,8 @@ extension SelectTool: Tool {
     func cursor(in editor: CanvasEditor) -> CanvasCursor {
         if let button = editor.selectionState?.hoveredButton { return button.source.cursor }
         guard let handle = editor.hoveredHandle else { return .standard }
-        return (handle.base as? ResizeHandle)?.cursor ?? .openHand
+        guard let resize = handle.base as? ResizeHandle else { return .openHand }
+        return resize.cursor(axes: editor.selection.flatMap { editor.document[$0] }.map { editor.registry.resizedAxes(of: $0) } ?? .both)
     }
 
     /// The rest of a double-click (a press whose click count is 2 or more) whose first click, on a

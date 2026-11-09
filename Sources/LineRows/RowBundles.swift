@@ -258,8 +258,10 @@ final class RowBundles {
     private func join(_ arrow: ShapeID, in state: BoardState) -> Bool {
         var joined: ConnectionBundle?
         var led: [ShapeID]?
+        var partings: [ConnectionBundle.Fan] = []
         for shape in state.shapesOf[arrow] ?? [] {
             guard let partial = state.partials[shape], let part = partial.answers[arrow] else { continue }
+            if let parting = part.parting { partings.append(parting) }
             if led == nil, case .lead = part.role { led = partial.bundles[arrow] }
             guard var answer = joined else {
                 joined = part
@@ -267,11 +269,11 @@ final class RowBundles {
             }
             for fan in part.fans where answer.fan(at: fan.end) == nil { answer.fans.append(fan) }
             answer.entries.merge(part.entries) { first, _ in first }
-            if answer.parting == nil { answer.parting = part.parting }
             joined = answer
         }
-        // Parting says something only beside a fan (it spaces pills a fan slides): alone, the connection is drawn as ever.
-        if joined?.fans.isEmpty == true { joined?.parting = nil }
+        // Parting says something only beside a fan (it spaces pills a fan slides toward the other end): the one at the end that is
+        // not fanned, whichever of the ends' shapes said it first; alone, the connection is drawn as ever.
+        if let fanned = joined { joined?.parting = fanned.fans.isEmpty ? nil : partings.first { fanned.fan(at: $0.end) == nil } }
         let answer = joined.flatMap { $0.isPlain ? nil : $0 }
         let before = state.answers[arrow]
         state.answers[arrow] = answer
@@ -377,6 +379,9 @@ final class RowBundles {
             }
         }
 
+        // What is read of other shapes, so that a commit to one works this out again (the parting's far ends, the sides' containers).
+        var reads: Set<ShapeID> = []
+
         // Parting: those with their end here at one line and their other ends at different places (a row's writes and reads to two
         // tables), ordered by where those are, top to bottom; their pills, slid toward this end by a fan at the other, are spaced
         // apart along their lines rather than stacked (UX walk 3 evolve-5).
@@ -388,10 +393,17 @@ final class RowBundles {
             guard here.line != nil else { continue }
             parting[Here(here: here, end: end), default: []].append((item.arrow, far))
         }
-        func height(of far: Standing) -> (CGFloat, Int) { (document[far.shape]?.box?.midY ?? 0, far.line ?? -1) }
+        // By where the far ends are, top to bottom; ties (aligned shapes, wholes at -1) by the board's order and then the line, never by
+        // a set's order, which differs from one pass to the next and would swap which pill steps out (review U9-C6).
+        func height(of far: Standing) -> (CGFloat, Int, Int) {
+            (document[far.shape]?.box?.midY ?? 0, document.index(of: far.shape) ?? 0, far.line ?? -1)
+        }
         for (here, group) in parting {
-            let fars = Array(Set(group.map(\.far))).sorted { height(of: $0) < height(of: $1) }
+            var fars: [Standing] = []
+            for item in group where !fars.contains(item.far) { fars.append(item.far) }
+            fars.sort { height(of: $0) < height(of: $1) }
             guard fars.count > 1 else { continue }
+            for far in fars { reads.insert(far.shape) }
             for (arrow, far) in group {
                 guard let index = fars.firstIndex(of: far) else { continue }
                 answers[arrow]?.parting = ConnectionBundle.Fan(end: here.end, index: index, count: fars.count)
@@ -400,7 +412,6 @@ final class RowBundles {
 
         // A connection to this shape as a whole: a row clear of the rows others end at on its side. Read from the boxes of the
         // shapes at its other ends (`reads`: when one moves, this is worked out again).
-        var reads: Set<ShapeID> = []
         let wholes = drawn.filter { item in
             (item.source == shape && item.sourcePart == nil) || (item.target == shape && item.targetPart == nil)
         }
@@ -410,9 +421,13 @@ final class RowBundles {
             // side with no room flipped; an end here at the shape as a whole, joined to a row of a shape whose span overlaps, comes
             // in at the side that row leaves by.
             func row(_ id: ShapeID, _ part: PartID?) -> CGRect? { part.flatMap { context.geometry(of: id)?.parts.frame($0)?.rect } }
+            // The container a shape with parts is in, as the connector reads it (`Connectables`: none for a shape with no parts, where
+            // a curve leaves no row). Read, so the shape holding it is `reads`: a database resized or moved works the sides out again.
             func container(of id: ShapeID) -> CGRect? {
-                guard let holder = document[id]?.container, let record = document[holder],
+                guard let geometry = context.geometry(of: id), !geometry.parts.isEmpty,
+                      let holder = document[id]?.container, let record = document[holder],
                       registry.containingKinds.contains(record.kind), !record.isOpaque else { return nil }
+                reads.insert(holder)
                 return context.geometry(of: holder)?.bounds
             }
             func side(here part: PartID?, toward far: ShapeID, farPart: PartID?) -> Bool {
@@ -420,8 +435,11 @@ final class RowBundles {
                 guard let other = document[far]?.box else { return true }
                 let shared = container(of: shape).flatMap { mine in container(of: far).flatMap { $0 == mine ? mine : nil } }
                 let hereRow = row(shape, part), farRow = row(far, farPart)
+                // Aimed at the far end as the connector aims: a row's middle, else the middle of the shape it is bound to as a whole
+                // (its handle, on its bounds as laid out now).
+                let farX = farRow?.midX ?? context.geometry(of: far)?.bounds.midX ?? other.midX
                 if let hereRow {
-                    let drawn = PartSide.drawn(start: (hereRow, box, hereRow.midX), end: (farRow, other, farRow?.midX ?? other.midX), container: shared)
+                    let drawn = PartSide.drawn(start: (hereRow, box, hereRow.midX), end: (farRow, other, farX), container: shared)
                     return drawn.start != .left
                 }
                 let farSide = farRow.flatMap { PartSide.drawn(start: ($0, other, $0.midX), end: (nil, box, box.midX), container: shared).start }

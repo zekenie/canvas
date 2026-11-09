@@ -47,6 +47,9 @@ final class ShapeIndex {
         var hitMargins: [HitMargin]
         /// Each anchored shape's anchor, as `order` has it.
         var anchors: [ShapeID: PaintAnchor?]
+        /// The anchored shapes painted just below their anchor (`PaintAnchor.below`), so what draws over a card the line under it
+        /// passes beneath asks for them without going through every shape in view.
+        var belowAnchor: Set<ShapeID> = []
         /// The shapes whose containment an anchored shape's anchor follows (`paintAnchorFollowsContainment`), by that shape, and
         /// how many anchored shapes follow each.
         var follows: [ShapeID: [ShapeID]] = [:]
@@ -191,13 +194,19 @@ final class ShapeIndex {
 
     // MARK: Paint order
 
-    /// Up to date: rebuilt if the stack changed, with the extents of whatever else changed redone.
-    /// Whether `id` is painted just below its anchor (`PaintOrderAnchored.paintsBelowAnchor`) in the paint list as it is; false
-    /// before one is built.
-    func paintsBelowAnchor(_ id: ShapeID) -> Bool {
-        paintList?.anchors[id]??.below == true
+    /// Whether `id` is painted just below its anchor (`PaintOrderAnchored.paintsBelowAnchor`) in the paint list as it is, brought up
+    /// to date first (one a commit dropped is built again here, so a frame's first answer is never the empty list's, review U9-C5).
+    func paintsBelowAnchor(_ id: ShapeID, in context: ShapeContext) -> Bool {
+        paintList(in: context).belowAnchor.contains(id)
     }
 
+    /// Whether any shape is painted just below its anchor: nothing to draw over the cards with none, a check that costs nothing.
+    func hasShapesBelowAnchor(in context: ShapeContext) -> Bool { !paintList(in: context).belowAnchor.isEmpty }
+
+    /// The shapes painted just below their anchor.
+    func belowAnchor(in context: ShapeContext) -> Set<ShapeID> { paintList(in: context).belowAnchor }
+
+    /// Up to date: rebuilt if the stack changed, with the extents of whatever else changed redone.
     func paintList(in context: ShapeContext) -> PaintList {
         refresh(in: context)
         return paintList!
@@ -468,8 +477,9 @@ final class ShapeIndex {
         #if DEBUG
         paintListsBuilt += 1
         #endif
+        let belowAnchor = Set(anchors.compactMap { $0.value?.below == true ? $0.key : nil })
         return PaintList(order: order, positions: positions, extents: extents, hitMargins: hitMargins, anchors: anchors,
-                         follows: follows, followed: followed, topCount: top.count, lastPlain: plain.last ?? -1)
+                         belowAnchor: belowAnchor, follows: follows, followed: followed, topCount: top.count, lastPlain: plain.last ?? -1)
     }
 
     // MARK: Keeping up
@@ -579,6 +589,7 @@ final class ShapeIndex {
             paintList!.hitMargins.insert(margin, at: place)
             for position in min(from, place)...max(from, place) { paintList!.positions[paintList!.order[position]] = position }
             paintList!.anchors[document.shapes[index].id] = .some(anchor)
+            paintList!.belowAnchor.insert(document.shapes[index].id)
             grid = nil
         }
         return true

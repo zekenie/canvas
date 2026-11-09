@@ -517,6 +517,52 @@ private let scale: CGFloat = 2
         let leftmost = try require(left.levelBody).bounds.minX
         expect(leftmost >= flipped.minX + 8 - 0.01, "inside on the left: \(leftmost)")
     },
+    test("a level line between rows at one height is measured as the line it is: a label put at a fraction is where the pointer's nearest point says (review U9-C1)") {
+        let b = try LevelBoard()
+        // L's row 3 and R's row 1 are both at 160: collinear controls that ease, not an even line.
+        let id = b.h.add(Arrow(start: b.end(b.left, 2), end: b.end(b.right, 0)))
+        let line = try require(try b.geometry(id).levelBody)
+        expectClose(line.start.y, line.end.y, within: 1e-6)
+        let measure = line.measured()
+        for fraction: CGFloat in [0.1, 0.25, 0.5, 0.8] {
+            let point = measure.point(atFraction: fraction)
+            expectClose(measure.fraction(nearest: point), fraction, within: 2e-3)
+        }
+        // A piece that is `CubicChain.line(from:to:)` is still one even segment.
+        let even = CubicChain(CubicChain.line(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 0))).measured()
+        expectClose(even.point(atFraction: 0.25).x, 25, within: 1e-6)
+    },
+    test("far out a key between facing rows is one straight line, no marks nor level reaches; a C between close rows stays the curve (review U9-R1, U9-E2)") {
+        let b = try LevelBoard(looks: true)
+        // A table well below R's side, so the curve and the chord part by more than a view point at 10%.
+        let low = b.h.add(Roster(CGRect(x: 500, y: 400, width: 200, height: 80), rows: [RosterRow(name: "one")]))
+        let lowEnd = ArrowTerminal.bound(ArrowBinding(shapeID: low, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: try require(b.h.editor.document[low]?.typed(as: Roster.self)?.props.rows[0].id)))
+        let facing = b.h.add(Arrow(start: b.end(b.left, 0), end: lowEnd))
+        let line = try require(try b.geometry(facing).levelBody)
+        let (from, to) = (line.start, line.end)
+        @MainActor func inkedNear(_ rep: NSBitmapImageRep, _ point: CGPoint, zoom: CGFloat) -> Bool {
+            for dx: CGFloat in [-3, -2, -1, 0, 1, 2, 3] { for dy: CGFloat in [-3, -2, -1, 0, 1, 2, 3] where isInked(rep, point + CGPoint(x: dx / scale / zoom, y: dy / scale / zoom), zoom: zoom) { return true } }
+            return false
+        }
+        b.h.editor.camera = Camera(origin: .zero, zoom: 0.2)
+        let curveAt20 = try drawn(b.h.editor)
+        // Where the curve is farthest from the chord, and the chord's nearest point to it.
+        let chord = to - from
+        let quarter = try require(line.flattened(segments: 200).max { abs(chord.cross($0 - from)) < abs(chord.cross($1 - from)) })
+        let chordQuarter = from + chord * (chord.dot(quarter - from) / chord.dot(chord))
+        expect(inkedNear(curveAt20, quarter, zoom: 0.2), "at 20% the curve")
+        expect(!inkedNear(curveAt20, chordQuarter, zoom: 0.2), "not the chord")
+        b.h.editor.camera = Camera(origin: .zero, zoom: 0.1)
+        let far = try drawn(b.h.editor)
+        expect(inkedNear(far, chordQuarter, zoom: 0.1), "at 10% the chord, one line")
+        expect(inkedNear(far, from + (to - from) * 0.6, zoom: 0.1), "all along it")
+        expect(!inkedNear(far, quarter, zoom: 0.1), "not the curve, whose level stub and turns are gone")
+        // Two close rows of one table leave and come back by one side: far out it is still the curve, not a line along the edge.
+        let c = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.left, 1)))
+        let apex = try require(try b.geometry(c).levelBody).flattened().max { $0.x < $1.x }!
+        expect(apex.x > 300 + 20, "the C bows out from the table's side: \(apex)")
+        expect(inkedNear(far, apex, zoom: 0.1), "a C at 10% keeps its bow")
+    },
     test("VoiceOver says what the marks say after where the arrow runs: many to one, one to one, many to zero or one") {
         var b = try LevelBoard(looks: true)
         let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))

@@ -30,8 +30,8 @@ extension ArrowDefinition: CustomSkeleton {
             cg.setStrokeColor(color)
             cg.setLineWidth(width)
             cg.strokePath()
-            if !drawing.triangles.isEmpty {
-                cg.addPath(drawing.triangles)
+            if !skeleton.triangles.isEmpty {
+                cg.addPath(skeleton.triangles)
                 cg.setFillColor(color)
                 cg.fillPath()
             }
@@ -77,7 +77,7 @@ extension ArrowDefinition: CustomSkeletonOutline {
             let skeleton = drawing.skeleton(atZoom: context.zoom)
             let path = CGMutablePath()
             path.addPath(skeleton.body)
-            path.addPath(drawing.triangles)
+            path.addPath(skeleton.triangles)
             for mark in skeleton.marks { path.addPath(mark) }
             return path
         }

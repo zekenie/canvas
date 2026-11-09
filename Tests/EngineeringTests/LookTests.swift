@@ -50,6 +50,64 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
             for edge in ["Left Edge", "Right Edge", "Top Edge", "Bottom Edge"] { expect(!titles.contains(edge), "no \(edge): \(titles)") }
         }
     },
+    test("a table's corners show the side's resize cursor and ⇧ keeps no proportions: its width is all a drag gives it (review U9-E7)") {
+        let (h, table, _) = try board()
+        h.editor.selection = table
+        let frame = try require(h.editor.document[table]?.box)
+        h.move(to: CGPoint(x: frame.maxX, y: frame.maxY))
+        expectEqual(h.editor.cursor, .resize(.right), "the bottom right corner")
+        h.move(to: CGPoint(x: frame.minX, y: frame.minY))
+        expectEqual(h.editor.cursor, .resize(.left), "the top left corner")
+        h.move(to: CGPoint(x: frame.maxX, y: frame.minY))
+        expectEqual(h.editor.cursor, .resize(.right), "the top right corner")
+        // ⇧ held through a drag: the width follows the pointer alone, as without it.
+        var widths: [CGFloat] = []
+        for held in [Modifiers(), .shift] {
+            h.editor.undoHistory.seal()
+            let corner = CGPoint(x: frame.maxX, y: frame.maxY)
+            h.hold(held)
+            h.move(to: corner)
+            h.press(at: corner)
+            h.drag(to: corner + CGPoint(x: 60, y: 90))
+            expectEqual(h.editor.cursor, .resize(.right), "dragged")
+            h.release()
+            h.hold([])
+            widths.append(try require(h.editor.document[table]?.box).width)
+            h.editor.undo()
+        }
+        expectClose(widths[0], widths[1], within: 1e-6)
+        expect(widths[0] > frame.width, "wider: \(widths[0]) from \(frame.width)")
+    },
+    test("a database's table with a tab over its top-left keeps its bar over its own table, not past its right edge, or just inside its top edge where too little is left; far out (UX walk 3 structure-3, review U9-E1)") {
+        let h = try kitHarness()
+        h.editor.viewportDidResize(to: CGSize(width: 600, height: 400))
+        let shop = h.add(Database(frame: CGRect(x: 50, y: 100, width: 900, height: 400)), titled: "shop")
+        let column = [Column(name: "id", type: TypeRef("uuid"), primaryKey: true)]
+        // 420 wide: past the tab, about 60 of its 126 points are left (more than half the bar, less than all of it); the next 60 over.
+        let wide = h.add(DatabaseTable(frame: CGRect(x: 70, y: 160, width: 420, height: 120), columns: column), titled: "orders")
+        let beside = h.add(DatabaseTable(frame: CGRect(x: 550, y: 160, width: 300, height: 120), columns: column), titled: "customers")
+        h.editor.put([wide, beside], in: shop)
+        h.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        @MainActor func view(_ id: ShapeID) throws -> CGRect {
+            let frame = try require(h.editor.shapeContext.frame(of: try require(h.editor.document[id])))
+            return CGRect(x: frame.minX * 0.3, y: frame.minY * 0.3, width: frame.width * 0.3, height: frame.height * 0.3)
+        }
+        @MainActor func bar(_ rep: NSBitmapImageRep, _ x: Range<Int>, y: Int) -> Bool {
+            some(rep, in: CGRect(x: x.lowerBound, y: y, width: x.count, height: 1)) { $0[0] < 120 }
+        }
+        let (first, second) = (try view(wide), try view(beside))
+        let rep = render(h.editor)
+        let above = Int(first.minY) - 5
+        expect(bar(rep, Int(first.maxX) - 20..<Int(first.maxX) - 2, y: above), "its bar, over its own table, to its right edge")
+        expect(!bar(rep, Int(first.maxX) + 2..<Int(second.minX) - 2, y: above), "none in the gap: it stops at its table's edge, never over the next table's bar")
+        expect(bar(rep, Int(second.minX) + 4..<Int(second.minX) + 40, y: above), "the next table's own bar")
+        // 150 wide (45 points): too little past the tab, so the bar is inside the table's top edge, below the tab.
+        h.editor.transact { $0.update(wide, as: DatabaseTable.self) { $0.props.frame.size.width = 150 } }
+        let narrow = render(h.editor)
+        let table = try view(wide)
+        expect(!bar(narrow, Int(table.minX) + 3..<Int(table.maxX) - 3, y: Int(table.minY) - 5), "none above it, where the tab would hide it")
+        expect(bar(narrow, Int(table.minX) + 3..<Int(table.minX) + 30, y: Int(table.minY) + 3), "its bar just inside its top edge")
+    },
     test("a table: its paper #EBEBEB, a key before a primary key, a 1 before a unique column, types grey at the right, an enum's pill, a nullable's ?") {
         let (h, _, _) = try board()
         for dark in [false, true] {

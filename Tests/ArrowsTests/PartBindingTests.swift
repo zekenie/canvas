@@ -257,6 +257,11 @@ private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
         let red = gray(lighted, outside), covered = gray(lighted, under)
         expect(red[0] > red[1] + 60, "lit red outside the cards: \(red)")
         expect(covered[0] < covered[1] + 30, "no red striking through the card: \(covered)")
+        // The first frame after a commit that dropped the paint list (a reorder) draws it under the card too (review U9-C5).
+        h.editor.transact("Bring to Front") { $0.bringToFront(between) }
+        let again = renderBitmap(h.editor, size: size)
+        let coveredAgain = gray(again, under)
+        expect(coveredAgain[0] < coveredAgain[1] + 30, "no red striking through the card after a reorder: \(coveredAgain)")
         _ = between
     },
     test("a part the shape doesn't list is drawn at the stored anchor; a folded one at what's shown in its place") {

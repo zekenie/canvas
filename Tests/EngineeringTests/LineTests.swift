@@ -322,6 +322,32 @@ let columnCorpus = [
         b.press(.return)
         expectEqual(b.editor.editingShapeID, nil, "↩ on the empty line ends it")
     },
+    test("the table edited, widened over its neighbor inside a database, leaves a margin that shows the database's surface, never the canvas's grey nor the neighbor's paper (UX walk 3 tables-new-1, review U9-C2)") {
+        let b = try KitBench()
+        let shop = b.h.add(Database(frame: CGRect(x: 40, y: 60, width: 900, height: 360)), titled: "shop")
+        let orders = b.table("orders", ["id uuid pk", "email text unique"], at: CGPoint(x: 100, y: 120))
+        let beside = b.table("customers", ["id uuid pk", "name text"], at: CGPoint(x: 410, y: 120))
+        b.editor.put([orders, beside], in: shop)
+        b.editor.undoHistory.seal()
+        b.begin(orders)
+        b.type("payload " + String(repeating: "x", count: 60))
+        let frame = try require(b.editor.shapeContext.frame(of: try require(b.editor.document[orders])))
+        let box = try require(b.editor.document[orders]?.box)
+        expect(frame.maxX > b.editor.document[beside]!.box!.minX + 6, "widened over the neighbor: \(frame) from \(box)")
+        // The margin round it, 1.5 points, 4 device pixels to a point: past its ring (which covers the first 1.5 of its right and its
+        // top edge) it shows what is under the table's shadow, the database's white, the same with no neighbor there: not the
+        // canvas's grey (a fill of it), nor the neighbor's paper and words.
+        let size = CGSize(width: 1000, height: 480)
+        let covered = renderBitmap(b.editor, size: size, scale: 4)
+        let spots = [CGPoint(x: frame.maxX + 1.25, y: frame.minY + 40), CGPoint(x: frame.midX, y: frame.minY - 1.25)]
+        b.editor.transact("Delete") { $0.delete([beside]) }
+        let alone = renderBitmap(b.editor, size: size, scale: 4)
+        for spot in spots {
+            let (with, without) = (pixel(covered, at: spot, scale: 4), pixel(alone, at: spot, scale: 4))
+            expect(without[0] >= 250, "the database's white, not the canvas's grey (246): \(without) at \(spot)")
+            for channel in 0..<3 { expect(abs(with[channel] - without[channel]) <= 3, "the margin at \(spot) is the surface: \(with) against \(without)") }
+        }
+    },
     test("VoiceOver: the editing view is Columns of orders, a row Column 2 of 2 with its line and its reading") {
         let b = try KitBench()
         let orders = b.table("orders", ["id uuid pk", "email text unique"])

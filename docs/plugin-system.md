@@ -7543,7 +7543,7 @@ clearance (`ArrowStyle.levelStub`), the curve starting at the stub's end, so the
 it (a C between stacked tables, a fan's turn, rows far across) and two keys at one row end lay their marks on each other;
 the line is then a `CubicChain` (Geometry's: the stubs and the curve), `ArrowGeometry.levelBody`. Where the ends face each
 other neither reach passes the way between them, so the curve never swings back behind where it starts. A key passing under
-a card it isn't bound to is drawn faint across it (`ArrowUnderCardsOverlay`), and lit, its light goes under the cards with it
+a card it isn't bound to is drawn faint across it (`ArrowUnderCardsOverlay`, left out of the two ends of each row of a card written as rows, so it never strikes through a name or a type; far out, below 15%, a key whose ends face each other is one straight line, and a C stays its curve), and lit, its light goes under the cards with it
 (the core strokes a tinted outline of a shape painted below its anchor where it is painted). Which side of its row an end
 leaves by is Connections' `PartSide`, the one rule the connector draws by and the bundles pick rows by. A row's resting port
 dot is not drawn where a connection ends along that row's side, nor over another shape's face (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
