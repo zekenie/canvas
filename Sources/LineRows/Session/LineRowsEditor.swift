@@ -195,6 +195,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
             }
             titleField.finished = { [weak self] ending in self?.titleEnded(ending) }
             titleField.began = { [weak self] in self?.titleBegan() }
+            // The keyboard leaving the field any way but a key of its own (a click away, editing ended): the rename is heard.
+            titleField.left = { [weak self] in self?.titleLeft() }
             titleField.onDown = { [weak self] in
                 self?.step(by: 1)
                 return true
@@ -946,6 +948,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             return true
         }
         let id = id
+        if focus == .title { titleLeft() }
         context.end()
         picker.open(on: id)
         return true
@@ -1050,6 +1053,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// Escape, ⌘↩, ⌘↑: the line written, editing ends.
     func end() {
         commitDraft()
+        if focus == .title { titleLeft() }
         context.end()
     }
 

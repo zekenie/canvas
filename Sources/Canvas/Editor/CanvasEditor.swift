@@ -449,6 +449,10 @@ public final class CanvasEditor {
     /// What the shape Insert is putting down goes beside (`insert(_:named:beside:)`), while it is placed: what a service
     /// told it was placed (`didPlace`) keeps in view with it, as it brings it into view. Empty otherwise.
     @ObservationIgnored public internal(set) var placingBeside: [ShapeID] = []
+    /// A command that says its own step as it ends (the command bar's) is running: a shape it puts down is heard in
+    /// those words, once, not also as the editor's own ("Add Note"). The bar's, set as it runs a command and cleared once
+    /// it has said it.
+    @ObservationIgnored public var isSayingStep = false
     // The popover (Popovers.swift): the one showing, the one waiting its delay and its timer, and
     // while one has just gone, the end of that moment.
     @ObservationIgnored var shownPopover: CanvasPopover?
@@ -1580,8 +1584,10 @@ public final class CanvasEditor {
         if settled { return glide(nudges) }
         if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace([record.id], in: self) }
-        // VoiceOver hears the step, as it hears a row's commit: however it was put down (a tool's click, Insert, ⇧↩, a command).
-        if document[record.id] != nil { announce("Add \(label ?? "Shape")") }
+        // VoiceOver hears the step the Undo menu names ("Add Table", or the group's: "Create Database"), as it hears a row's
+        // commit, however it was put down (a tool's click, Insert, ⇧↩); a command's own words, once, are the bar's. A placement
+        // settled is part of the step that made it (a line's commit), heard there.
+        if document[record.id] != nil, !isSayingStep { announce(undoHistory.undoName ?? "Add \(label ?? "Shape")") }
         let edits = placement.completion == .edit
         if let point, session == nil {
             session = PlacingSession([record.id], from: point, edits: edits, restoring: before, in: self)

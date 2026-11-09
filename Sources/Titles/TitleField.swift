@@ -25,6 +25,8 @@ public final class TitleField: NSView, NSTextViewDelegate {
     public var typed: ((String) -> Void)?
     /// Return, Escape, Tab or ⇧Tab.
     public var finished: ((Ending) -> Void)?
+    /// The field gave up the keyboard, whatever took it (a click on the canvas, editing ended, another stop).
+    public var left: (() -> Void)?
     /// The field took the keyboard (a press on the chip, VoiceOver's): for a host whose keys were elsewhere, in a row under it.
     public var began: (() -> Void)?
     /// ↓, for a host with stops under the title (a table's rows): true takes it. Unset, ↓ is the text's.
@@ -137,6 +139,8 @@ public final class TitleField: NSView, NSTextViewDelegate {
         needsDisplay = true
         typed?(field.string)
     }
+
+    public func textDidEndEditing(_ notification: Notification) { left?() }
 
     public func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard let reading = KeyMeaning.Reading(command: selector) else { return false }
