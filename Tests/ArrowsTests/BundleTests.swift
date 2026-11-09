@@ -126,6 +126,79 @@ import TestKit
         expectClose(after, apart, within: 1e-6)
         expect(after >= 30, "still a pair bend apart, not cancelled to \(after)")
     },
+    test("slotted lines nest at their ends whichever way they run, and at both ends of a C (review R20)") {
+        // Whether two lines cross: the sign of their difference across, sampled along x between the sides, never changes.
+        @MainActor func apart(_ a: ArrowGeometry, _ b: ArrowGeometry, from: CGFloat, to: CGFloat) throws -> Bool {
+            let one = try require(a.levelBody).flattened(segments: 200), two = try require(b.levelBody).flattened(segments: 200)
+            func y(_ points: [CGPoint], at x: CGFloat) -> CGFloat? {
+                zip(points, points.dropFirst()).first { min($0.x, $1.x) <= x && x <= max($0.x, $1.x) && $0.x != $1.x }
+                    .map { $0.y + ($1.y - $0.y) * (x - $0.x) / ($1.x - $0.x) }
+            }
+            let signs = stride(from: from + 0.5, through: to - 0.5, by: 2).compactMap { x in y(one, at: x).flatMap { a in y(two, at: x).map { a - $0 } } }
+            return signs.allSatisfy { $0 > 0 } || signs.allSatisfy { $0 < 0 }
+        }
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        // Right to left: from R's row 1 to L's row 1.
+        let one = b.h.add(Arrow(start: b.end(b.right, 1), end: b.end(b.left, 1)))
+        let two = b.h.add(Arrow(start: b.end(b.right, 1), end: b.end(b.left, 1)))
+        answers.answers = [one: ConnectionBundle(slot: 0, slots: 2), two: ConnectionBundle(slot: 1, slots: 2)]
+        b.h.editor.connectionBundlesDidChange([one, two])
+        expect(try apart(b.geometry(one), b.geometry(two), from: 300, to: 500), "right to left, they cross")
+        // A C: a roster stacked below L, both rows leaving its right side.
+        let rows = [RosterRow(name: "low")]
+        let below = b.h.add(Roster(CGRect(x: 100, y: 400, width: 200, height: 40), rows: rows))
+        let low = ArrowTerminal.bound(ArrowBinding(shapeID: below, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: rows[0].id))
+        let c1 = b.h.add(Arrow(start: b.end(b.left, 1), end: low)), c2 = b.h.add(Arrow(start: b.end(b.left, 1), end: low))
+        answers.answers[c1] = ConnectionBundle(slot: 0, slots: 2)
+        answers.answers[c2] = ConnectionBundle(slot: 1, slots: 2)
+        b.h.editor.connectionBundlesDidChange([c1, c2])
+        let (g1, g2) = (try b.geometry(c1), try b.geometry(c2))
+        let reach1 = try require(g1.levelBody).bounds.maxX, reach2 = try require(g2.levelBody).bounds.maxX
+        let (outer, inner) = reach1 > reach2 ? (g1, g2) : (g2, g1)
+        expect(outer.start.y < inner.start.y, "the outer loop's top end above the inner's: \(outer.start), \(inner.start)")
+        expect(outer.end.y > inner.end.y, "and its bottom end below: \(outer.end), \(inner.end)")
+    },
+    test("an arrow bound to shapes as wholes keeps no slot's bow when a move makes its ends precise (review R39)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let one = b.h.add(Arrow(start: b.whole(b.left), end: b.whole(b.right)))
+        let two = b.h.add(Arrow(start: b.whole(b.left), end: b.whole(b.right), bend: -34))
+        answers.answers = [one: ConnectionBundle(slot: 0, slots: 2), two: ConnectionBundle(slot: 1, slots: 2)]
+        b.h.editor.connectionBundlesDidChange([one, two])
+        let before = try b.geometry(two).middle
+        // What a nudge or a move alone writes first: its ends made precise where they are.
+        b.h.editor.transact("Move") { $0.update(two, as: Arrow.self) { arrow in
+            for end in [ArrowEnd.start, .end] { if var binding = arrow.props[end].binding { binding.isPrecise = true; arrow.props[end] = .bound(binding) } }
+        } }
+        expectClose(try b.geometry(two).middle, before, within: 1e-6)
+    },
+    test("a fanned arrow's label is edited where it is drawn, slid toward its start (review R22)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let ids = (0..<2).map { b.h.add(Arrow(start: b.end(b.left, $0), end: b.end(b.right, 1), text: "k")) }
+        for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: index, count: 2)]) }
+        b.h.editor.connectionBundlesDidChange(Set(ids))
+        let label = try require(b.h.editor.arrowLabelFrame(of: ids[0]))
+        b.h.editor.selection = ids[0]
+        expect(b.h.key("\r"))
+        expectEqual(b.h.editor.editingShapeID, ids[0])
+        let editing = try require(b.h.editor.editingFrame)
+        expect(abs(editing.midX - label.midX) < 4, "the editor over the label at \(label), not halfway: \(editing)")
+    },
+    test("one row's arrows to two places, slid toward the row by fans at their far ends, space their pills along their lines (UX walk 3 evolve-5)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let ids = [b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 0), text: "first")),
+                   b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2), text: "second"))]
+        for (index, id) in ids.enumerated() {
+            answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], parting: .init(end: .start, index: index, count: 2))
+        }
+        b.h.editor.connectionBundlesDidChange(Set(ids))
+        let labels = try ids.map { try require(b.h.editor.arrowLabelFrame(of: $0)) }
+        expect(!labels[0].intersects(labels[1]), "apart: \(labels)")
+        expect(labels[0].midX < labels[1].midX, "the first nearest the row: \(labels)")
+    },
     test("bending a slotted arrow keeps its bow: its middle is under the pointer while dragged and after the release") {
         let answers = BundleAnswers()
         let b = try bundleBoard(answers)

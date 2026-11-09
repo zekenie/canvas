@@ -35,9 +35,10 @@ enum ArrowStyle {
     nonisolated static let fanStep: CGFloat = 25 * .pi / 180
     nonisolated static let fanSpread: CGFloat = 70 * .pi / 180
     nonisolated static let fanMarkShift: CGFloat = 8
-    /// Pills slid toward a row their connections part from to different places stand this far apart along their lines (a pill's
-    /// width and a gap), world units.
-    nonisolated static let partingLabelStep: CGFloat = 90
+    /// Pills slid toward a row their connections part from to different places stand apart along their lines: each after the
+    /// first this much further from the row (the first sits its half width and clearance out; this is that, a pill's width and
+    /// a gap), world units.
+    nonisolated static let partingLabelStep: CGFloat = 130
     /// A level curve's end keeps this far inside the container both its ends are in (a database's edge), where it can; and it
     /// leaves the side of its row with at least `containerSideRoom` inside it (its turn and half a pill on it), else the other.
     nonisolated static let containerClearance: CGFloat = PartSide.containerClearance

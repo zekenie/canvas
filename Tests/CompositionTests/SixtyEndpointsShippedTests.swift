@@ -483,6 +483,44 @@ extension EmptyBoardWindow {
         expect(try require(editor.rowFolds).findPeeks(of: api.id).isEmpty, "a hit in the prefix alone leaves the group closed: \(editor.rowFolds?.findPeeks(of: api.id) ?? [])")
         find.close()
     },
+    test("a call and its callback between two endpoints draw as two lines, bowed apart, not one line with a head at each end (review R23)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "shop API" endpoints: "POST /pay\nPOST /paid"
+            api "bank API" right of "shop API" (gap: 260) endpoints: "POST /charge\nPOST /hook"
+            edge "shop API"."POST /pay" -> "bank API"."POST /charge" channel: calls
+            edge "bank API"."POST /charge" -> "shop API"."POST /pay" channel: calls
+            """#)
+        let editor = w.editor
+        let arrows = sixtyArrows(editor)
+        expectEqual(arrows.count, 2)
+        let bodies = try arrows.map { try require(editor.arrowGeometry(of: $0.id)?.levelBody) }
+        let middles = bodies.map { $0.measured().point(atFraction: 0.5) }
+        expect(middles[0].distance(to: middles[1]) >= 20, "bowed apart at their middles: \(middles)")
+    },
+    test("one row's writes and reads to two tables, each fanned at its table, keep their pills apart rather than stacked at the row (UX walk 3 evolve-5)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "orders" columns: "id uuid pk\ntotal_cents int"
+            table "payments" below "orders" (gap: 120) columns: "id uuid pk\namount_cents int"
+            api "orders API" left of "orders" (gap: 300) endpoints: "POST /a\nPOST /b\nPOST /c"
+            edge "orders API"."POST /a" -> "orders" channel: writes
+            edge "orders API"."POST /b" -> "orders" channel: writes
+            edge "orders API"."POST /a" -> "payments" channel: reads
+            edge "orders API"."POST /c" -> "payments" channel: reads
+            """#)
+        let editor = w.editor
+        w.window.settle()
+        let api = try require(sixtyAPIAny(editor, "orders API"))
+        let fromA = sixtyArrows(editor).filter { $0.props.start.binding?.part == api.props.endpoints[0].id }
+        expectEqual(fromA.count, 2)
+        let pills = try fromA.map { arrow in try require(editor.shapeContext.geometry(of: arrow.id)?.labelLead, "a pill on \(arrow[ChannelProperty.self] ?? "?")") }
+        expect(!pills[0].intersects(pills[1]), "the writes and reads pills apart: \(pills)")
+    },
     test("a line to a table as a whole comes in at a row clear of the key ending at its side; a reads arrow at a database's left inset stays inside it") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
