@@ -73,9 +73,10 @@ Each is a rule and the check a test makes of it. A change that adds something a 
 | Escape | back out one level, keeping what was typed | |
 | ⌘↩ | finish (end editing, close and commit) | |
 | ⌘↓, ⌘↑ | into a thing's content, out to its container | |
-| Home, End | the first, the last | With nothing selected, the board's start and end (the canvas pans). In a row's line (rows written as lines), the first and last row, so a header at the top of sixty rows is one key away; in any other text, the line's own start and end. |
 | Page Up, Page Down | a page: the canvas pans, a list's table scrolls a screenful | In the issue walk's list (a list grouped by board whose rows are a walk's), the first stop of the previous and next board, wrapping: the list is read by board, and a screenful of it is not a place anyone is going. |
 | typing | filters a focused list | |
+
+Home and End are not rows of the table, which every surface's key walk (`KeyWalk.expectMeanings`) presses and holds to its meaning: most lists and boxes of the panel have no first and last to go to, and a row in the table would be a move they must make. Where they go, they go to the first and last of the surface's stops, as Page Up and Page Down go a page: the canvas with nothing selected pans to the board's start and end (Keyboard's keys); in a row's line (rows written as lines) they put the caret on the first and last row, so a header at the top of sixty rows is one key away (`LineKey.firstRow`, `.lastRow`; SessionTests' key walk); in any other text they are the line's own start and end.
 
 ## How the app meets them
 

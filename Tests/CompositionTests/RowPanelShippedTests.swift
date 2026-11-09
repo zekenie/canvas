@@ -229,7 +229,7 @@ private let e6 = #"""
         expect(second.hasPrefix("Hit 2 of 2, products, Table, ") && second.contains("list_price") && !second.contains("price_cents"), second)
         find.close()
     },
-    test("R47: a step to a column of a table whose name is hit too still names the table") {
+    test("R47: where a table's name is hit too, a step to its column still names the table, and a step to the name doesn't say it twice") {
         let w = try InspectorWindow()
         let editor = w.editor
         _ = try drawnInProcess(#"table "orders" columns: "id uuid pk\norder_id uuid""#, on: editor)
@@ -241,10 +241,16 @@ private let e6 = #"""
         _ = try awaitResult { await find.settled() }
         expectEqual(find.results.map(\.id), [id])
         let total = find.total
-        expect(total >= 2, "the name and the column are both hit: \(total)")
-        find.step(forward: true)
-        let second = try require(find.announcement)
-        expect(second.hasPrefix("Hit 2 of \(total), orders, Table, ") && second.contains("order_id"), second)
+        expectEqual(total, 2, "the name and the column are both hit")
+        var said: [String] = []
+        for _ in 0..<total {
+            said.append(try require(find.announcement))
+            find.step(forward: true)
+        }
+        let column = try require(said.first { $0.contains("order_id") }, "\(said)")
+        expect(column.contains(", orders, Table, "), "the column's hit names the table: \(column)")
+        let name = try require(said.first { !$0.contains("order_id") }, "\(said)")
+        expect(name.hasSuffix(", Table, orders"), "the name's own hit is the snippet alone, not the name and then the snippet: \(name)")
         find.close()
     },
     test("in the app's window a row's Connections list is one Tab stop the arrows walk: the line lights its shape, Return goes to it") {
