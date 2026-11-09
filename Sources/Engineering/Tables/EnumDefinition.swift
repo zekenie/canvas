@@ -62,6 +62,9 @@ extension EnumDefinition: CustomSizing {
         if axes.contains(.width) { shape.props.frame.size.width = frame.width }
         derive(&shape.props)
     }
+
+    /// Its height is its rows': only its width is given by hand, so it is resized by its corners (no handle on a row's end).
+    func resizedAxes(of shape: ShapeRecord<DatabaseEnum>) -> SizeAxes { .width }
 }
 
 extension EnumDefinition: PartedShape {

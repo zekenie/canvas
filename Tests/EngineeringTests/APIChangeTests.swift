@@ -549,7 +549,7 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
             let drawn = render(b.editor, size: CGSize(width: 300, height: 200), dark: dark)
             expectColor(pixel(drawn, at: CGPoint(x: 100 * 0.3 + 118, y: 100 * 0.3 + 18)), paper, "\(dark): its paper", within: 6)
             expect(some(drawn, in: bar) { $0[0] < 200 }, "\(dark): its chip's bar")
-            expect(some(drawn, in: CGRect(x: 32, y: 6, width: 30, height: 12)) { dark ? $0[0] > 90 : $0[0] < 120 }, "\(dark): its title, a bar above it")
+            expect(some(drawn, in: CGRect(x: 32, y: 21, width: 30, height: 8)) { dark ? $0[0] > 90 : $0[0] < 120 }, "\(dark): its title, a bar just above it")
             if !dark { live = darkest(drawn, bar) }
         }
         expectEqual(b.editor.titleCover(of: alone.id), nil, "no cover printed over its card")

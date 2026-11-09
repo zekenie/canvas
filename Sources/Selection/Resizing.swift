@@ -137,10 +137,13 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
     /// `SelectionStyle.resizeHandleRoom` either way, whose corners' handles would leave none of it
     /// to press, and a side's only on a side at least twice that long, clear of the corners'.
     @MainActor
-    static func shown(on box: CGRect) -> [ResizeHandle] {
+    /// `axes`: the ways a resize gives the shape its size; one whose height is its own (its rows') is resized by its corners
+    /// alone, no handle at a side's middle, where a row's line ends and its mark is drawn (UX walk 3 tables-3).
+    static func shown(on box: CGRect, axes: SizeAxes = .both) -> [ResizeHandle] {
         let room = SelectionStyle.resizeHandleRoom
         guard box.width >= room, box.height >= room else { return [] }
         return allCases.filter { handle in
+            if axes != .both, handle.x == 0 || handle.y == 0 { return false }
             if handle.x == 0 { return box.width >= 2 * room }       // the top's and the bottom's
             if handle.y == 0 { return box.height >= 2 * room }      // the left's and the right's
             return true
@@ -389,7 +392,7 @@ extension CanvasEditor {
     func resizeHandleParts(of shape: AnyShapeRecord) -> [ShapePart] {
         guard selection == shape.id, editingShapeID != shape.id, !isReadOnly(shape.id), let box = resizeFrame(of: shape) else { return [] }
         let id = shape.id, radius = SelectionStyle.handleRadius / camera.zoom
-        return ResizeHandle.shown(on: camera.toView(box)).map { handle in
+        return ResizeHandle.shown(on: camera.toView(box), axes: registry.resizedAxes(of: shape)).map { handle in
             let point = handle.point(on: box)
             return ShapePart(id: handle, title: handle.title, role: .handle,
                              rect: CGRect(x: point.x - radius, y: point.y - radius, width: 2 * radius, height: 2 * radius),

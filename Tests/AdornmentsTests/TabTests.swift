@@ -119,13 +119,15 @@ private func turned(_ x: CGFloat, _ y: CGFloat, _ length: CGFloat) -> Tab {
         let narrow = AdornmentLayout.frames(of: [text(60), Item(.aboveTopLeft, width: 60, isText: true)], width: 45)
         expectEqual(narrow[1], CGRect(x: 10, y: -31, width: 35, height: 18), "text at the left end gives way in the room after the inset")
     },
-    test("a row that gives way to a container's tab starts its left end past it, its right end where it was, its text cut in the room left") {
+    test("a row that gives way to a container's tab starts its left end past it, its right end where it was, its text cut in the room left; with no right end it keeps its room, running on past the edge") {
         let title = Item(.aboveTopLeft, width: 80, isText: true), lock = Item(.aboveTopRight, width: 18, isText: false)
         let frames = AdornmentLayout.frames(of: [title, lock], width: 200, leftStart: 70)
         expectEqual(frames[0], CGRect(x: 70, y: -27, width: 80, height: 18), "from where it may start")
         expectEqual(frames[1], CGRect(x: 182, y: -27, width: 18, height: 18), "the right end where it was")
         expectEqual(AdornmentLayout.frames(of: [title, lock], width: 140, leftStart: 70)[0]?.width, 140 - 18 - 4 - 70, "cut in the room left")
-        expectEqual(AdornmentLayout.frames(of: [title], width: 90, leftStart: 70)[0], nil, "no room for any of it: left out")
+        // With no right end, the room it had without the tab, past the shape's right edge: a name whole, never cut by the tab
+        // (UX walk 3: a table's "orders" at its database's top-left read "or…").
+        expectEqual(AdornmentLayout.frames(of: [title], width: 90, leftStart: 70)[0], CGRect(x: 70, y: -27, width: 80, height: 18), "whole, past the edge")
     },
     test("a point is on a tab as its rounded rect is drawn: its corners are a tab's, not a capsule's") {
         let frame = CGRect(x: 0, y: 0, width: 100, height: 18)

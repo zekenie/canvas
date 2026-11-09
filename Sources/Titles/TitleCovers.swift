@@ -286,6 +286,8 @@ enum TitleBar {
     /// The narrowest shape that has a bar, view points: a bar needs no room for text, so a table of usual width far out (10%) still
     /// has its bar (a cover's floor, `TitleCoverStyle.smallestShape`, is for words).
     static let narrowest: CGFloat = 8
+    /// How far above its shape's top edge a bar's bottom is, view points.
+    static let gap: CGFloat = 1.5
     /// A bar thinner than this, view points, is drawn square: its rounded ends are under a point.
     static let squareBelow: CGFloat = 4
     /// A column of its title, view points: the pill's 11-point text, as `SkeletonText` counts a column.
@@ -307,11 +309,19 @@ enum TitleBar {
               !geometry.bounds.isNull else { return nil }
         let bounds = geometry.bounds.offsetBy(dx: offset.x, dy: offset.y), zoom = shapes.zoom
         guard bounds.width * zoom >= narrowest else { return nil }
-        let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction, start = start()
+        let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction
         let points = lead + column * CGFloat(SkeletonText.columns(of: found.title, upTo: 80))
-        let width = min(bounds.width - start, points * row.height / AdornmentLayout.rowHeight)
-        guard width > 0 else { return nil }
-        return (CGRect(x: row.minX + start, y: row.midY - height / 2, width: width, height: height), found.color)
+        let width = min(bounds.width, points * row.height / AdornmentLayout.rowHeight)
+        // Past a container's tab it meets, as the pill's row is, keeping its length, while some of it is still over its own shape;
+        // a shape too narrow for that (a table at a database's top-left far out, 10%) has its bar where it is, drawn over the tab
+        // (UX walk 3 structure-3: the tab hid the first tables' bars outright).
+        var start = start()
+        if start > bounds.width - narrowest / zoom { start = 0 }
+        // Just above its own shape's top edge, `gap` clear of it, so it reads as that shape's name and never as the footer of the
+        // shape above (UX walk 3 evolve-8): the pill's row is a line of text tall, which zoomed out reaches most of the way to
+        // the shape above.
+        let bottom = bounds.minY - gap / zoom
+        return (CGRect(x: row.minX + start, y: bottom - height, width: width, height: height), found.color)
     }
 }
 

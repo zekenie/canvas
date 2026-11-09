@@ -220,10 +220,14 @@ public protocol CustomSizing: ShapeDefinition where Props: BoxShapeProps {
     /// Whether the shape is resized by hand: false for one whose size isn't its own to give (a
     /// relationship type's pill, as big as its name). Default true.
     func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool
+    /// The ways a resize by hand gives its size: both by default; a kind whose height is its rows' gives only its width, and
+    /// is resized by its corners alone (Selection's handles), so no handle sits at a side's middle, where a row's line ends.
+    func resizedAxes(of shape: ShapeRecord<Props>) -> SizeAxes
 }
 
 extension CustomSizing {
     public func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool { true }
+    public func resizedAxes(of shape: ShapeRecord<Props>) -> SizeAxes { .both }
 }
 
 /// Which ways a frame given to a shape gives its size (`CustomSizing`): its width, its height, or both.

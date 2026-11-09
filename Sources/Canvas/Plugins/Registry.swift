@@ -400,6 +400,11 @@ public struct Registry {
 
     /// Whether a shape is resized by hand as far as its kind says (`CustomSizing.isResizable`): true for a kind that
     /// says nothing of it. Which kinds resize at all is Selection's (`ShapeResizing`).
+    /// The ways a resize by hand gives a shape its size (`CustomSizing.resizedAxes`): both for a kind that doesn't say.
+    public func resizedAxes(of record: AnyShapeRecord) -> SizeAxes {
+        customSizings[record.kind].map { $0.erasedResizedAxes(of: record) } ?? .both
+    }
+
     public func isResizable(_ record: AnyShapeRecord, in context: ShapeContext) -> Bool {
         customSizings[record.kind].map { $0.erasedIsResizable(record, in: context) } ?? true
     }

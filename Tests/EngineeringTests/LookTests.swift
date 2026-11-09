@@ -3,7 +3,9 @@ import AppKit
 import CanvasTesting
 import Engineering
 import Geometry
+import Keyboard
 import Palette
+import Selection
 import TestKit
 import Titles
 
@@ -33,6 +35,21 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
 }
 
 @MainActor let lookTests = Suite("The kit's looks", [
+    test("a selected table, enum or API is resized by its corners alone: no handle at a side's middle, where a row's key ends (UX walk 3 tables-3)") {
+        let (h, table, values) = try board()
+        for id in [table, values] {
+            h.editor.selection = id
+            var titles: [String] = []
+            for _ in 0..<12 {
+                h.key(Chord.optionTab)
+                if let title = h.editor.focusedPart?.title, !titles.contains(title) { titles.append(title) }
+            }
+            for corner in ["Top Left Corner", "Top Right Corner", "Bottom Right Corner", "Bottom Left Corner"] {
+                expect(titles.contains(corner), "\(corner) among \(titles)")
+            }
+            for edge in ["Left Edge", "Right Edge", "Top Edge", "Bottom Edge"] { expect(!titles.contains(edge), "no \(edge): \(titles)") }
+        }
+    },
     test("a table: its paper #EBEBEB, a key before a primary key, a 1 before a unique column, types grey at the right, an enum's pill, a nullable's ?") {
         let (h, _, _) = try board()
         for dark in [false, true] {
@@ -111,16 +128,16 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
         h.editor.camera = Camera(origin: .zero, zoom: 0.3)
         expect(h.editor.drawsSkeleton(of: table))
         let drawn = render(h.editor)
-        // At 30% the table is 30 to 108 across and 30 to 64.8 down; its title's row 3 to 21 down.
+        // At 30% the table is 30 to 108 across and 30 to 64.8 down; its title's bar just above it, 21.3 to 28.5 down.
         expectColor(pixel(drawn, at: CGPoint(x: 100, y: 62)), paper, "its paper", within: 6)
         expect(some(drawn, in: CGRect(x: 40, y: 31, width: 20, height: 33)) { $0[0] < 200 }, "its names' bars")
         expect(some(drawn, in: CGRect(x: 70, y: 46, width: 37, height: 8), purple), "its enum's bar, purple")
-        expect(some(drawn, in: CGRect(x: 32, y: 6, width: 30, height: 12)) { $0[0] < 120 }, "its title, a bar above it")
-        expect(some(drawn, in: CGRect(x: 122, y: 6, width: 30, height: 12), purple), "the enum's title bar, in its purple")
+        expect(some(drawn, in: CGRect(x: 32, y: 21, width: 30, height: 8)) { $0[0] < 120 }, "its title, a bar above it")
+        expect(some(drawn, in: CGRect(x: 122, y: 21, width: 30, height: 8), purple), "the enum's title bar, in its purple")
         expectEqual(h.editor.titleCover(of: table), nil, "no cover printed over its rows")
         expectEqual(h.editor.titleCover(of: values), nil)
         let dark = render(h.editor, dark: true)
         expectColor(pixel(dark, at: CGPoint(x: 100, y: 62)), paper, "the paper in the dark too", within: 6)
-        expect(some(dark, in: CGRect(x: 32, y: 6, width: 30, height: 12)) { $0[0] > 90 }, "its title bar, lighter on the dark canvas")
+        expect(some(dark, in: CGRect(x: 32, y: 21, width: 30, height: 8)) { $0[0] > 90 }, "its title bar, lighter on the dark canvas")
     },
 ])

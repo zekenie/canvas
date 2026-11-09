@@ -143,6 +143,8 @@ enum ReferenceStyle {
     static let placeLineHeight = ceil(placeBoardFont.ascender - placeBoardFont.descender)
     /// A line the label sits on as the render and the editing view lay it out: its font's, rounded up.
     static let lineHeight = ceil(labelFont.ascender - labelFont.descender)
+    /// On two lines, a row's chip starts this far down the pill at the least: a point below the place line's descenders.
+    static let chipBelowPlace = placeBaseline + ceil(-placeFont.descender) + 1
 
     /// Where a line of `font` starts in a box `height` tall: its capitals centered, as the symbols
     /// beside them are, on a whole point. String drawing and the editor both set the baseline the

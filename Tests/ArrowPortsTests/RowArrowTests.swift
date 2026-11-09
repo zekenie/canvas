@@ -147,6 +147,20 @@ let musterM = CGRect(x: 460, y: 400, width: 200, height: 80)
         expect(changedPixels(away, shown, in: middle(left)) > 0, "the left dot, where nothing ends")
         expectEqual(changedPixels(away, shown, in: middle(right)), 0, "none on the right, where the two leave the row apart")
     },
+    test("a row's resting dot isn't drawn on another shape's face beside it (an edited table over an enum: UX walk 3 tables-new-1)") {
+        let b = try RowBoard()
+        // A roster right beside L, its left edge 6 past L's right: the right dot (12 out) would sit on it.
+        _ = b.h.add(Roster(CGRect(x: rosterL.maxX + 6, y: rosterL.minY, width: 120, height: 80), rows: [RosterRow(name: "pending")]))
+        let size = CGSize(width: 800, height: 600), row = RowBoard.row(1, of: rosterL)
+        let right = CGPoint(x: rosterL.maxX + 12, y: row.y), left = CGPoint(x: rosterL.minX - 12, y: row.y)
+        let middle = { (center: CGPoint) in CGRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4) }
+        b.h.move(to: CGPoint(x: 380, y: 520))
+        let away = renderBitmap(b.h.editor, size: size)
+        b.h.move(to: row)
+        let shown = renderBitmap(b.h.editor, size: size)
+        expect(changedPixels(away, shown, in: middle(left)) > 0, "the left dot, over the canvas")
+        expectEqual(changedPixels(away, shown, in: middle(right)), 0, "none over the roster beside it")
+    },
     test("let go on its own row it draws nothing; on another row of its roster, a key with both ends on the right") {
         let b = try RowBoard()
         b.drag(fromRow: 1, to: RowBoard.row(1, of: rosterL))

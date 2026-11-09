@@ -62,7 +62,7 @@ extension CanvasEditor {
         }
         if let box = resizeFrame(of: record) {
             let view = camera.toView(box)
-            handles += ResizeHandle.shown(on: view).map { (AnyHashable($0), $0.point(on: view)) }
+            handles += ResizeHandle.shown(on: view, axes: registry.resizedAxes(of: record)).map { (AnyHashable($0), $0.point(on: view)) }
         }
         return handles
     }

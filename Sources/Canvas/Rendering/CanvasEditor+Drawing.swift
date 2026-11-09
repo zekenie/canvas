@@ -82,7 +82,17 @@ extension CanvasEditor {
                 outlines.tinted[index].shapes.removeAll { lifted.contains($0) }
             }
         }
+        let lifted = liftedWhileEdited(in: shapes)
         for record in paintOrder(in: drawn) {
+            // The shape edited, painted above what its widening overlaps: a margin of the canvas round it first, as far out as its
+            // outline stands and is stroked, so no sliver of what it covers shows between its edge and its ring (UX walk 3
+            // tables-new-1).
+            if let lifted, lifted.id == record.id {
+                let margin = (outlineStandoff + Style.indicatorWidth) / zoom
+                Style.canvasBackground.setFill()
+                CGRect(x: lifted.frame.minX - margin, y: lifted.frame.minY - margin, width: lifted.frame.width + 2 * margin,
+                       height: lifted.frame.height + 2 * margin).fill()
+            }
             drawShape(record, in: shapes)
             for group in beneath[record.id] ?? [] {
                 strokeOutlines(of: [record.id], rects: [], in: group.color, width: Style.tintedIndicatorWidth,

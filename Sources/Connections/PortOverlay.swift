@@ -28,10 +28,12 @@ enum PortStyle {
     static let ring = NSColor.white
     /// A dot whose channel no installed plugin declares (a kind can't have one; kept for safety).
     static let fallback = NSColor.systemGray
-    /// While a connection is drawn from a port, the shapes it could end on are outlined faintly, as a
-    /// hovered shape is (the one it would end on now gets the full outline, the hint).
-    static let takerOutlineWidth: CGFloat = 2.5
-    static let takerOutlineOpacity: CGFloat = 0.6
+    /// While a connection is drawn from a port, the shapes it could end on are outlined faintly, and the one it would end on
+    /// now (the hint) boldly, wider than the selection's line, so the hint stands out among them (UX walk 3 connect-10: at
+    /// 2.5 points and 60% the others read as the hint did).
+    static let takerOutlineWidth: CGFloat = 1.5
+    static let takerOutlineOpacity: CGFloat = 0.35
+    static let hintOutlineWidth: CGFloat = 3
     /// The row whose dots show, and the row a drag from one of them starts at (T3's payment_id): a band in the accent,
     /// this faint, its rect this far inside and rounded this much, as the row a connection would end on is lit (without
     /// that one's stroke).
@@ -78,6 +80,9 @@ struct PortOverlay: CanvasOverlay {
             // A row's dot at rest isn't drawn on a side where a connection ends at that row already (a key, whose mark is drawn
             // there): it would sit on the mark and read as one. Hovered or pressed, it shows, for a drag of another.
             if !isLit, let part = dot.part, Self.isTaken(placed, of: PartAddress(host, part: part), in: editor) { continue }
+            // Nor where it would sit on another shape's face (the edited table, painted above an enum its widening overlaps,
+            // has its dots over the enum's words: UX walk 3 tables-new-1). Hovered or pressed, it shows.
+            if !isLit, Self.isOverOther(point, host: host, in: editor) { continue }
             let color = state.color(of: dot)
             func circle(_ radius: CGFloat) -> CGRect {
                 CGRect(x: point.x - radius / zoom, y: point.y - radius / zoom, width: radius * 2 / zoom, height: radius * 2 / zoom)
@@ -109,6 +114,18 @@ struct PortOverlay: CanvasOverlay {
             guard record.id != row.shape, registry.connectionEnds(of: record) != nil, record.boundParts(in: registry).contains(row),
                   let outline = shapes.geometry(of: record.id)?.outline, let first = outline.first, let last = outline.last else { return false }
             return on(first) || on(last)
+        }
+    }
+
+    /// Whether a closed shape other than `host` (and the containers it is in) lies under `point`: a resting dot there would be
+    /// drawn over its face.
+    static func isOverOther(_ point: CGPoint, host: ShapeID, in editor: CanvasEditor) -> Bool {
+        let spot = CGRect(x: point.x - 0.5, y: point.y - 0.5, width: 1, height: 1), shapes = editor.shapeContext
+        let holders = Set(editor.document.containers(of: host, containingKinds: editor.registry.containingKinds))
+        return editor.paintOrder(in: spot).contains { record in
+            guard record.id != host, !holders.contains(record.id), let geometry = shapes.geometry(of: record.id), geometry.isClosed,
+                  geometry.outline.count > 2 else { return false }
+            return polygonContains(geometry.outline, point)
         }
     }
 
@@ -147,5 +164,15 @@ struct PortOverlay: CanvasOverlay {
         cg.setLineJoin(.round)
         cg.addPath(outlines)
         cg.strokePath()
+        // The one it would end on now, over the core's hint, bold.
+        if let hinted = editor.hintedShapeID, let record = editor.document[hinted], let path = editor.outlinePath(of: record) {
+            let offset = context.worldDrawingOffset(of: hinted)
+            let moved = CGMutablePath()
+            moved.addPath(path, transform: CGAffineTransform(translationX: offset.x, y: offset.y))
+            cg.addPath(moved)
+            cg.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            cg.setLineWidth(PortStyle.hintOutlineWidth / context.zoom)
+            cg.strokePath()
+        }
     }
 }

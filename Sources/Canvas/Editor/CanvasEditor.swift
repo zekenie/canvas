@@ -1771,7 +1771,7 @@ public final class CanvasEditor {
     /// The shape edited, where it is laid out larger than its stored box (wider: a line typed longer than it is; taller: its waiting
     /// line) and holds no shapes (a container's would be covered): painted, and hit, above the shapes in its way until it is back
     /// to its size or no longer edited. With the frame it is laid out in and the box it stores.
-    private func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
+    func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
         guard let id = editingShapeID, let record = document[id], let box = record.box, !registry.isContainer(record),
               let frame = context.frame(of: record),
               frame.width > box.width + Self.liftSlack || frame.height > box.height + Self.liftSlack else { return nil }

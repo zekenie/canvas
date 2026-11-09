@@ -332,8 +332,11 @@ extension EmptyBoardWindow {
         expectEqual(keys.count, 2)
         let keyEnds = try keys.map { try require(editor.arrowGeometry(of: $0.id)).endHandle }
         expect(abs(keyEnds[0].y - keyEnds[1].y) >= 6, "they meet the row apart: \(keyEnds)")
+        // Level where their bars are (UX walk 3 tables-2), and at angles of their own past them.
         let ways = try keys.map { try require(editor.arrowGeometry(of: $0.id)).inward(at: .end) }
-        expect(abs(ways[0].y - ways[1].y) > 0.2, "and come in at angles of their own: \(ways)")
+        expect(ways.allSatisfy { abs($0.y) < 1e-6 }, "their bars level: \(ways)")
+        let beyond = try keys.map { try require(editor.arrowGeometry(of: $0.id)).point(40, along: .end).inward }
+        expect(abs(beyond[0].y - beyond[1].y) > 0.2, "and come in at angles of their own past them: \(beyond)")
         // Drawn: each of the four lines is its own stroke of ink, and nothing else is inked a few points beside it.
         let everything = try relations.map { try require(editor.arrowGeometry(of: $0.id)) } + keys.map { try require(editor.arrowGeometry(of: $0.id)) }
         let bounds = try everything.map { try require($0.levelBody).bounds }.reduce(CGRect.null) { $0.union($1) }

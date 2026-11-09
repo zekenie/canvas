@@ -441,7 +441,11 @@ public enum AdornmentLayout {
             corner = x - spacing
         }
         // The row's left end, rightward from the left edge (from the tab's start over a tab), in the room the right end leaves.
-        var left: CGFloat = max(overTab ? tabInset : 0, leftStart)
+        // Started past a container's tab, a row with no right end keeps the room it had, running on past the shape's right
+        // edge rather than cutting a name the tab took the start of (a table's "orders" at its database's top-left was "or…").
+        let tabStart = overTab ? tabInset : 0
+        var left: CGFloat = max(tabStart, leftStart)
+        let width = right == 0 ? width + max(0, leftStart - tabStart) : width
         var folded: Int?
         for i in items.indices where items[i].placement == .aboveTopLeft {
             let item = items[i]

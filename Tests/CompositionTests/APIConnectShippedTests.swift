@@ -93,10 +93,9 @@ private let stripeAPI = #"""
     let pill = try require(editor.shapeContext.geometry(of: pillID)?.bounds), shape = try require(editor.shapeContext.geometry(of: near)?.bounds)
     let line = try require(editor.shapeContext.geometry(of: near)?.parts.frame(row)?.rect)
     let geometry = try require(editor.arrowGeometry(of: arrowID))
-    // Where the level curve leaves the row and meets the pill, before its head is trimmed off.
-    let level: Cubic? = if case .level(let cubic, _, _) = geometry.path { cubic } else { nil }
-    let cubic = try require(level, "a level arrow, from a row: \(what)")
-    let start = cubic.start, end = cubic.end
+    // Where the level line leaves the row and meets the pill (a key's marked end has no head to trim, and its stub runs to it).
+    let body = try require(geometry.levelBody, "a level arrow, from a row: \(what)")
+    let start = body.start, end = body.end
     if pill.minY >= shape.maxY {
         expect(abs(end.y - pill.minY) < 1.5, "\(what): below the shape, the line meets the pill's top: \(end) \(pill)")
     } else {
