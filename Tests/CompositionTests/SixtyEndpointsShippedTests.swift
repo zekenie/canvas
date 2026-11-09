@@ -294,7 +294,7 @@ extension EmptyBoardWindow {
         let refunds = try require(editor.document.shapes.first { $0[TitleProperty.self] == "refunds" }?.typed(as: DatabaseTable.self))
         let entry = try require(editor.connectionBundle(of: writes.id)?.entries[.end], "a row it comes in at")
         expect(entry != refunds.props.columns[1].id, "not the key's row")
-        expect(entry != refunds.props.columns[0].id, "nor the row beside it, where the key's foot is: \(entry)")
+        expectEqual(entry, refunds.props.columns[2].id, "the row as clear of it, on the side the API is: amount_cents, below the key")
         let reads = try require(arrows.first { $0[ChannelProperty.self] == Reads.id })
         let shop = try require(editor.document.shapes.first { $0[TitleProperty.self] == "shop" })
         let database = try require(editor.shapeContext.geometry(of: shop.id)?.bounds)

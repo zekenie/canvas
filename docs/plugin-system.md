@@ -2698,9 +2698,30 @@ func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSi
 ```
 
 Editing a folded shape shows every row; Find's hits show in place while Find is open
-(`FindState.fieldsHit(of:)`); the "+N ›" line opens with a click, or ⌥Tab then Return or Space. Folds are
-remembered with the file's view on this Mac, a core view value (`ViewValueKey`, `editor.setViewValue`, no
-step), which `BoardDocument` saves and hands back before the canvas is made.
+(`FindState.rangesHit(of:)`, a kind keeping folded a row whose hits it draws elsewhere: `LineModel.peeks`); the "+N ›"
+line opens with a click, or ⌥Tab then Return or Space. A kind with headers (an API's path prefixes) folds as far as
+it goes: ⌃⌘↑ closes every header too, each showing its count, and → or Space opens one selected as an item, ←
+closes it. Folds are remembered with the file's view on this Mac, a core view value (`ViewValueKey`,
+`editor.setViewValue`, no step), which `BoardDocument` saves and hands back before the canvas is made.
+
+**Arrows drawn together.** Where a fold makes connections end at one line (a closed group's endpoints all writing one
+table) they are drawn as one: LineRows provides Connections' `ConnectionBundle` for the connections at shapes written
+as lines, worked out from Topology's literal connections at the shapes a change reaches, and the connector draws what
+it says. The first in the board's order leads, its pill counting the rest ("writes · 9"), which keep its outline under
+the core's `ShapeGeometry.isHidden` (not drawn, hit or spoken); a press on it selects them all (Selection's
+`SelectionUnits`). The same answer bows apart connections with the same two ends, fans those that end together from
+one shape's rows (their pills slid to their starts), and brings a line to a table as a whole in at a row clear of
+the keys at its side:
+
+```swift
+registrar.layoutInput(ConnectionBundle.input) { record, reading in reading.service(RowBundles.self)?.answer(for: record, in: reading) }
+registrar.selectionUnits { editor, id in editor.service(RowBundles.self)?.unit(of: id) }   // a bundle, selected whole
+// the connector, as it lays a connection out:
+let bundle = context.layoutInput(ConnectionBundle.input, of: shape)
+if let lead = bundle?.lead, let led = context.geometry(of: lead) {
+    return ShapeGeometry(outline: led.outline, bounds: led.bounds, isClosed: false, isHidden: true)
+}
+```
 
 **Rows as items and wholes.** A kind written as lines gets its rows selected on the canvas, as Selection's items of
 its shape ([Items inside a shape](#items-inside-a-shape)), and moved as wholes, with no code of its own beyond two
