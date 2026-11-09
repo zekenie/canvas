@@ -214,7 +214,7 @@ private let e6 = #"""
                                                   endpoint: Endpoint(method: "POST", path: "/orders/{id}/refunds", name: "createRefund")))
         let mentions = try require(editor.mentions)
         @MainActor func listed(_ query: String) -> [PartAddress] {
-            mentions.candidates(matching: query, in: AnyMentionable.self, for: nil, listingParts: { _ in true }).matches.map(\.address)
+            mentions.candidates(matching: query, in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: .shape).matches.map(\.address)
         }
         expectEqual(listed("DELETE /orders"), [PartAddress(unnamed)], "the shape, called by its method and path, and not its row as well")
         expectEqual(listed("createRefund"), [PartAddress(named)], "by its name: the shape")
