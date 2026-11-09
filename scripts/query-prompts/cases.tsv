@@ -122,3 +122,5 @@ k09	kit	which tables use the order_status enum?	-	orders	engineering	table[colum
 k10	kit	which enums have a refunded value?	-	order_status	engineering	enum-type[values="refunded"]
 k11	kit	every arrow where an endpoint writes a table	-	00000000-0000-4000-8000-0000000D0053, 00000000-0000-4000-8000-0000000D0057	engineering	arrow[channel=writes]
 k12	kit	add a deleted_at column to orders	-	UNANSWERABLE	unanswerable	-
+k13	kit	which endpoint serves GET /customers/export?	-	exportCustomers	engineering	:route("GET /customers/export")
+k14	kit	what reads the customers table?	-	exportCustomers	engineering	:edge-to("customers", reads)

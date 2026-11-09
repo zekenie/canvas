@@ -32,10 +32,12 @@ import Titles
 //                        /customers: GET /{customer_id}/orders → 200 Order
 //     billing API   …22  billing.shop.dev; POST /v1/refunds → 201; GET /v1/invoices/{id}
 //     Storefront    …31  a note
+//     exportCustomers …23  an endpoint taken out of its API (as Take Out Endpoint leaves one): GET /customers/export, its row …81
 //
 // And the arrows: …51 and …52 the keys (orders.customer_id → customers.id, refunds.order_id → orders.id); …53 POST
 // /orders/{id}/refunds writes refunds; …54 GET /orders/{id} and …55 GET /customers/{customer_id}/orders read orders; …56 POST
-// /orders/{id}/refunds calls billing API's POST /v1/refunds; …57 that writes audit_log; …58 Storefront calls GET /orders/{id}.
+// /orders/{id}/refunds calls billing API's POST /v1/refunds; …57 that writes audit_log; …58 Storefront calls GET /orders/{id};
+// …59 exportCustomers reads customers (no case before k13 reads customers, writes, or asks for that route: their answers stand).
 
 /// The evaluation's file of the engineering kit: its shapes' ids, its rows', and the file (`file(in:)`) in an editor of the shipped
 /// plugins (`harness`) or a board document (`document`).
@@ -53,11 +55,11 @@ enum QueryKitBoard {
 
     static let shop = id(0x01)
     static let customers = id(0x11), orders = id(0x12), refunds = id(0x13), orderStatus = id(0x14), auditLog = id(0x15)
-    static let ordersAPI = id(0x21), billingAPI = id(0x22)
+    static let ordersAPI = id(0x21), billingAPI = id(0x22), exportCustomers = id(0x23)
     static let storefront = id(0x31)
     static let customerKey = id(0x51), orderKey = id(0x52)
     static let writesRefunds = id(0x53), readsOrder = id(0x54), readsCustomerOrders = id(0x55), callsBilling = id(0x56), writesAudit = id(0x57)
-    static let storefrontCalls = id(0x58)
+    static let storefrontCalls = id(0x58), readsCustomers = id(0x59)
 
     /// The rows: each table's, then each API's.
     static let customersID = row(0x11), customersEmail = row(0x12), customersName = row(0x13)
@@ -66,10 +68,12 @@ enum QueryKitBoard {
     static let auditID = row(0x51), auditActor = row(0x52), auditAction = row(0x53)
     static let ordersHeader = row(0x61), getOrder = row(0x62), postRefund = row(0x63), customersHeader = row(0x64), getCustomerOrders = row(0x65)
     static let postBillingRefund = row(0x71), getInvoice = row(0x72)
+    static let getExport = row(0x81)
 
     /// Every shape, in file order: the database followed by what it holds.
-    static let fileOrder = [shop, customers, orders, refunds, orderStatus, auditLog, ordersAPI, billingAPI, storefront,
-                            customerKey, orderKey, writesRefunds, readsOrder, readsCustomerOrders, callsBilling, writesAudit, storefrontCalls]
+    static let fileOrder = [shop, customers, orders, refunds, orderStatus, auditLog, ordersAPI, billingAPI, storefront, exportCustomers,
+                            customerKey, orderKey, writesRefunds, readsOrder, readsCustomerOrders, callsBilling, writesAudit, storefrontCalls,
+                            readsCustomers]
 
     static func file(in registry: Registry) -> CanvasFile {
         func titled<P: ShapeProps>(_ id: ShapeID, _ title: String, _ props: P, in container: ShapeID? = nil) -> AnyShapeRecord {
@@ -120,6 +124,10 @@ enum QueryKitBoard {
                 .endpoint(Endpoint(id: getInvoice, method: "GET", path: "/v1/invoices/{id}")),
             ])),
             titled(storefront, "Storefront", StickyNote(frame: CGRect(origin: CGPoint(x: 1240, y: 640), size: StickyNote.defaultSize), text: MentionText(plain: ""))),
+            // Titled by its endpoint's name, as an endpoint of its own is.
+            AnyShapeRecord(ShapeRecord(id: exportCustomers, StandaloneEndpoint(frame: CGRect(x: 40, y: 900, width: 420, height: 44),
+                                                                               endpoint: Endpoint(id: getExport, method: "GET", path: "/customers/export",
+                                                                                                  name: "exportCustomers")))),
         ]
         /// An arrow made by the shipped connector between two rows (or a row and a whole shape), on a channel.
         func arrow(_ id: ShapeID, _ from: PartAddress, _ to: PartAddress, _ channel: ChannelID) -> AnyShapeRecord {
@@ -137,6 +145,7 @@ enum QueryKitBoard {
             arrow(callsBilling, PartAddress(ordersAPI, part: postRefund), PartAddress(billingAPI, part: postBillingRefund), Calls.id),
             arrow(writesAudit, PartAddress(billingAPI, part: postBillingRefund), PartAddress(auditLog), Writes.id),
             arrow(storefrontCalls, PartAddress(storefront), PartAddress(ordersAPI, part: getOrder), Calls.id),
+            arrow(readsCustomers, PartAddress(exportCustomers, part: getExport), PartAddress(customers), Reads.id),
         ]))
     }
 
@@ -207,6 +216,8 @@ enum QueryKitBoard {
         expectEqual(route["rows"]?.arrayValue?.map { $0["id"] }, [.string(K.ordersAPI.description)])
         expectEqual(route["rows"]?.arrayValue?.first?["routes"], ["POST /orders/{id}/refunds"])
         expectEqual(try ids(#":route("/v1/invoices/{n}")"#), kitIDs([K.billingAPI]))
+        expectEqual(try ids(#":route("GET /customers/export")"#), kitIDs([K.exportCustomers]), "an endpoint of its own, by its route")
+        expectEqual(try ids(#":edge-to("customers", reads)"#), kitIDs([K.exportCustomers]), "and by what it reads")
 
         // Inside a list: a column's name and its type, an enum's value, an endpoint's body.
         expectEqual(try ids(#"table[columns.name="email"]"#), kitIDs([K.customers]))
@@ -402,6 +413,8 @@ enum QueryKitBoard {
             "billing API (billing.shop.dev)",
             #"- POST /v1/refunds → 201; writes "audit_log"; called by "orders API" POST /orders/{id}/refunds"#,
             "- GET /v1/invoices/{id}",
+            "exportCustomers (endpoint)",
+            #"- GET /customers/export; reads "customers""#,
         ])
         expect(!board.isDocumentEdited)
     },
