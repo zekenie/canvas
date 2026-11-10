@@ -273,7 +273,7 @@ extension ReferenceState {
     private func armDebounce() {
         debounce?.cancel()
         debounce = editor.scheduler.schedule(after: ReferenceStyle.settle) { [weak self] in
-            guard let self else { return }
+            guard let self, !isEditorGone else { return }
             debounce = nil
             ask()
         }
@@ -284,7 +284,7 @@ extension ReferenceState {
     private func answerSoon() {
         guard hop == nil else { return }
         hop = editor.scheduler.schedule(after: .zero) { [weak self] in
-            guard let self else { return }
+            guard let self, !isEditorGone else { return }
             hop = nil
             provideRemembered()
             ask()
@@ -361,12 +361,17 @@ extension ReferenceState {
         }
         batch = Task { [weak self, queries] in
             let results = await queries.matches(requests)
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, !isEditorGone else { return }
             let landed = zip(asked, results).map { ($0.id, $0.key, Landed($1)) }
             // What Topology takes of them worked out off the main actor too, so landing takes in what
             // came and went, however many shapes a query found.
             let prepared = await prepare(providing(landed, revision: revision))
-            guard !Task.isCancelled else { return }
+            #if DEBUG
+            if let hold = beforeLanding { await hold() }
+            #endif
+            // This wait held the service, so its deinit, which cancels the batch, waited as well: an editor gone meanwhile is never
+            // read (landing reads its colors).
+            guard !Task.isCancelled, !isEditorGone else { return }
             batch = nil
             land(landed, revision: revision, prepared: prepared)
             #if DEBUG

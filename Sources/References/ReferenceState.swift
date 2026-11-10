@@ -27,6 +27,14 @@ import Topology
 @MainActor
 public final class ReferenceState {
     unowned let editor: CanvasEditor
+    /// The editor, held weakly as well: a batch holds this service across its second wait (its answers prepared off the main
+    /// actor), so the deinit that would cancel it waits too, and what a task or a turn of the scheduler does after it waited asks
+    /// first whether the editor is still there (`isEditorGone`), since reading `editor` once it has gone is fatal (a test's editor
+    /// goes as the test ends, with no file to close).
+    private weak var liveEditor: CanvasEditor?
+    /// Whether the editor has gone while a task or a turn of the scheduler waited: such a continuation does nothing, and reads
+    /// nothing of the editor.
+    var isEditorGone: Bool { liveEditor == nil }
     /// The reference being typed into whose list has only the words row left (the hand-off to
     /// natural language): its pill leads with the magnifier.
     private var handingOff: ShapeID?
@@ -106,6 +114,9 @@ public final class ReferenceState {
     /// How many batches have been asked, and how many have landed (debug builds).
     public internal(set) var batchesAsked = 0
     public internal(set) var batchesLanded = 0
+    /// Awaited by a batch between its answers prepared off the main actor and their landing, while the batch holds this service
+    /// (debug builds): a test lets the editor go in that window.
+    public var beforeLanding: (@MainActor () async -> Void)?
     /// How many references answers are kept for (at most `ReferenceStyle.memosKept`), and whether
     /// any are for `id` (debug builds).
     public var memoCount: Int { memo.count }
@@ -122,6 +133,7 @@ public final class ReferenceState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        liveEditor = editor
         paths = ShapePaths(editor: editor)
         settling = editor.topology?.keepsSettling { [weak self] in self?.isFinding ?? false }
         following = editor.topology?.follow { [weak self] change in self?.edgesChanged(change) }
@@ -591,7 +603,7 @@ public final class ReferenceState {
               let query = shown(props, id: id).query else { return nil }
         return Task { @MainActor [weak self, queries] in
             let results = await queries.matches([QueryMatchRequest(query, edges: .recorded, limit: QueryMatchRequest.every, admitting: admitting)])
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, !isEditorGone else { return }
             let asks = editor.shape(inFile: id)?.typed(as: Reference.self).flatMap { shown($0.props, id: id).query }
             guard asks == query, case .success(let matches)? = results.first else { return then(nil) }
             then(matches.ids)
