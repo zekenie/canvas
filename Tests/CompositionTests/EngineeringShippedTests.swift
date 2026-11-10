@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
@@ -279,6 +280,16 @@ extension EmptyBoardWindow {
             expectEqual(refused.reason, "invalid_value", "\(script): \(refused)")
             expectEqual(editor.document, held, "\(script) changed nothing")
         }
+    },
+    test("an enum draw makes is as wide as its name reads in its pill down to 50%, as its values (UX walk 5 paste-5-1)") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"enum-type "payment_method" values: "card\ncash""#, on: editor)
+        let methods = try require(editor.document.shapes.first { $0.kind == DatabaseEnum.kind })
+        let pill = editor.adornmentLeastWidth(of: methods)
+        let width = try require(methods.box).width
+        expect(pill > 0 && width * KitStyle.roomKeptZoom >= pill - 0.5, "the name reads whole at 50%: \(width), the pill \(pill)")
+        expectEqual(changes(try drawnInProcess(#"enum-type "payment_method" values: "card\ncash""#, on: editor)), ["unchanged"], "drawn again, as it is")
     },
     test("delete takes a row of any kind that has them: an enum's value and an API's endpoint, by its whole name, its arrows with it") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

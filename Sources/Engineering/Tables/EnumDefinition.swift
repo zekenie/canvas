@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Canvas
 import Draw
@@ -43,20 +44,46 @@ extension EnumDefinition: ShapeDefinition {
 
 extension EnumDefinition {
     /// How wide an enum is drawn for every value to read whole at rest (its inset, the value in the values' font, the trailing
-    /// inset), never narrower than a new enum (`EnumStyle.width`) nor wider than `EnumStyle.mostWholeWidth`: what a commit of its
-    /// lines widens it to (`EnumLines.wholeWidth`), as a table's.
-    static func wholeWidth(of values: [EnumValue]) -> CGFloat {
-        var widest = EnumStyle.width
+    /// inset) and its name to read whole in its pill down to `KitStyle.roomKeptZoom` (`titleRoom`), never narrower than a new
+    /// enum (`EnumStyle.width`) nor wider than `EnumStyle.mostWholeWidth`: what a commit of its lines widens it to
+    /// (`EnumLines.wholeWidth`), what `canvas draw` and a paste make it at, as a table's.
+    static func wholeWidth(of values: [EnumValue], title: String? = nil) -> CGFloat {
+        var widest = max(EnumStyle.width, titleRoom(title))
         for value in values {
             widest = max(widest, KitStyle.nameInset + RowText.line(value.text, .value).width + KitStyle.trailingInset)
         }
         return min(widest.rounded(.up), EnumStyle.mostWholeWidth)
     }
+
+    /// The same for an enum as it is: its values and its title.
+    static func wholeWidth(of shape: ShapeRecord<DatabaseEnum>) -> CGFloat {
+        wholeWidth(of: shape.props.values, title: shape[TitleProperty.self])
+    }
+
+    /// The rule an enum keeps in step (`keepsInStep`): a title that changes (typed in its pill, `/title`, a rename) widens the
+    /// enum to read it whole at `KitStyle.roomKeptZoom`, as a commit of its lines does, in the same step; only ever wider.
+    static func widenForTitle(_ before: AnyShapeRecord?, _ record: inout AnyShapeRecord) {
+        guard before?[TitleProperty.self] != record[TitleProperty.self], let shape = record.typed(as: DatabaseEnum.self), let box = record.box
+        else { return }
+        let whole = wholeWidth(of: shape)
+        guard whole > box.width else { return }
+        record.box = CGRect(origin: box.origin, size: CGSize(width: whole, height: box.height))
+    }
+
+    /// How wide an enum is for its title's pill (its list glyph and its name, `EnumStyle.titleTint`'s solid chip) to show whole
+    /// at `KitStyle.roomKeptZoom` and closer, world units: the pill is drawn in view points, so it is that many over the zoom
+    /// (`AdornmentLayout.scale(atZoom:)`). A pasted schema fitted to the view at 54% reads `payment_method` whole, not cut
+    /// short (UX walk 5 paste-5-1). 0 for none.
+    static func titleRoom(_ title: String?) -> CGFloat {
+        guard let title = TitleProperty.folded(title) else { return 0 }
+        let pill = AdornmentLabel(title, systemImage: EnumStyle.symbol).tinted(EnumStyle.titleTint)
+        return pill.contentSize.width * AdornmentLayout.scale(atZoom: KitStyle.roomKeptZoom)
+    }
 }
 
-/// Drawn by `canvas draw`, it's as wide as its values read whole at rest, as a commit of its lines makes it.
+/// Drawn by `canvas draw`, it's as wide as its values and its name read whole at rest, as a commit of its lines makes it.
 extension EnumDefinition: DrawnWhole {
-    func wholeWidth(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> CGFloat? { Self.wholeWidth(of: shape.props.values) }
+    func wholeWidth(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> CGFloat? { Self.wholeWidth(of: shape) }
 }
 
 extension EnumDefinition: LaidOutBox {

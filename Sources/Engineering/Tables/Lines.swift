@@ -355,8 +355,8 @@ struct TableLines: LineModel {
     var noun: LineNoun { LineNoun("column") }
     var style: LineStyle { LineLooks.table }
     /// As wide as every column's name and type read whole at rest (`TableDefinition.wholeWidth`): a commit widens it so.
-    func wholeWidth(of props: DatabaseTable, in editor: CanvasEditor) -> CGFloat? {
-        TableDefinition.wholeWidth(of: props.columns, in: table ?? ShapeID(), registry: editor.registry, inFile: editor.shape(inFile:), names: editor.service(KitNames.self))
+    func wholeWidth(of shape: ShapeRecord<DatabaseTable>, in editor: CanvasEditor) -> CGFloat? {
+        TableDefinition.wholeWidth(of: shape.props.columns, in: shape.id, registry: editor.registry, inFile: editor.shape(inFile:), names: editor.service(KitNames.self))
     }
     func rows(of props: DatabaseTable) -> [ColumnLine] { props.columns.map { ColumnLine($0) } }
     func setRows(_ rows: [ColumnLine], in props: inout DatabaseTable) { props.columns = rows.map(\.column) }
@@ -525,8 +525,8 @@ struct EnumLines: LineModel {
 
     var noun: LineNoun { LineNoun("value") }
     var style: LineStyle { LineLooks.enumValues }
-    /// As wide as every value reads whole at rest (`EnumDefinition.wholeWidth`): a commit widens it so, as a table's.
-    func wholeWidth(of props: DatabaseEnum, in editor: CanvasEditor) -> CGFloat? { EnumDefinition.wholeWidth(of: props.values) }
+    /// As wide as every value and its name read whole at rest (`EnumDefinition.wholeWidth`): a commit widens it so, as a table's.
+    func wholeWidth(of shape: ShapeRecord<DatabaseEnum>, in editor: CanvasEditor) -> CGFloat? { EnumDefinition.wholeWidth(of: shape) }
     func rows(of props: DatabaseEnum) -> [EnumValue] { props.values }
     func setRows(_ rows: [EnumValue], in props: inout DatabaseEnum) { props.values = rows }
     func id(of row: EnumValue) -> PartID { row.id }

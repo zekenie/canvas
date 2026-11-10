@@ -213,9 +213,11 @@ extension CanvasEditor {
     /// keyboard stays where it is (the core's `Placement.settled()`). Either way one step, "New Type", into which the caller
     /// may write what names it, in a group of its own of that name.
     ///
-    /// Put down settled where no clear spot in view is left (the view full), it lands at the clear spot nearest the view and the
-    /// view pans the least to show it, `keeping` (else the owners) in view as well where both fit, else the anchor of a card
-    /// shown (the row it was made from), so the card stays up (Selection's `revealIfOffscreen`).
+    /// Put down settled where no clear spot in view is left (the view full), it lands at the clear spot (beside what it is kept
+    /// with, beside each owner, anywhere) whose least pan into view takes none of what the person works with out of view (`keeping`,
+    /// else the owners, the owners, and what is joined to `keeping`), the nearest of those, and the view pans the least to show it,
+    /// all of `keeping` (else the owners) in view as well where it all fits, else its first, else the anchor of a card shown (the
+    /// row it was made from), so the card stays up (Selection's `revealIfOffscreen(_:keepingFirstOf:)`).
     @discardableResult
     public func newType(named name: String, besides owners: [ShapeID], givingType: Bool, editing: Bool, keeping: [ShapeID] = []) -> ShapeID? {
         var seen = Set<ShapeID>()
@@ -245,18 +247,17 @@ extension CanvasEditor {
         guard var landing else { return nil }
         // No side of them in view: the nearest clear spot in view instead, so the type made is seen (one edited is brought
         // into view as it's selected, wherever it lands).
+        let kept = keeping.isEmpty ? owners : keeping
+        // Brought into view keeping what it was made for: all of it where it fits with it (an API and the types its line names),
+        // else the first (the API), else the row a card hangs from (made from a row's card, the card stays up, the caret in it).
+        let alternatives = [shapeContext.bounds(of: kept), shapeContext.bounds(of: Array(kept.prefix(1))), card?.anchor].compactMap { $0 }
         if !editing, !surroundings.shows(landing.rect, put: put) {
             let anywhere = surroundings.anywhere(put: put)
             if surroundings.shows(anywhere.rect, put: put) {
                 landing = anywhere
             } else if let view = surroundings.reading.view {
-                // None clear in view (it's full): the clear spot nearest what the person is at (the row a card hangs from, else
-                // what it is kept beside, else the view), beside it or round the view's middle, so the least pan shows both.
-                let at = card?.anchor ?? shapeContext.bounds(of: keeping) ?? view
-                var spots = [landing, surroundings.anywhere()]
-                if let beside = surroundings.near(at, avoiding: [at]) { spots.append(beside) }
-                func away(_ rect: CGRect) -> CGFloat { let x = rect.midX - at.midX, y = rect.midY - at.midY; return (x * x + y * y).squareRoot() }
-                landing = spots.min { away($0.rect) < away($1.rect) } ?? landing
+                landing = fallbackSpot(among: landing, surroundings, near: card?.anchor ?? shapeContext.bounds(of: kept) ?? view,
+                                       keeping: kept, owners: owners, alternatives: alternatives)
             }
         }
         let inView = editing || surroundings.shows(landing.rect, put: put)
@@ -266,10 +267,53 @@ extension CanvasEditor {
             if givingType { giveType(id, to: owners) }
             return id
         }
-        // Nowhere clear in view: brought into view by the least pan, what it was made for kept in view where both fit, else the
-        // row a card hangs from (made from a row's card, the card stays up, the caret in it).
-        if let id = newID, !inView { revealIfOffscreen([id], keeping: keeping.isEmpty ? owners : keeping, orKeeping: card?.anchor) }
+        // Nowhere clear in view: brought into view by the least pan, what it was made for kept in view as above.
+        if let id = newID, !inView { revealIfOffscreen([id], keepingFirstOf: alternatives) }
         return newID
+    }
+
+    /// Where a new type goes when the view is full (no clear spot in it): of the clear spots beside what the person is at (`at`:
+    /// the row a card hangs from, else what it is kept beside, else the view) on each side, beside each owner on each side, beside
+    /// the box `near` found and anywhere, the one whose least pan into view (`revealPan`, keeping the first of `alternatives` that
+    /// fits, as the reveal will) takes none of what the person works with out of view (the shapes `keeping`, the owners and what
+    /// is joined to what it is kept beside, wholly in the clear view now: U11's rule for a put, UX walk 5 apis-5-1, a second new
+    /// type made from a line panned the first, which the same line names, out of view), a pan that takes the first of `keeping`
+    /// (the API the card hangs from) out of view ranking under every one that keeps it; then the one that takes fewest; then the
+    /// nearest `at`, the earlier on a tie.
+    private func fallbackSpot(among found: Landing, _ surroundings: Surroundings, near at: CGRect, keeping: [ShapeID], owners: [ShapeID],
+                              alternatives: [CGRect]) -> Landing {
+        var spots = [found, surroundings.anywhere()]
+        func add(_ spot: Landing?) { if let spot, !spots.contains(spot) { spots.append(spot) } }
+        // Beside a shape, never beside a part of one (the row a card hangs from): the gap is the shape's, so a spot above a row is
+        // above its shape's title row, not flush on its edge (U14-E1). `at` itself weighs only as the nearness.
+        let held = card != nil || keeping.count == 1 ? keeping.first : nil
+        let visible = surroundings.reading.view
+        var besides: [ShapeID] = held.map { [$0] } ?? []
+        // Owners out of view are left out: a spot beside one is out of view, and its pan takes more than the ones in view do.
+        for owner in owners where !besides.contains(owner) {
+            if let bounds = shapeContext.bounds(of: [owner]), visible.map(bounds.intersects) ?? true { besides.append(owner) }
+        }
+        if held == nil { for side in PlacingStyle.sides { add(surroundings.near(at, avoiding: [at], sides: [side])) } }
+        for beside in besides { for side in PlacingStyle.sides { add(surroundings.near(beside, sides: [side])) } }
+        // What the person works with, each shape once: the shapes `keeping`, the owners, and what is joined to what it is kept with.
+        var working = surroundings.joinedInView(to: keeping)
+        for id in keeping + owners {
+            if let bounds = shapeContext.bounds(of: [id]), !working.contains(bounds) { working.append(bounds) }
+        }
+        // What it is kept beside first (the API, the card's shape) weighs more than all the rest: a spot whose pan takes it out of
+        // view ranks under every one that keeps it.
+        let first = shapeContext.bounds(of: Array(keeping.prefix(1)))
+        func lost(_ spot: Landing) -> (first: Bool, count: Int) {
+            guard let count = revealTakesAway(working, bringing: spot.rect, keepingFirstOf: alternatives) else { return (true, working.count + 1) }
+            let lostFirst = first.flatMap { revealTakesAway([$0], bringing: spot.rect, keepingFirstOf: alternatives) }.map { $0 > 0 } ?? false
+            return (lostFirst, count)
+        }
+        func away(_ rect: CGRect) -> CGFloat { let x = rect.midX - at.midX, y = rect.midY - at.midY; return (x * x + y * y).squareRoot() }
+        let ranked = spots.map { (spot: $0, lost: lost($0), away: away($0.rect)) }
+        return ranked.min { a, b in
+            if a.lost.first != b.lost.first { return !a.lost.first }
+            return a.lost.count != b.lost.count ? a.lost.count < b.lost.count : a.away < b.away - 0.5
+        }?.spot ?? found
     }
 
     /// Whether the owner is an arrow of a kind that relates, whose new type is a relationship type.

@@ -412,6 +412,38 @@ import TextEditing
         b.press(.down)
         expect(!b.field.holdsDraft, "written, it's the row as shown")
     },
+    test("the field's baseline is where a row's text is set at rest, on a row and on the empty waiting line before and after its first character: nothing shifts as the caret comes or a character is typed (UX walk 5 connect-7, U14-C5)") {
+        let b = try Bench()
+        let id = b.tally("Stock", ["apples 3", "pears 5"])
+        b.begin(id)
+        let font = NSFont.systemFont(ofSize: 13)    // the tally's row font (Tallies.swift)
+        @MainActor func baseline() throws -> (field: CGFloat, text: CGFloat, rest: CGFloat) {
+            let view = try require(b.view), field = b.field
+            let layout = try require(field.textLayoutManager)
+            layout.ensureLayout(for: layout.documentRange)
+            var text: CGFloat?
+            layout.enumerateTextLayoutFragments(from: layout.documentRange.location, options: [.ensuresLayout, .ensuresExtraLineFragment]) { fragment in
+                if let first = fragment.textLineFragments.first {
+                    text = fragment.layoutFragmentFrame.minY + first.typographicBounds.minY + first.glyphOrigin.y
+                }
+                return false
+            }
+            let line = try require(view.rect(of: view.focus))
+            let drawn = field.convert(CGPoint(x: 0, y: (text ?? font.ascender) + field.textContainerOrigin.y), to: view).y
+            return (field.frame.minY, drawn, line.midY + (font.ascender + font.descender) / 2)
+        }
+        expectEqual(b.focus, "waiting")
+        let empty = try baseline()
+        b.type("x")
+        let typed = try baseline()
+        expect(abs(typed.text - typed.rest) < 0.25, "typed: the line's baseline \(typed.text), at rest \(typed.rest)")
+        // Nothing is laid out in an empty field to measure: its place is what a character typed in it sets.
+        expectEqual(empty.field, typed.field, "the empty line's field is where the first character's line is: it didn't move as it was typed")
+        b.press(.up)
+        let row = try baseline()
+        expect(abs(row.text - row.rest) < 0.25, "on a row: the line's baseline \(row.text), at rest \(row.rest)")
+        b.press(.escape)
+    },
 ])
 
 @MainActor let offerTests = Suite("What fits at a line's caret", [

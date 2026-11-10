@@ -113,7 +113,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     /// Between a change to the text and its end: the caret moving then is the change's.
     private var isChangingText = false
     /// While a pick puts its offer in.
-    private var isPicking = false
+    /// A pick from the offers is being written: the change it makes is the list's, not a character typed.
+    private(set) var isPicking = false
     /// A key let go of nothing but a held ⌫ that removed its row: its repeats remove nothing more.
     public var swallowsDeleteRepeats = false
     private var open: OpenOffers?
@@ -167,6 +168,51 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     public override var typingAttributes: [NSAttributedString.Key: Any] {
         get { plain }
         set {}
+    }
+
+    /// How far down from its top the field sets its line's baseline (its text container's origin and TextKit 2's first line, as
+    /// it lays the line out, whole points). What the session places the field by, so the line sits where the row's text is drawn
+    /// at rest (UX walk 5 connect-7). A field with nothing in it has no line laid out, so one character is put in it for the
+    /// measuring and taken out (U14-C5: the empty waiting line sat 0.4 point off the one a typed character made), unseen: no
+    /// delegate, change or caret hears it. `font` stands in for a field that can't be measured.
+    func firstBaseline(else font: NSFont) -> CGFloat {
+        let origin = textContainerOrigin.y
+        guard let layout = textLayoutManager, let storage = textStorage else { return origin + ceil(font.ascender) }
+        let empty = storage.length == 0, selected = selectedRange()
+        if empty {
+            isShowing = true
+            storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: NSAttributedString(string: "x", attributes: plain))
+        }
+        defer {
+            if empty {
+                storage.replaceCharacters(in: NSRange(location: 0, length: 1), with: "")
+                setSelectedRange(selected)
+                isShowing = false
+            }
+        }
+        var found: CGFloat?
+        layout.enumerateTextLayoutFragments(from: layout.documentRange.location, options: [.ensuresLayout]) { fragment in
+            if let line = fragment.textLineFragments.first {
+                found = fragment.layoutFragmentFrame.minY + line.typographicBounds.minY + line.glyphOrigin.y
+            }
+            return false
+        }
+        return origin + (found ?? ceil(font.ascender))
+    }
+
+    /// Where the session placed the field. AppKit snaps a text view's frame to the backing pixel grid when its layer is made
+    /// (`setLayer:`, the first time it is drawn), a fraction of a point off the baseline the session set: the line would sit
+    /// there, the empty waiting line a fraction high, until it is next placed (U14-C5). The frame is put back as the layer is made.
+    private var placedFrame: CGRect?
+
+    /// Puts the field at `frame`, in its clip, and keeps it there.
+    func place(at frame: CGRect) {
+        placedFrame = frame
+        if self.frame != frame { self.frame = frame }
+    }
+
+    public override var layer: CALayer? {
+        didSet { if let placedFrame, frame != placedFrame { frame = placedFrame } }
     }
 
     // MARK: The text

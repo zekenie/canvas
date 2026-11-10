@@ -545,8 +545,51 @@ private let models = #"""
         expect(shown.contains(box), "the new type in view: \(box) in \(shown)")
         let apiNow = try require(editor.shapeContext.frame(of: api.id))
         expect(shown.contains(apiNow), "the API kept in view: \(apiNow) in \(shown), the type \(box)")
+        expect(!box.insetBy(dx: -4, dy: -4).intersects(apiNow), "beside the API's shape with the usual gap, never flush on its edge or its title row: \(box), \(apiNow) (U14-E1)")
         expectEqual(editor.cameraTarget.zoom, 1, "a pan, not a zoom")
         expectEqual(editor.editingShapeID, api.id, "the caret kept in the API")
+        walk.press(.escape)
+        walk.press(.escape)
+    },
+    test("apis-5-1: a line's second New type, with the view full after its first, keeps the first, which the same line names, in view with it and the API") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        // The fifth UX walk's apis journey to step 17, by the keys.
+        try w.draw(#"""
+            table "orders" columns: "id uuid pk\ncustomer_id uuid\ntotal_cents int\nplaced_at timestamptz"
+            sticky-note "NewOrder" below "orders" (gap: 60) schema: "{\"type\": \"object\", \"properties\": {\"customer_id\": {\"type\": \"string\"}, \"items\": {\"type\": \"array\"}}}"
+            sticky-note "Order" below "NewOrder" (gap: 40) schema: "{\"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}, \"total_cents\": {\"type\": \"number\"}}}"
+            """#)
+        let walk = w.walk()
+        walk.press(Chord("/"))
+        w.type("api orders API", with: walk)
+        walk.press(.return)
+        walk.press(.up)
+        w.type("api.shop.dev/v1 bearer", with: walk)
+        walk.press(.return)
+        w.type("POST /orders (NewOrder) -> 201 Order", with: walk)
+        walk.press(.return)
+        w.type("POST /orders/{id}/refunds (NewRefund", with: walk)
+        walk.press(.return)
+        let newRefund = try require(titled(editor, "NewRefund")).id
+        w.type(") -> 201 Refund", with: walk)
+        walk.press(.return)
+        let refund = try require(titled(editor, "Refund")).id
+        let api = try require(apis(editor).first).id
+        w.window.settle()
+        // Wholly in the clear view where the camera is headed, the title's row above each counted.
+        @MainActor func seen(_ id: ShapeID) throws -> Bool {
+            let frame = try require(editor.shapeContext.frame(of: id))
+            let row = CGRect(x: frame.minX, y: frame.minY - 27, width: frame.width, height: frame.height + 27)
+            return editor.clearView.contains(editor.cameraTarget.toView(row))
+        }
+        expect(try seen(refund), "the type just made in view")
+        expect(try seen(newRefund), "the type the same line named first kept in view")
+        expect(try seen(api), "the API kept in view")
+        expectEqual(editor.cameraTarget.zoom, 1, "a pan, not a zoom")
+        expectEqual(editor.editingShapeID, api, "the caret kept in the API")
         walk.press(.escape)
         walk.press(.escape)
     },

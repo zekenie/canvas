@@ -94,13 +94,101 @@ extension CanvasEditor {
     /// `keeping` (the shape a new one was put down beside), when the two fit in view together, is kept in view
     /// with them; failing that, `orKeeping` (a part of it: the row a card hangs from) where that fits. Shapes too big to fit at that zoom are fitted, farther out (never closer, which `reveal`
     /// brings small shapes to); with `zoomingOut` false they are panned to, their top-left in view, and the
-    /// zoom kept. Does nothing before the view has a size, or when none of the shapes has bounds.
-    public func revealIfOffscreen(_ ids: [ShapeID], keeping: [ShapeID] = [], orKeeping second: CGRect? = nil, zoomingOut: Bool = true) {
-        guard let bounds = shapeContext.bounds(of: ids),
-              revealIfOffscreen(rect: bounds, keeping: shapeContext.bounds(of: keeping), orKeeping: second, withRowAbove: true, zoomingOut: zoomingOut,
-                                settling: false)
+    /// zoom kept. With `zoomingIn`, a view so far out the canvas draws skeletons (`drawsSkeletons`), where what was brought
+    /// would land as a sketch nobody reads (a paste after an undo left the view at 10%: UX walk 5 paste-5-2), is zoomed in to
+    /// fit them (with `keeping` where that is closer than the view is now), no closer than 100% (`SelectionStyle.readableFitMaxZoom`), in view or
+    /// not, never farther out than the view is (a fit that is, is the ordinary reveal). Does nothing before the view has a
+    /// size, or when none of the shapes has bounds.
+    public func revealIfOffscreen(_ ids: [ShapeID], keeping: [ShapeID] = [], orKeeping second: CGRect? = nil, zoomingOut: Bool = true,
+                                  zoomingIn: Bool = false) {
+        guard let bounds = shapeContext.bounds(of: ids) else { return }
+        if zoomingIn, drawsSkeletons, !unobscuredViewport.isEmpty {
+            // Fitted with what it was put beside (`keeping`) where that is closer than the view is now, else alone; a fit no closer
+            // than the camera's own leaves the view as it is for the ordinary reveal below (a block in view stays where it is).
+            let view = unobscuredViewport, zoom = cameraTarget.zoom
+            let candidates = [keeping.isEmpty ? nil : shapeContext.bounds(of: keeping).map { $0.union(bounds) }, bounds].compactMap { $0 }
+            if let rect = candidates.first(where: {
+                Camera(fitting: $0, in: view, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.readableFitMaxZoom).zoom > zoom
+            }) {
+                animateCamera(toFit: rect, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.readableFitMaxZoom,
+                              duration: SelectionStyle.revealDuration)
+                settleIfSelected(ids)
+                return
+            }
+        }
+        guard revealIfOffscreen(rect: bounds, keeping: [shapeContext.bounds(of: keeping), second].compactMap { $0 }, withRowAbove: true,
+                                zoomingOut: zoomingOut, settling: false)
         else { return }
         settleIfSelected(ids)
+    }
+
+    /// The same, keeping in view with them the first of `alternatives` (world units) that fits in view with them: what a type
+    /// made for an API keeps, the API and the types it names where they all fit, else the API alone, else the row a card hangs
+    /// from (UX walk 5 apis-5-1). At the zoom it has: shapes too big to fit are fitted, farther out.
+    public func revealIfOffscreen(_ ids: [ShapeID], keepingFirstOf alternatives: [CGRect]) {
+        guard let bounds = shapeContext.bounds(of: ids),
+              revealIfOffscreen(rect: bounds, keeping: alternatives, withRowAbove: true, settling: false) else { return }
+        settleIfSelected(ids)
+    }
+
+    /// How many of `kept` (world units: what the person works with), of those wholly in the clear view where the camera is headed,
+    /// the least pan `revealIfOffscreen(_:keepingFirstOf:)` would make to bring a box of `bounds` into view (keeping the first of
+    /// `alternatives` that fits with it) takes out of it: 0 for a box in view already; nil for one too big to show at this zoom,
+    /// which would be fitted farther out, or before the view has a size. What a caller weighs spots by before putting a shape
+    /// down (a new type: a pan that takes out of view what the person works with ranks last, U11's rule for a put).
+    public func revealTakesAway(_ kept: [CGRect], bringing bounds: CGRect, keepingFirstOf alternatives: [CGRect] = []) -> Int? {
+        guard let pan = revealPan(bringing: bounds, keepingFirstOf: alternatives) else { return nil }
+        guard pan != .zero else { return 0 }
+        let camera = cameraTarget, clear = clearView
+        return kept.map { camera.toView($0) }.filter { clear.contains($0) && !clear.contains($0.offsetBy(dx: pan.width, dy: pan.height)) }.count
+    }
+
+    /// The least pan, in view points, `revealIfOffscreen(_:keepingFirstOf:)` would make for a box of `bounds` (with the row
+    /// above its top) where the camera is headed: zero for one in view already; nil for one too big to show at this zoom, or
+    /// before the view has a size.
+    private func revealPan(bringing bounds: CGRect, keepingFirstOf alternatives: [CGRect]) -> CGSize? {
+        guard let shown = revealedRect(bounds, keeping: alternatives, withRowAbove: true) else { return nil }
+        guard !clearView.contains(cameraTarget.toView(shown.bounds)) else { return .zero }
+        guard let together = shown.together else { return nil }
+        return clearView.insetBy(SelectionStyle.revealMargin).shift(bringing: cameraTarget.toView(together))
+    }
+
+    /// What a reveal of `bounds` shows: the box with the row above it (`bounds`), and what the least pan brings in (`together`:
+    /// with the first of `keeping` that fits with it, else alone; nil for a box too big to fit at the zoom the camera is headed
+    /// for). Nil before the view has a size, or for a box that is no box.
+    private func revealedRect(_ bounds: CGRect, keeping: [CGRect], withRowAbove: Bool) -> (bounds: CGRect, together: CGRect?)? {
+        let view = unobscuredViewport, camera = cameraTarget
+        guard !view.isEmpty, !bounds.isNull, bounds.isFinite else { return nil }
+        let above = withRowAbove ? SelectionStyle.revealRowAbove / camera.zoom : 0
+        func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
+        let shown = withRow(bounds)
+        let margin = SelectionStyle.revealMargin
+        let room = view.insetBy(dx: margin, dy: margin)
+        func fits(_ rect: CGRect) -> Bool { rect.width * camera.zoom <= room.width && rect.height * camera.zoom <= room.height }
+        guard fits(shown) else { return (shown, nil) }
+        let together = keeping.lazy.map { withRow($0.union(bounds)) }.first(where: fits)
+        return (shown, together ?? shown)
+    }
+
+    /// The same for a rect in world units (a part of the selected shape, `ShapeParts`, where the person
+    /// then is, `settling`), answering whether it moved the camera; the row above it counted only `withRowAbove`
+    /// (a shape's, never a part's), and the first of `keeping` that fits in view with it kept there too.
+    @discardableResult
+    func revealIfOffscreen(rect bounds: CGRect, keeping: [CGRect] = [], withRowAbove: Bool = false,
+                           zoomingOut: Bool = true, settling: Bool = true) -> Bool {
+        guard let (shown, together) = revealedRect(bounds, keeping: keeping, withRowAbove: withRowAbove) else { return false }
+        // In view: in the clear part and out of the corner the minimap covers, as the least pan below brings it.
+        guard !clearView.contains(cameraTarget.toView(shown)) else { return false }
+        let margin = SelectionStyle.revealMargin
+        if let together {
+            animateCamera(toShow: together, margin: margin, duration: SelectionStyle.revealDuration)
+        } else if zoomingOut {
+            animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: cameraTarget.zoom, duration: SelectionStyle.revealDuration)
+        } else {
+            animateCamera(toShow: shown, margin: margin, duration: SelectionStyle.revealDuration)
+        }
+        if settling { selectionState?.settle() }
+        return true
     }
 
     /// Brings what the selection climbed to (a group, or the container it is in: Escape, ⌘↑) into view only if none
@@ -111,35 +199,6 @@ extension CanvasEditor {
         guard let bounds = shapeContext.bounds(of: ids), !unobscuredViewport.isEmpty,
               !cameraTarget.toWorld(unobscuredViewport).intersects(bounds) else { return }
         revealIfOffscreen(ids, zoomingOut: false)
-    }
-
-    /// The same for a rect in world units (a part of the selected shape, `ShapeParts`, where the person
-    /// then is, `settling`), answering whether it moved the camera; the row above it counted only `withRowAbove`
-    /// (a shape's, never a part's).
-    @discardableResult
-    func revealIfOffscreen(rect bounds: CGRect, keeping neighbour: CGRect? = nil, orKeeping second: CGRect? = nil, withRowAbove: Bool = false,
-                           zoomingOut: Bool = true, settling: Bool = true) -> Bool {
-        let view = unobscuredViewport, camera = cameraTarget
-        guard !view.isEmpty, !bounds.isNull, bounds.isFinite else { return false }
-        let above = withRowAbove ? SelectionStyle.revealRowAbove / camera.zoom : 0
-        func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
-        let shown = withRow(bounds)
-        // In view: in the clear part and out of the corner the minimap covers, as the least pan below brings it.
-        guard !clearView.contains(camera.toView(shown)) else { return false }
-        let margin = SelectionStyle.revealMargin
-        let room = view.insetBy(dx: margin, dy: margin)
-        func fits(_ rect: CGRect) -> Bool { rect.width * camera.zoom <= room.width && rect.height * camera.zoom <= room.height }
-        if fits(shown) {
-            let together = neighbour.map { withRow($0.union(bounds)) }.flatMap { fits($0) ? $0 : nil }
-                ?? second.map { withRow($0.union(bounds)) }.flatMap { fits($0) ? $0 : nil }
-            animateCamera(toShow: together ?? shown, margin: margin, duration: SelectionStyle.revealDuration)
-        } else if zoomingOut {
-            animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: camera.zoom, duration: SelectionStyle.revealDuration)
-        } else {
-            animateCamera(toShow: shown, margin: margin, duration: SelectionStyle.revealDuration)
-        }
-        if settling { selectionState?.settle() }
-        return true
     }
 
     /// Goes to the shapes, as following a link to them does: ends editing, selects those that can

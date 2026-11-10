@@ -105,7 +105,7 @@ enum APITypes {
             let lowered = name.lowercased()
             let isDefault = !names.contains { $0.lowercased().hasPrefix(lowered) }
             items.append(.action(APIStyle.newTypeOffer(name), LineAction(step: APIStyle.newTypeStep) { context in
-                make(named: name, for: api, in: context.editor).map { PartAddress($0) }
+                make(named: name, for: api, row: context.row, in: context.editor).map { PartAddress($0) }
             }, isDefault: isDefault))
         }
         return items.isEmpty ? nil : LineOffers(range: range, query: typed, items: items)
@@ -139,21 +139,24 @@ enum APITypes {
 
     /// A type note called `name`, made for the API `api`: beside the types it names already that are on the board shown (else
     /// beside it), made an instance of nothing and edited by no one (put down settled), in Types' step, "New Type", which the
-    /// words that name it then join; where the view has no clear spot left, revealed by the least pan with the API kept in view
-    /// where both fit. Nil where none could be made.
-    static func make(named name: String, for api: ShapeID, in editor: CanvasEditor) -> ShapeID? {
+    /// words that name it then join; where the view has no clear spot left, at the spot whose pan into view keeps what the person
+    /// works with in view and revealed by the least pan with the API and the types the line of `row` names kept in view where
+    /// they all fit, else the API (UX walk 5 apis-5-1: NewRefund, which the line names, stays in view as Refund is made). Nil
+    /// where none could be made.
+    static func make(named name: String, for api: ShapeID, row: PartID? = nil, in editor: CanvasEditor) -> ShapeID? {
         let board = editor.board
-        var named: [ShapeID] = []
+        var named: [ShapeID] = [], line: [ShapeID] = []
         if let record = editor.document[api]?.typed(as: API.self), let types = editor.types {
-            for row in record.props.endpoints {
-                guard let endpoint = row.endpoint else { continue }
+            for entry in record.props.endpoints {
+                guard let endpoint = entry.endpoint else { continue }
                 for ref in [endpoint.body] + endpoint.responses.map(\.type) {
-                    guard let shape = ref?.shape, types.isType(shape), editor.file.board(containing: shape) == board, !named.contains(shape) else { continue }
-                    named.append(shape)
+                    guard let shape = ref?.shape, types.isType(shape), editor.file.board(containing: shape) == board else { continue }
+                    if !named.contains(shape) { named.append(shape) }
+                    if entry.id == row, !line.contains(shape) { line.append(shape) }
                 }
             }
         }
-        return editor.newType(named: name, besides: named.isEmpty ? [api] : named, givingType: false, editing: false, keeping: [api])
+        return editor.newType(named: name, besides: named.isEmpty ? [api] : named, givingType: false, editing: false, keeping: [api] + line)
     }
 }
 

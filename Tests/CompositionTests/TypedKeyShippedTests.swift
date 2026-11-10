@@ -8,6 +8,7 @@ import Chrome
 import Connections
 import Draw
 import Engineering
+import Geometry
 import LanguageModels
 import LineRows
 import Locking
@@ -90,6 +91,37 @@ private let shop = #"""
     """#
 
 @MainActor let typedKeyShippedTests = Suite("Keys typed, shipped", [
+    test("the first minute's key, by the keys: Tab's pick, ↩ and ↩ on the empty row leave the board where it was, no nudge of a few points (UX walk 5 firstminute-5-2)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        let walk = w.walk()
+        walk.press(Chord("/"))
+        w.type("table customers", with: walk)
+        walk.press(.return)
+        w.type("email text unique", with: walk)
+        walk.press(.return)
+        w.type("name text", with: walk)
+        walk.press(.return)
+        walk.press(.return)
+        // Beside customers, by the inspector: the view pans to it (T1 panel 3).
+        walk.press(Chord(Key.return, .shift))
+        w.type("orders", with: walk)
+        walk.press(.return)
+        w.type("customer_id uuid -> cus", with: walk)
+        let camera = editor.cameraTarget
+        let orders = try require(editor.shapeContext.frame(of: try require(table(editor, "orders")).id))
+        expect(editor.clearView.contains(editor.camera.toView(orders)), "orders wholly in the clear view as the key is typed")
+        walk.press(.tab)
+        expectEqual(w.line?.string, "customer_id uuid → customers.id")
+        expectEqual(editor.cameraTarget, camera, "the pick widened the line a few points into the margin: no pan")
+        walk.press(.return)
+        walk.press(.return)
+        expectEqual(keys(editor), ["orders.customer_id -> customers.id"])
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(editor.cameraTarget, camera, "the board stays where it was as the key is drawn and editing ends")
+    },
     test("T7, panels 4 to 7, by the keys alone: customer_id uuid -> cus offers customers' key columns, Tab picks, ↩ draws the key, ↩ ends, ⌥⇧Tab is the key") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
