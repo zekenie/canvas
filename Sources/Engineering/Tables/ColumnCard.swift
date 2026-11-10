@@ -138,7 +138,17 @@ struct ColumnTypeGrammar: LineGrammar {
     func offers(at caret: Int, in line: LineText, reading: LineReading<TypeRef>, context: LineContext) -> LineOffers? {
         let words = ColumnGrammar.placedWords(of: line.string)
         let at = words.firstIndex { caret >= $0.range.location && caret <= NSMaxRange($0.range) }
-        guard (at ?? words.filter { NSMaxRange($0.range) < caret }.count) == 0 else { return nil }
+        let index = at ?? words.filter { NSMaxRange($0.range) < caret }.count
+        // The word after a first that goes on with it as a spelling of several words (`double p`), as the row's line offers it: the
+        // pick replaces the words from the first.
+        if index == 1, let at, let first = words.first, caret > words[at].range.location {
+            let prefix = (line.string as NSString).substring(with: NSRange(location: first.range.location, length: caret - first.range.location)).lowercased()
+            if LineLooks.sqlTypes.contains(where: { $0.contains(" ") && $0.hasPrefix(prefix) }) {
+                let whole = NSRange(location: first.range.location, length: NSMaxRange(words[at].range) - first.range.location)
+                return LineOffers(range: whole, query: prefix, items: ColumnLineGrammar().typeOffers(context, typed: prefix))
+            }
+        }
+        guard index == 0 else { return nil }
         let range = at.map { words[$0].range } ?? NSRange(location: caret, length: 0)
         let typed = at.map { String(words[$0].text.utf16.prefix(caret - words[$0].range.location)) ?? "" } ?? ""
         return LineOffers(range: range, query: typed, items: ColumnLineGrammar().typeOffers(context, typed: typed))
@@ -182,7 +192,17 @@ struct ColumnReferenceGrammar: LineGrammar {
     func offers(at caret: Int, in line: LineText, reading: LineReading<ColumnReference>, context: LineContext) -> LineOffers? {
         let words = ColumnGrammar.placedWords(of: line.string)
         let at = words.firstIndex { caret >= $0.range.location && caret <= NSMaxRange($0.range) }
-        guard (at ?? words.filter { NSMaxRange($0.range) < caret }.count) == 0 else { return nil }
+        let index = at ?? words.filter { NSMaxRange($0.range) < caret }.count
+        // The word after a first that goes on with it as a spelling of several words (`double p`), as the row's line offers it: the
+        // pick replaces the words from the first.
+        if index == 1, let at, let first = words.first, caret > words[at].range.location {
+            let prefix = (line.string as NSString).substring(with: NSRange(location: first.range.location, length: caret - first.range.location)).lowercased()
+            if LineLooks.sqlTypes.contains(where: { $0.contains(" ") && $0.hasPrefix(prefix) }) {
+                let whole = NSRange(location: first.range.location, length: NSMaxRange(words[at].range) - first.range.location)
+                return LineOffers(range: whole, query: prefix, items: ColumnLineGrammar().typeOffers(context, typed: prefix))
+            }
+        }
+        guard index == 0 else { return nil }
         let range = at.map { words[$0].range } ?? NSRange(location: caret, length: 0)
         let typed = at.map { String(words[$0].text.utf16.prefix(caret - words[$0].range.location)) ?? "" } ?? ""
         return ColumnLineGrammar().keyOffers(typed, range: range, context)

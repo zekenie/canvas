@@ -82,9 +82,16 @@ public struct ClearView: Equatable, Sendable {
         return ClearView(rect: inner, covered: covered.map { $0.insetBy(dx: -inset, dy: -inset) })
     }
 
-    /// Whether `shown` is wholly in it: in the rect, and clear of every covered corner.
+    /// What a rect may be off an edge, or a pan short of it, and still count as in: the half point `shift` already forgives,
+    /// so a rect panned exactly onto an edge (which floating point leaves an ulp short) is in.
+    static let tolerance: CGFloat = 0.5
+
+    /// Whether `shown` is in it: in the rect and clear of every covered corner, or over one that no pan could take it out of
+    /// (a box too big to be clear of the corner anywhere in the rect is as in as it can be: `shift` leaves it be).
     public func contains(_ shown: CGRect) -> Bool {
-        rect.contains(shown) && !covered.contains { $0.intersects(shown) }
+        guard rect.insetBy(dx: -Self.tolerance, dy: -Self.tolerance).contains(shown) else { return false }
+        let pan = shift(bringing: shown)
+        return abs(pan.width) <= Self.tolerance && abs(pan.height) <= Self.tolerance
     }
 
     /// How far `shown` moves (the camera's pan, in this space) to come wholly into it by as little as it takes: into the rect, as

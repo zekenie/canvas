@@ -5,6 +5,7 @@ import CanvasTesting
 import CanvasUI
 import Connections
 import Engineering
+import Geometry
 import LineRows
 import Selection
 import ShippedTesting
@@ -346,5 +347,28 @@ private let dump = #"""
         let grouped = try require(editor.document[api.id]?.typed(as: API.self)).props.endpoints
         expectEqual(Set(grouped.indices.compactMap { index in grouped[index].endpoint.map { _ in APIGroups.fullName(of: index, in: grouped) } }),
                     ["GET /orders", "GET /orders/{id}"])
+    },
+    test("a key line typed long in a table at the view's right edge, in a new board's window with its inspector, pans the view to keep the line's end clear of the inspector and the minimap (UX walk 4 tables-4-1)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        _ = try drawnInProcess(#"table "orders" columns: "id uuid pk\ncustomer_id uuid""#, on: editor)
+        let orders = try require(table(editor, "orders")).id
+        let walk = w.walk()
+        editor.selection = orders
+        // The table put at the clear view's right edge, as a person scrolls it there.
+        let clear = editor.unobscuredViewport
+        let box = try require(editor.document[orders]?.box)
+        editor.camera = Camera(origin: CGPoint(x: box.minX - (clear.maxX - 120), y: box.minY - clear.midY), zoom: 1)
+        walk.press(.return)
+        w.window.settle()
+        w.type("created_at timestamptz not null default now() references customers", with: walk)
+        let frame = try require(editor.shapeContext.geometry(of: orders)?.bounds)
+        let shown = editor.cameraTarget.toView(frame)
+        expect(frame.width > 300, "laid out wider than it was stored: \(frame)")
+        expect(editor.clearView.rect.contains(CGRect(x: min(shown.maxX, editor.clearView.rect.maxX), y: shown.midY, width: 0, height: 0)), "the line's end in the clear view")
+        expect(shown.maxX <= editor.clearView.rect.maxX + 0.5, "its end clear of the inspector: \(shown) in \(editor.clearView.rect)")
+        walk.press(.escape)
     },
 ])

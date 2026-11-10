@@ -85,6 +85,7 @@ extension Bench {
         expect(row.width > 240, "the row laid out wider by its reprinted line: \(row.width)")
         let frame = try require(b.canvas.cardFrame)
         expect(frame.width >= b.editor.camera.toView(row).width - 0.5, "the card \(frame.width) covers the row \(b.editor.camera.toView(row).width)")
+        expectEqual(b.editor.card?.anchor.width, row.width, "the card hangs from the row as wide as it is laid out")
     },
     test("A card grows to hold its longest line whole, up to its widest: a line past that is cut at its end") {
         @MainActor func width(of note: String?) throws -> CGFloat {

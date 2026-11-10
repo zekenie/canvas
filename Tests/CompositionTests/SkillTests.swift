@@ -249,6 +249,11 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
 }
 
 @MainActor let skillTests = Suite("The canvas skill", [
+    test("the skill's room under a table, an enum or an API is the room the kit keeps below them") {
+        let skill = try String(contentsOfFile: "\(skillFolder)/SKILL.md", encoding: .utf8)
+        let room = Int(KitStyle.roomKeptBelow.rounded())
+        expect(skill.contains("at least \(room) under it"), "the Gaps line says at least \(room) under it")
+    },
     test("every example in the skill runs as it says: each file's blocks in order on a board of its own") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

@@ -376,9 +376,11 @@ struct Solver {
                 let isInside = clause.relation == .inside
                 for target in clause.targets {
                     let gap = gap(index, clause, target, inside: isInside, vertical: direction.vertical)
+                    // Across, the room a table keeps below it is none of the gap: only the default (or the said gap) is.
+                    let across = direction.vertical == 0 ? gap : self.gap(index, clause, target, inside: isInside)
                     let x = span(target, .x), y = span(target, .y)
-                    if speaks(index, .x), direction.horizontal > 0 { add(.x, x.node, node(index), x.start + x.length + gap, why) }
-                    if speaks(index, .x), direction.horizontal < 0 { add(.x, node(index), x.node, placed[index].width + gap - x.start, why) }
+                    if speaks(index, .x), direction.horizontal > 0 { add(.x, x.node, node(index), x.start + x.length + across, why) }
+                    if speaks(index, .x), direction.horizontal < 0 { add(.x, node(index), x.node, placed[index].width + across - x.start, why) }
                     if speaks(index, .y), direction.vertical > 0 { add(.y, y.node, node(index), y.start + y.length + gap, why) }
                     if speaks(index, .y), direction.vertical < 0 { add(.y, node(index), y.node, placed[index].height + gap - y.start, why) }
                 }

@@ -21,7 +21,8 @@ let hub = ("Hub", rect(0, 0, 200, 100))
     },
     test("below a shape that keeps room below it, with no gap said, at least that room; above one, the box's own; a gap said wins") {
         let placed = ["below": try shape(#"card below "B""#).clauses, "above": try shape(#"card above "B""#).clauses,
-                      "right of": try shape(#"card right of "B""#).clauses]
+                      "right of": try shape(#"card right of "B""#).clauses,
+                      "below-right of": try shape(#"card below-right of "B""#).clauses]
         @MainActor func below(_ word: String, gap: Gap? = nil, keeps: CGFloat, own: CGFloat = 0) throws -> CGRect {
             let clauses = placed[word] ?? []
             var box = LayoutProblem.Free(line: 1, name: "\"A\"", size: CGSize(width: 200, height: 100),
@@ -40,6 +41,8 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         expectRect(try below("above", keeps: 86), rect(0, -180, 200, 100))   // the target's room is below it, not above
         expectRect(try below("above", keeps: 0, own: 86), rect(0, -186, 200, 100))   // a box above keeps its own room
         expectRect(try below("right of", keeps: 86), rect(280, 0, 200, 100))   // across, nothing
+        // A corner: the room is for the way down alone; across it, the default gap.
+        expectRect(try below("below-right of", keeps: 86), rect(280, 186, 200, 100))
     },
     test("a corner is two directions at once, the gap off both") {
         let board = Board([("B", rect(0, 0, 200, 100))])

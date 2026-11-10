@@ -156,7 +156,7 @@ enum Folding {
                 // An API's groups: "orders API folded, 7 groups closed".
                 editor.announce(LineFoldStyle.foldedGroups(editor.registry.title(of: record), closed: closed))
             } else {
-                let total = rows.count
+                let total = rows.filter { !$0.isHeader }.count
                 editor.announce(LineFoldStyle.folded(editor.registry.title(of: record), shown: shown.shownRows, of: total, noun: kind.noun))
             }
         } else if hiding.isEmpty {
@@ -171,7 +171,7 @@ enum Folding {
         // VoiceOver hears what changed, as a fold says it: the one shape unfolded and how many rows it shows, or how many.
         let unfolded = folds.unfold(ids)
         if unfolded.count == 1, let record = editor.document[unfolded[0]], let kind = editor.registry.lineRows(of: record.kind) {
-            editor.announce(LineFoldStyle.unfolded(editor.registry.title(of: record), rows: kind.rows(record)?.count ?? 0, noun: kind.noun))
+            editor.announce(LineFoldStyle.unfolded(editor.registry.title(of: record), rows: kind.rows(record)?.filter { !$0.isHeader }.count ?? 0, noun: kind.noun))
         } else if unfolded.isEmpty {
             editor.announce(LineFoldStyle.nothingToUnfold)
         } else {

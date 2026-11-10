@@ -164,6 +164,10 @@ public struct Surroundings {
     private let viewMiddle: CGPoint
     /// What joins shapes, for a put beside one for a person: a pan only takes away what's joined to it (`PutBeside`).
     private weak var topology: TopologyIndex?
+    /// The room a kind that grows as rows are typed keeps clear below it (`Registry.roomKeptBelow`), of a shape on this board, and
+    /// of the shapes that move together as one box (the most any keeps): a box put below one is spaced past it, as draw's solver spaces it.
+    private let keeps: (ShapeID) -> CGFloat
+    private let movingKeeps: CGFloat
 
     /// `board` as it is now, for a box of `size` to land on; nil for a board the editor can't show or a
     /// size that isn't one. `carrying` are the shapes that make the box and go with it (the shapes moved,
@@ -185,6 +189,9 @@ public struct Surroundings {
         carries = own ? Set(held.compactMap { document.index(of: $0) }) : []
         viewMiddle = reading.view.map { CGPoint(x: $0.midX, y: $0.midY) } ?? shapes.camera.toWorld(.zero)
         topology = editor.topology
+        let registry = editor.registry
+        keeps = { id in document[id].map { registry.roomKeptBelow($0.kind) } ?? 0 }
+        movingKeeps = carrying.compactMap { document[$0] }.map { registry.roomKeptBelow($0.kind) }.max() ?? 0
     }
 
     /// Beside `target`: on each of its four sides in turn (`PlacingStyle.sides`), placed as draw places
@@ -211,7 +218,7 @@ public struct Surroundings {
     /// Version's copy, toward what its copied arrows reach) names only those that keep them clean.
     public func near(_ target: ShapeID, within holder: ShapeID? = nil, put: PutBeside? = nil, sides: [Direction] = PlacingStyle.sides) -> Landing? {
         guard let bounds = reading.shapes.geometry(of: target)?.bounds else { return nil }
-        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [], sides: sides, put: put, besides: [target])
+        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [], sides: sides, put: put, besides: [target], roomBelow: keeps(target))
     }
 
     /// Beside a box that is not a shape of the board yet (or not there any more): as `near(_:within:)`
@@ -224,11 +231,13 @@ public struct Surroundings {
     }
 
     private func near(_ bounds: CGRect, obstacle targetObstacle: Int?, within holder: ShapeID?, avoiding: [CGRect],
-                      sides: [Direction] = PlacingStyle.sides, put: PutBeside? = nil, besides: [ShapeID] = []) -> Landing? {
+                      sides: [Direction] = PlacingStyle.sides, put: PutBeside? = nil, besides: [ShapeID] = [], roomBelow: CGFloat? = nil) -> Landing? {
         guard !bounds.isNull, bounds.isFinite else { return nil }
         // A point to land beside (the middle of two shapes) is no shape: it has no area, so a shape under it would be held by it at
         // any size (the solver's zone (a)) and landed on. Marked as the board, nothing is a zone of it and what is under it is in the way.
         var fixed = [LayoutProblem.Fixed(rect: bounds, obstacle: targetObstacle, word: bounds.width * bounds.height == 0 ? .board : nil)]
+        // Below a shape that keeps room as it grows, at least that room; a box that keeps room, the same above what it's put above.
+        fixed[0].roomBelow = roomBelow ?? besides.map(keeps).max() ?? 0
         var held: LayoutProblem.Holder?
         if let holder, let holding = reading.shapes.geometry(of: holder)?.bounds, !holding.isNull, holding.isFinite {
             fixed.append(LayoutProblem.Fixed(rect: holding, obstacle: obstacle(holder)))
@@ -246,8 +255,9 @@ public struct Surroundings {
                 clauses.append(LayoutProblem.ResolvedClause(relation: .level(.top), targets: [LayoutProblem.ResolvedTarget(.fixed(0), written: Self.target)],
                                                             written: "top level with \(Self.target)"))
             }
-            guard let placed = place(LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: clauses, holder: held, carries: carries),
-                                     fixed: fixed, avoiding: avoiding)
+            var free = LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: clauses, holder: held, carries: carries)
+            free.roomBelow = movingKeeps
+            guard let placed = place(free, fixed: fixed, avoiding: avoiding)
             else { continue }
             let gap = Self.gap(from: bounds, to: placed.rect, side)
             // How it's seen: in the clear view (3: as it is, or once the view pans to it with the shape it's beside, a put that
@@ -296,8 +306,10 @@ public struct Surroundings {
         var joined: Set<ShapeID> = []
         for id in ids {
             if let topology { for (_, ends) in topology.neighbors(of: id) { joined.formUnion(ends) } }
+            // Every holder up the chain, whether or not an edge named it already.
+            var seen: Set<ShapeID> = []
             var up = reading.shapes.container(of: id)
-            while let holder = up, !joined.contains(holder) {
+            while let holder = up, seen.insert(holder).inserted {
                 joined.insert(holder)
                 up = reading.shapes.container(of: holder)
             }

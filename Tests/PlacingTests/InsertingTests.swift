@@ -3,6 +3,7 @@ import CanvasTesting
 import CoreGraphics
 import Draw
 import DrawScript
+import Geometry
 import TestKit
 import Topology
 
@@ -159,6 +160,27 @@ private struct JoinsPlugin: CanvasPlugin {
         let beside = try require(covered.near(b, put: .inView(at: 1), sides: [.below, .right])?.rect)
         expectEqual(beside.minX, 220, "right of it, out of the corner: \(beside)")
         expect(covered.shows(beside, put: .inView(at: 1)))
+    },
+    test("a chain at a fractional zoom and camera reads on to the right, panning: a side that only needs a pan is seen whatever the pan's rounding (UX walk 4 review)") {
+        for step in 0..<40 {
+            let b = ShapeID()
+            let h = try harness(box(b, 380.3 + CGFloat(step) * 4.17, 110.7))
+            h.editor.camera = Camera(origin: CGPoint(x: 13.37, y: 7.91), zoom: 0.7)
+            let surroundings = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor))
+            let placed = try require(surroundings.near(b, put: .inView(at: 0.7, panned: true, inOrder: true))?.rect)
+            let bounds = try require(h.editor.shapeContext.geometry(of: b)?.bounds)
+            expect(placed.minX > bounds.maxX, "right of it (step \(step)): \(placed) beside \(bounds)")
+        }
+    },
+    test("a shape that holds the one put beside is kept in view like one joined to it: right, which pans it out, ranks under a side in view as it is (UX walk 4 review)") {
+        let frame = ShapeID(), b = ShapeID()
+        let held = try harness(corral(frame, CGRect(x: 20, y: 50, width: 700, height: 300)), box(b, 560, 100, in: frame))
+        let alone = try harness(box(b, 560, 100))
+        for (h, holds) in [(held, true), (alone, false)] {
+            let surroundings = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor))
+            let placed = try require(surroundings.near(b, put: .inView(at: 1, panned: true))?.rect)
+            expect((placed.minX >= 660) == !holds, "\(holds ? "held: a side in view as it is" : "alone: right, panning"): \(placed)")
+        }
     },
     test("with nothing beside, and the middle of the view taken: at the nearest clear spot in view, with the row above it in view") {
         let a = ShapeID()

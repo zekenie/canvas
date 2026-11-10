@@ -2,6 +2,8 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 @_spi(Host) import CanvasUI
+import Draw
+import DrawScript
 import Engineering
 import Find
 import Geometry
@@ -361,5 +363,28 @@ extension KitBench {
         expectEqual(Set(b.field.listedOffers.filter { $0.contains(" ") }), ["timestamp with time zone", "timestamp without time zone"])
         b.press(.escape)
         b.press(.escape)
+    },
+    test("a table widened to its longest name and type keeps the gap a row keeps at the default width between them (UX walk 4 firstminute-4-4)") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        b.editor.camera = Camera(origin: .zero, zoom: 1)
+        let name = "billing_address_line_one_and_then_some", type = "text"
+        b.begin(orders)
+        b.type("\(name) \(type)")
+        b.press(.return)
+        b.press(.escape)
+        let width = try require(b.editor.document[orders]?.box?.width)
+        let nameWidth = NSAttributedString(string: name, attributes: [.font: KitStyle.nameFont]).size().width
+        let typeWidth = NSAttributedString(string: type, attributes: [.font: KitStyle.typeFont]).size().width
+        expect(width >= KitStyle.nameInset + nameWidth + KitStyle.wholeGap + typeWidth + KitStyle.trailingInset - 2,
+               "\(width) holds the name \(nameWidth), the gap \(KitStyle.wholeGap) and the type \(typeWidth)")
+    },
+    test("a shape put below a table, with no gap said, lands past the room the table keeps below it, as draw's solver spaces it (UX walk 4 paste-4-1)") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        let bounds = try require(b.editor.shapeContext.geometry(of: orders)?.bounds)
+        let surroundings = try require(Surroundings(on: b.editor.board, moving: CGSize(width: 100, height: 40), in: b.editor))
+        let below = try require(surroundings.near(orders, sides: [.below])?.rect)
+        expect(below.minY - bounds.maxY >= KitStyle.roomKeptBelow - 0.5, "\(below.minY - bounds.maxY) under it, the room is \(KitStyle.roomKeptBelow)")
     },
 ])
