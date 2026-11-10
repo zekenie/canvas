@@ -72,3 +72,29 @@ for b in Selection Mentions; do
 done
 node render.mjs out/strict/drawing.json module:Selection build/pictures/collapse.svg judge/rows.json > /dev/null
 qlmanage -t -s 1600 -o build/pictures build/pictures/collapse.svg > /dev/null 2>&1
+
+echo '== Selection along the continuum: links cut least alike first, crossings allowed, arrows into frames'
+for o in show hide; do for b in 0 0.1 0.25 0.5; do
+  node semlayout.mjs --order=sem --sim=mix --simk=all --frames=arrows --nocrowd=1 --budget=$b --others=$o --boards=module:Selection --out=out/cut-$b-$o > /dev/null
+  printf 'cut %-4s pills for other boards %-4s ' $b $o; node score-drawing.mjs out/cut-$b-$o/drawing.json module:Selection | tail -1
+done; done
+for b in 0.1 0.25 0.5; do node cutjudge.mjs "cut $b=out/cut-$b-hide/drawing.json=Selection"; done
+for h in 0.5 1; do for b in 0.1 0.25 0.5; do
+  node semlayout.mjs --order=sem --sim=mix --simk=all --frames=arrows --nocrowd=1 --budget=$b --others=hide --hub=$h --boards=module:Selection --out=out/hub$h-$b > /dev/null
+  printf 'hub penalty %-3s cut %-4s ' $h $b; node score-drawing.mjs out/hub$h-$b/drawing.json module:Selection | tail -1
+done; done
+node semlayout.mjs --order=sem --sim=mix --simk=all --frames=arrows --nocrowd=1 --oracle=1 --others=hide --boards=module:Selection --out=out/judges-cut > /dev/null
+printf 'the judges cut '; node score-drawing.mjs out/judges-cut/drawing.json module:Selection | tail -1
+node cutjudge.mjs "the judges cut=out/judges-cut/drawing.json=Selection"
+set --
+for o in show hide; do for b in 0 0.1 0.25 0.5; do
+  pct=$(node -e "console.log(Math.round($b * 100))")
+  word=$([ $o = show ] && echo shown || echo hidden)
+  node panel.mjs out/cut-$b-$o/drawing.json module:Selection build/pictures/cut-$b-$o.svg "$pct% of links cut, least alike first; pills for other boards $word" judge/rows.json
+  qlmanage -t -s 1000 -o build/pictures build/pictures/cut-$b-$o.svg > /dev/null 2>&1
+  set -- "$@" build/pictures/cut-$b-$o.svg.png
+done; done
+build/stitch build/pictures/continuum.jpg 4 "$@"
+node panel.mjs out/judges-cut/drawing.json module:Selection build/pictures/judges-cut.svg "cut where both judges chip; pills for other boards hidden" judge/rows.json
+qlmanage -t -s 1000 -o build/pictures build/pictures/judges-cut.svg > /dev/null 2>&1
+build/stitch build/pictures/judges-cut.jpg 3 build/pictures/cut-0.25-hide.svg.png build/pictures/cut-0.5-hide.svg.png build/pictures/judges-cut.svg.png

@@ -1,18 +1,16 @@
 # Spike: let meaning decide which links are arrows
 
-**Verdict.** The signal has legs. The force placer, as tried here, does not. Neither engine we have can use the signal yet.
+**Verdict.** No drawing in this spike reaches the goal: a few cuts that simplify a board and still leave a graph you can read.
 
-- **The signal is strong.** How alike two notes' texts are (on-device embeddings plus word overlap) separates the links a person would keep side by side from the ones they would turn into references. It scores an AUC of 0.79 against two blind judges. AUC is the chance a "keep" link outranks a "chip" link: 0.5 is a coin flip, 1 is perfect.
+- **The force model went all the way to islands.** On Selection it cut 60 of 61 links. The runs that keep every board clean still cut more than half of each board's links.
+- **What held up is the order of the cuts.** Ranked by how alike two notes are (on-device embeddings plus word overlap), links are cut in nearly the order two blind judges would cut them. It scores an AUC of 0.79. AUC is the chance a "keep" link outranks a "chip" link: 0.5 is a coin flip, 1 is perfect.
   - The judges, scored against each other, reach 0.99.
   - Main's popularity rule scores 0.59.
-  - The layout branch's arrows score 0.55, close to chance.
-- **The engines don't use it.** With the same number of arrows, choosing them by similarity alone would keep 57% of the links the judges keep, against the branch's 39%. It would draw 20% of the links they chip, against 30%.
-  - Both engines decide which links survive by geometry or popularity.
-  - Ranking by meaning changes little until meaning decides first.
-- **The force model collapses here.** It fails on this corpus because references are shapes that block lines:
-  - 70% of links go to another board.
-  - Each of those is a pill with a line.
-  - So every arrow is crowded, and the model breaks nearly every link.
+  - The layout branch's cut scores 0.55.
+  - On Selection, of the first 20 links it cuts, the judges would cut 17 and keep 1.
+- **What fails is the drawing.**
+  - Cut exactly where the judges cut, Selection keeps 30 arrows and still has 52 crossings with the spike's force placer, largely because the lens puts each extension point in a frame, away from its file.
+  - Every note sits inside a halo of pills for its links to other boards: 222 of them on Selection, the same in every strategy. No cut rule touches them.
 
 This is a spike: evidence and a pre-plan, no feature work. Ultimately it is meant to replace both strategies: main's (popular shapes become pills) and the layout branch's (`claude/canvas-layout-strategy-f81c7d`, slices 1 to 4, not landed: the fewest cuts that draw every board clean).
 
@@ -158,6 +156,27 @@ Three ways to fix it:
 
 22 notes have no text at all (11 of them plugins), and these embed by their title alone.
 
+### 7. Along the continuum
+
+These boards use the same force placer, on Selection only, with crossings allowed and arrows into frames. Links are cut least alike first, from none to half. The top row shows the pills for other boards, and the bottom row hides them.
+
+![Selection with none, 10%, 25% and 50% of its links cut, the pills for other boards shown above and hidden below](pictures/continuum.jpg)
+
+| links cut, least alike first | crossings, pills shown | crossings, pills hidden | of the cut: judges chip / keep |
+|---|---|---|---|
+| none | 698 | 302 | |
+| 8 (10%) | 494 | 287 | 7 / 0 |
+| 20 (25%) | 374 | 206 | 17 / 1 |
+| 41 (50%) | 142 | 72 | 33 / 2 |
+
+- **The cuts are the right ones, but the drawing barely simplifies.** Crossings fall slowly until half the links are cut. A hub penalty on the order made no steady difference: at 10% cut, the crossings came out anywhere from 240 to 297.
+- **On this board, a person cuts most links.** The judges chip 53 of Selection's 88 links, keep 15, and split on 20. Here it is cut exactly where they chip:
+
+![Selection cut 25% and 50% by similarity, and cut where both judges chip](pictures/judges-cut.jpg)
+
+- **30 arrows are left, and they read as a graph:** extension points to their own files, and a few feature clusters. But 52 crossings remain. The green arrows run across the "Plugin system" frame, because the lens puts each extension point there, away from its file, and the force placer can't bring the two together.
+- **Hiding the pills for other boards changes the picture most.** With no cut, the same board is less than half as wide (2,445 units against 5,984) and reads as one graph. With the pills shown, every note is an island.
+
 ## Pictures
 
 Each picture shows one board under each strategy. Every arrow is coloured by the judges:
@@ -183,7 +202,7 @@ The rule to build: a link is an arrow when its two notes belong together, and a 
    - The vectors, or the ranks, are kept in the drawing record, so an unchanged note keeps its decision through an OS update that changes the model.
    - The lens's job is to give every note text that says what it is. A title alone embeds poorly.
 2. **Meaning picks, complexity sets how many.**
-   - Each container gets a budget from its complexity. The spike tried two: 1.5 links a child, and half.
+   - Each container gets a budget from its complexity. The spike tried two: 1.5 links a child, and half. On Selection the judges would cut 60% of the links, so how many to cut should come from the board, not from a fixed share.
    - Its links are ranked by similarity, with words the whole board shares counted for less, and a small hub penalty.
    - The most alike are kept up to the budget, and the rest are references.
    - Arrows into frames stay.
@@ -191,7 +210,8 @@ The rule to build: a link is an arrow when its two notes belong together, and a 
    - Alike notes are placed near each other, so the chosen arrows are short. The branch's star placement already weighs a link's weight in where its notes go, which is a start.
    - Where a chosen arrow can't be drawn clean, the veto cuts the least alike link in the conflict, not the one in the most conflicts. That is the owner's threshold.
    - The target is the ceiling in result 2.
-4. **References that don't crowd.** 70% of links go to another board, and each becomes a pill with a line: about 6.5 for each note. That is what made the force model collapse and what forces the branch to cut good arrows. The owner decides among:
+   - This is now the bottleneck. Cut where the judges cut, the force placer still crosses 52 times. It must put an extension point next to its file, even across a frame, or the lens must stop putting them apart.
+4. **References that don't crowd.** 70% of links go to another board, and each becomes a pill with a line: about 6.5 for each note, and 222 on Selection. Hidden, they leave Selection less than half as wide, and it reads as one graph. That is what made the force model collapse and what forces the branch to cut good arrows. The owner decides among:
    - (a) a note's references as chips inside the note, with no separate shapes and no lines, which would make the force model workable;
    - (b) one pill for each target module rather than for each file;
    - (c) references under a similarity floor left undrawn, though still queryable.
@@ -211,7 +231,7 @@ The rule to build: a link is an arrow when its two notes belong together, and a 
 
 1. How should references look so they don't crowd: chips inside the note, one per module, or hidden under a floor?
 2. Frames: keep arrows into frames, as the evidence says, rather than "references at frames"?
-3. The budget rule: links a child, a fixed share, or planarity?
+3. How many cuts: the judges cut 53 of Selection's 88 links. Should a dense board cut that many, or keep more arrows and accept crossings? And should the rule be links a child, a fixed share, or planarity?
 4. On-device embeddings are deterministic and offline. Is that enough, or is a stronger model (a code embedding through an API) worth losing both? The models differ little here (0.73 to 0.79), and the mix is best.
 5. Hubs: a role the lens declares, or a degree penalty?
 
@@ -232,8 +252,9 @@ Everything is in this folder:
 - The scripts:
   - `texts.mjs` and `embed.swift`: the vectors.
   - `sim.mjs`, `check-sim.mjs`, `eval-judge.mjs`, `agree.mjs`, `ceiling.mjs` and `combo.mjs`: the measures.
-  - `semlayout.mjs` (the force model, with `--light`, `--simk` and `--precut`) and `semlayout2.mjs` (shared pills).
+  - `semlayout.mjs` (the force model, with `--light`, `--simk`, `--precut`, and for the continuum `--budget`, `--frames=arrows`, `--others=hide`, `--nocrowd`, `--hub` and `--oracle`) and `semlayout2.mjs` (shared pills).
   - `semweights.mjs`: similarity as weights for the branch's engine. `engine.patch` holds its three spike changes.
-  - `score-drawing.mjs`, `render.mjs`, `compose.mjs` and `stitch.swift`: health and pictures.
+  - `cutjudge.mjs`: which of a drawing's cuts the judges would make.
+  - `score-drawing.mjs`, `render.mjs`, `compose.mjs`, `panel.mjs` and `stitch.swift`: health and pictures.
 
 The scripts import the layout branch's canvas-digest tool (`DIGEST_TOOL`, its `lib/` folder; commit 4bc3494e on `claude/canvas-layout-strategy-f81c7d`, a local branch). `reproduce.sh` runs every measure above and draws the pictures again. If swiftc says the SDK isn't supported, set `SDKROOT` to one that matches the compiler, as the repository's build notes say.

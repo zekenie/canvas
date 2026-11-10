@@ -60,10 +60,19 @@ for (const e of edges) {
     X.pairs.get(pk).dirs.push([u, v]);
     continue;
   }
-  addPill(u, v);
-  if (node(u).board !== node(v).board) continue;
-  // a light spring where the two ends' containers meet, so a frame sits near what its members reach
+  // --others=hide: a link to another board is drawn nowhere (as a chip inside the note would be), so it takes no room
+  if (node(u).board !== node(v).board) { if (args.others !== 'hide') addPill(u, v); continue; }
   const cvs = new Map(chain(v)), at = chain(u).find(([c]) => cvs.has(c));
+  // --frames=arrows: a link into or out of a frame is an arrow, drawn between its ends; its spring joins the two items that hold them
+  // where their containers meet
+  if (args.frames === 'arrows' && at && at[1] !== cvs.get(at[0])) {
+    const X = box(at[0]), [a, b] = [at[1], cvs.get(at[0])].sort(byKey), pk = a + '\u0000' + b;
+    if (!X.pairs.has(pk)) X.pairs.set(pk, { key: pk, a, b, dirs: [], broken: false, lifted: true });
+    X.pairs.get(pk).dirs.push([u, v]);
+    continue;
+  }
+  addPill(u, v);
+  // a light spring where the two ends' containers meet, so a frame sits near what its members reach
   if (!at) continue;
   const [c, iu] = at, iv = cvs.get(c);
   if (iu === iv) continue;
@@ -74,11 +83,20 @@ for (const e of edges) {
 // ---- similarity: ranks within a container decide, so only the order of the scores matters ----
 const sims = Object.fromEntries(['contextual', 'tfidf', 'sentence'].map((m) => [m, loadSim(m)]));
 const allPairs = [...C.values()].flatMap((X) => [...X.pairs.values()]);
-function zFor(f) { const v = allPairs.map((p) => f(p.a, p.b)); const mu = v.reduce((a, b) => a + b, 0) / v.length; const sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length) || 1; return (a, b) => (f(a, b) - mu) / sd; }
+// a pair lifted from a link into a frame is as alike as the link's own ends
+const endsOf = (p) => (p.lifted ? p.dirs[0] : [p.a, p.b]);
+function zFor(f) { const v = allPairs.map((p) => f(...endsOf(p))); const mu = v.reduce((a, b) => a + b, 0) / v.length; const sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length) || 1; return (a, b) => (f(a, b) - mu) / sd; }
 const simOf = SIM === 'mix' ? (() => { const zc = zFor(sims.contextual), zt = zFor(sims.tfidf); return (a, b) => zc(a, b) + zt(a, b); })() : sims[SIM];
 for (const X of C.values()) {
   const ps = [...X.pairs.values()];
-  for (const p of ps) p.sim = simOf(p.a, p.b);
+  for (const p of ps) p.sim = p.lifted ? Math.max(...p.dirs.map(([u, v]) => simOf(u, v))) : simOf(p.a, p.b);
+  // --hub=L: a link at a busy note is cut sooner: its score less L times how busy its busier end is (both as z-scores in the container)
+  if (args.hub && ps.length > 1) {
+    const deg = new Map(); for (const p of ps) for (const t of [p.a, p.b]) deg.set(t, (deg.get(t) || 0) + 1);
+    const z = (vals) => { const mu = vals.reduce((a, b) => a + b, 0) / vals.length, sd = Math.sqrt(vals.reduce((a, b) => a + (b - mu) ** 2, 0) / vals.length) || 1; return vals.map((v) => (v - mu) / sd); };
+    const zs = z(ps.map((p) => p.sim)), zh = z(ps.map((p) => Math.sqrt(Math.max(deg.get(p.a), deg.get(p.b)))));
+    ps.forEach((p, i) => { p.sim = zs[i] - +args.hub * zh[i]; });
+  }
   const sorted = [...ps].sort((x, y) => x.sim - y.sim || byKey(x.key, y.key));
   sorted.forEach((p, i) => { p.rank = sorted.length > 1 ? i / (sorted.length - 1) : 1; });
   // --simk=all: every spring as stiff as its two notes are alike, crowded or not
@@ -89,6 +107,13 @@ for (const X of C.values()) {
     const order = ORDER === 'sem' ? sorted : [...ps].sort((x, y) => byKey(x.key, y.key));
     for (const p of order.slice(0, Math.max(0, ps.length - budget))) { p.broken = true; p.pre = true; for (const [u, v] of p.dirs) addPill(u, v); }
   }
+  // --oracle=1: the links both judges chip are references before anything is drawn (the judged boards only): what a person would cut
+  if (args.oracle) {
+    const chip = new Set(JSON.parse(fs.readFileSync(new URL('./judge/rows.json', import.meta.url), 'utf8')).filter((r) => r.ja + r.jb === 0).map((r) => [r.a, r.b].sort().join('|')));
+    for (const p of ps) if (p.dirs.some(([u, v]) => chip.has([u, v].sort().join('|')))) { p.broken = true; p.pre = true; for (const [u, v] of p.dirs) addPill(u, v); }
+  }
+  // --budget=F: a share F of each container's links, the least alike, are references before anything is drawn (and no more are cut)
+  if (args.budget != null) for (const p of sorted.slice(0, Math.floor(+args.budget * ps.length))) { p.broken = true; p.pre = true; for (const [u, v] of p.dirs) addPill(u, v); }
 }
 
 // ---- footprints: a note with its pills' strip (one of stripAlts' arrangements), a frame as laid out, a card ----
@@ -269,8 +294,10 @@ function layOut(X) {
   for (let round = 0; round < P.rounds; round++) {
     if (arrange(X, F, pos)) { F = refit(F, items.map(footprint), pos); settle(X, F, pos, P.warm, P.t0 / 4); }
     const segs = crowding(X, F, pos);
-    const bad = segs.filter((s) => s.p.crowd > 0).map((s) => s.p);
+    // --nocrowd: crossings are allowed; the rounds only settle the pills' arrangement, and nothing more is cut
+    const bad = args.nocrowd ? [] : segs.filter((s) => s.p.crowd > 0).map((s) => s.p);
     st.rounds = round + 1;
+    if (args.nocrowd) { if (round >= 3) break; continue; }
     if (args.debug && X.id === args.debug && bad.length <= 3) for (const sg of segs.filter((s) => s.p.crowd > 0)) console.log('round', round, sg.p.key.replace('\u0000', ' <> '), 'crowd', sg.p.crowd, JSON.stringify(sg.why || []).slice(0, 400));
     if (!bad.length) break;
     // where it's crowded, a spring is as stiff as its two notes are alike

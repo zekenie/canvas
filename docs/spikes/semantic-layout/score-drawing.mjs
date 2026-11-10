@@ -20,7 +20,8 @@ export function score(drawing) {
   const t = h.totals;
   return { summary: { arrows, intraPills, crossPills, clean: t.clean, of: t.boards, crossings: t.crossings, overShapes: t.overShapes, onTop: t.onTop, ownLines: t.overOwnPills, areaM: Math.round(area / 1e6) }, boards: h.boards };
 }
-if (process.argv[2]) {
+// run as a command only (another script may import score)
+if (process.argv[1] && new URL(import.meta.url).pathname === fs.realpathSync(process.argv[1])) {
   const r = score(rd(process.argv[2]));
   console.log(JSON.stringify(r.summary));
   for (const b of process.argv.slice(3)) { const v = r.boards[b]; console.log(b, JSON.stringify({ status: v.status, crossings: v.crossings, overShapes: v.overShapes, onTop: v.onTop, links: v.links, cut: v.cut, pills: v.pills, size: v.size })); }
