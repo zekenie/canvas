@@ -462,19 +462,22 @@ final class RowBundles {
             // lines here), once a run, so a connection's layout reads them rather than its run's every look (UX walk 5 tables-1). The
             // other shape's partial says the marks here.
             guard let far = between.ends.first(where: { $0 != shape }) else { continue }
-            var marks: Set<EndMark> = [], nudged = false
+            var marks: Set<EndMark> = [], nudges = 0
+            // Over the board this is on: a table on another board isn't in the shown one's context, and every key would read many to one
+            // there (review U13-C3).
+            let looking = state.board == editor.board ? context : context.over(document)
             for item in ordered {
                 guard let drawn = byArrow[item.arrow], let record = document[item.arrow] else { continue }
                 let look = registry.connectionLook(of: record, from: PartAddress(drawn.source, part: drawn.sourcePart),
-                                                   to: PartAddress(drawn.target, part: drawn.targetPart), in: context)
+                                                   to: PartAddress(drawn.target, part: drawn.targetPart), in: looking)
                 let end: ConnectionBundle.End = drawn.target == far ? .end : .start
                 if let mark = end == .start ? look?.start : look?.end, mark != .none, mark != .arrowhead { marks.insert(mark) }
-                if let fan = answers[item.arrow]?.fan(at: end), fan.index % 2 == 1 { nudged = true }
+                if let fan = answers[item.arrow]?.fan(at: end) { nudges = max(nudges, fan.index % ConnectionBundle.RunMarks.nudgeColumns) }
             }
             guard !marks.isEmpty else { continue }
             for item in ordered {
                 guard let drawn = byArrow[item.arrow] else { continue }
-                answers[item.arrow]?.runMarks[drawn.target == far ? .end : .start] = ConnectionBundle.RunMarks(marks: marks, nudged: nudged)
+                answers[item.arrow]?.runMarks[drawn.target == far ? .end : .start] = ConnectionBundle.RunMarks(marks: marks, nudges: nudges)
             }
         }
 

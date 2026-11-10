@@ -224,7 +224,7 @@ private let billing = #"""
         let billingPart = try require(orders.props.columns.first { $0.name == "billing_customer_id" }?.id)
         let billingKey = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { $0.props.start.binding?.part == billingPart })
         let marks = try require(editor.connectionBundle(of: billingKey.id)?.runMarks)
-        expectEqual(marks[.end], ConnectionBundle.RunMarks(marks: [.zeroOrOne, .one], nudged: true), "at customers")
+        expectEqual(marks[.end], ConnectionBundle.RunMarks(marks: [.zeroOrOne, .one], nudges: 1), "at customers")
         expectEqual(marks[.start], ConnectionBundle.RunMarks(marks: [.many]), "at orders")
         let near = customer.point(12 + customer.markOffset.end, along: .end).point
         for bar in [12, 17.5].map({ shipping.point($0 + shipping.markOffset.end, along: .end).point }) {
@@ -238,6 +238,28 @@ private let billing = #"""
         editor.selectedShapeIDs = []
         w.window.settle()
         try check("folded")
+    },
+    test("a run's marks are those of its own board, shown or not: the walk's tables read the same from another board (review U13-C3)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\nemail text unique"
+            subboard "Elsewhere" above "customers"
+            table "orders" right of "customers" (gap: 75) columns: "id uuid pk\ncustomer_id uuid? → customers.id\nshipping_customer_id uuid → customers.id"
+            """#)
+        w.window.settle()
+        let editor = w.editor
+        let orders = try table(editor, "orders")
+        let part = try require(orders.props.columns.first { $0.name == "customer_id" }?.id)
+        let key = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { $0.props.start.binding?.part == part })
+        let shown = try require(editor.connectionBundle(of: key.id)?.runMarks)
+        expectEqual(shown[.end]?.marks, [.zeroOrOne, .one], "shown: bars and a circle at customers")
+        let elsewhere = try require(editor.document.shapes.first { $0.kind == "subboard" })
+        expect(editor.showBoard(BoardID(owner: elsewhere.id)), "another board shown")
+        w.window.settle()
+        let away = try require(editor.connectionBundle(of: key.id)?.runMarks)
+        expectEqual(away, shown, "the tables' board, not shown, is read as when it is")
     },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {
         let editor = try billingEditor()

@@ -436,7 +436,7 @@ import TestKit
         let shipping = b.h.add(Arrow(start: try end(orders, 5), end: try end(customers, 0)))
         let run = [customer, billing, shipping]
         // As LineRows says them: every key's crow's foot at orders, and at customers bars and circles, one of the fan at an odd place.
-        let marks: [ConnectionBundle.End: ConnectionBundle.RunMarks] = [.start: .init(marks: [.many]), .end: .init(marks: [.zeroOrOne, .one], nudged: true)]
+        let marks: [ConnectionBundle.End: ConnectionBundle.RunMarks] = [.start: .init(marks: [.many]), .end: .init(marks: [.zeroOrOne, .one], nudges: 1)]
         answers.answers[customer] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], run: .init(end: .start, index: 0, count: 3), runMarks: marks)
         answers.answers[billing] = ConnectionBundle(run: .init(end: .start, index: 1, count: 3), runMarks: marks)
         answers.answers[shipping] = ConnectionBundle(fans: [.init(end: .end, index: 1, count: 2)], run: .init(end: .start, index: 2, count: 3), runMarks: marks)
@@ -457,6 +457,57 @@ import TestKit
         for p in near { for q in theirs { expect(abs(p.x - q.x) >= 4, "bars in columns of their own: \(near) and \(theirs)") } }
         expectEqual(arrowCrossings(try require(geometries[0].levelBody), try require(geometries[1].levelBody)), 0, "in order: never cross")
         expectEqual(arrowCrossings(try require(geometries[1].levelBody), try require(geometries[2].levelBody)), 1, "swapped: once")
+    },
+])
+
+@MainActor let narrowRunTests = Suite("Keys in a narrow gap, further", [
+    test("however narrow the gap, the keys' turn columns stay a stroke and a gap apart, never one column (review U13-E1)") {
+        for gap in [50, 65, 75, 120] as [CGFloat] {
+            let answers = BundleAnswers()
+            let b = try bundleBoard(answers, looks: true)
+            let customers = b.h.add(Roster(CGRect(x: 100, y: 400, width: 200, height: 120), rows: ["id", "email", "name", "a", "b"].map { RosterRow(name: $0) }))
+            let orders = b.h.add(Roster(CGRect(x: 300 + gap, y: 400, width: 200, height: 144),
+                                        rows: ["id", "total", "null customer", "status", "null billing", "shipping"].map { RosterRow(name: $0) }))
+            @MainActor func end(_ shape: ShapeID, _ index: Int) throws -> ArrowTerminal {
+                let row = try require(b.h.editor.document[shape]?.typed(as: Roster.self)?.props.rows[index].id)
+                return .bound(ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: row))
+            }
+            let run = try [(2, 0), (4, 1), (5, 0)].map { b.h.add(Arrow(start: try end(orders, $0.0), end: try end(customers, $0.1))) }
+            let marks: [ConnectionBundle.End: ConnectionBundle.RunMarks] = [.start: .init(marks: [.many]), .end: .init(marks: [.zeroOrOne, .one], nudges: 1)]
+            answers.answers[run[0]] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], run: .init(end: .start, index: 0, count: 3), runMarks: marks)
+            answers.answers[run[1]] = ConnectionBundle(run: .init(end: .start, index: 1, count: 3), runMarks: marks)
+            answers.answers[run[2]] = ConnectionBundle(fans: [.init(end: .end, index: 1, count: 2)], run: .init(end: .start, index: 2, count: 3), runMarks: marks)
+            b.h.editor.connectionBundlesDidChange(Set(run))
+            // Where each runs upright: its x where it is half way between its ends' heights.
+            let columns: [CGFloat] = try run.map { id in
+                let geometry = try b.geometry(id), line = try require(geometry.levelBody).flattened(segments: 400)
+                let middle = (geometry.start.y + geometry.end.y) / 2
+                return try require(line.min { abs($0.y - middle) < abs($1.y - middle) }).x
+            }
+            for (i, x) in columns.enumerated() { for y in columns[(i + 1)...] { expect(abs(x - y) >= 3.5, "gap \(gap): turn columns apart (a stroke is 2.5; sampled at the middle height of S curves, 5 by design): \(columns)") } }
+        }
+    },
+    test("three keys fanned into one row too short to stagger stand their bars each in a column of its own (review U13-E2)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers, looks: true)
+        let customers = b.h.add(Roster(CGRect(x: 100, y: 400, width: 200, height: 120), rows: ["id", "email", "name", "a", "b"].map { RosterRow(name: $0) }))
+        let orders = b.h.add(Roster(CGRect(x: 375, y: 400, width: 200, height: 144),
+                                    rows: ["id", "total", "customer", "status", "billing", "shipping"].map { RosterRow(name: $0) }))
+        @MainActor func end(_ shape: ShapeID, _ index: Int) throws -> ArrowTerminal {
+            let row = try require(b.h.editor.document[shape]?.typed(as: Roster.self)?.props.rows[index].id)
+            return .bound(ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: row))
+        }
+        let run = try [2, 4, 5].map { b.h.add(Arrow(start: try end(orders, $0), end: try end(customers, 0))) }
+        let marks: [ConnectionBundle.End: ConnectionBundle.RunMarks] = [.start: .init(marks: [.many]), .end: .init(marks: [.one], nudges: 2)]
+        for (index, id) in run.enumerated() {
+            answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: index, count: 3)], run: .init(end: .start, index: index, count: 3), runMarks: marks)
+        }
+        b.h.editor.connectionBundlesDidChange(Set(run))
+        let bars = try run.map { id -> CGPoint in
+            let geometry = try b.geometry(id)
+            return geometry.point(12 + geometry.markOffset.end, along: .end).point
+        }
+        for (i, p) in bars.enumerated() { for q in bars[(i + 1)...] { expect(abs(p.x - q.x) >= 4, "bars in columns of their own: \(bars)") } }
     },
 ])
 

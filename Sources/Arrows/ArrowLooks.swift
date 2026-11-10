@@ -270,7 +270,7 @@ extension ArrowDefinition {
         func reach(_ end: ConnectionBundle.End) -> CGFloat {
             guard let run = bundle.runMarks[end] else { return 0 }
             let farthest = run.marks.map(ArrowMarks.reach(of:)).max() ?? 0
-            return farthest > 0 && run.nudged ? farthest + ArrowStyle.fanMarkNudge : farthest
+            return farthest > 0 ? farthest + CGFloat(run.nudges) * ArrowStyle.fanMarkNudge : farthest
         }
         (spread.startRunReach, spread.endRunReach) = (reach(.start), reach(.end))
         return spread == ArrowSpread() ? nil : spread

@@ -41,6 +41,9 @@ final class AdornmentState {
     private var generation = 0
     /// The shapes the tabs placed last are on, so a commit that removes one places them again.
     private var tabShapesPlaced: Set<ShapeID> = []
+    /// The shapes with a row kept zoomed out that the tabs placed last gave way to, in a container: a commit that removes one
+    /// places them again (it is gone from the document, and its container's record is as it was: a child names its container).
+    private var rowShapesPlaced: Set<ShapeID> = []
     /// Each kind's contributions in claim order: its own (and other plugins' for it), then those whose
     /// scope reaches it, less those of a type it has its own of; sorted by order, then first appearance.
     private var candidates: [ShapeKind: [AdornmentContribution]] = [:]
@@ -139,7 +142,7 @@ final class AdornmentState {
     /// Whether any of these shapes has, or had, a tab: what changes where tabs go.
     private func touchesTabs<S: Sequence>(_ ids: S) -> Bool where S.Element == ShapeID {
         guard hasTabs else { return false }
-        return ids.contains { id in tabShapesPlaced.contains(id) || editor.document[id].map { hasTab($0.kind) || rowZoomedOut($0.kind) != nil } == true }
+        return ids.contains { id in tabShapesPlaced.contains(id) || rowShapesPlaced.contains(id) || editor.document[id].map { hasTab($0.kind) || rowZoomedOut($0.kind) != nil } == true }
     }
 
     /// A kind's row kept zoomed out, which a container's tab gives way to: found once a kind.
@@ -190,9 +193,11 @@ final class AdornmentState {
         var asked: [Asked] = []
         // The shapes drawn zoomed out with a row kept there (a table's bar), in a container: its tab may give way to them.
         var rows: [(record: AnyShapeRecord, row: RowZoomedOutContribution)] = []
+        var rowsSeen: Set<ShapeID> = []
         for (order, record) in editor.paintOrder(in: grown).enumerated() {
             if let row = rowZoomedOut(record.kind), document.container(of: record.id, containingKinds: kinds) != nil, editor.drawsSkeleton(of: record.id) {
                 rows.append((record, row))
+                rowsSeen.insert(record.id)
             }
             guard hasTab(record.kind) else { continue }
             guard let geometry = shapes.geometry(of: record.id), geometry.isClosed, !geometry.bounds.isNull,
@@ -223,6 +228,7 @@ final class AdornmentState {
         if !rows.isEmpty { giveWay(to: rows, placed: &placed, unit: unit) }
         let tabs = PlacedTabs(tabs: placed, shapes: asked.filter { placed[$0.id] != nil }.map(\.id), unit: unit)
         tabShapesPlaced.formUnion(asked.lazy.map(\.id))
+        rowShapesPlaced.formUnion(rowsSeen)
         if tabsKept.count >= 4 { tabsKept.removeFirst() }
         tabsKept.append((key, tabs))
         return tabs
@@ -255,7 +261,31 @@ final class AdornmentState {
                     if rect.maxX > right { tab.frame.origin.x = (right - origin.x) / unit - tab.frame.width }
                 } else {
                     let bottom = row.rect.minY - gap
-                    if rect.maxY > bottom { tab.frame.origin.y = (bottom - origin.y) / unit - tab.frame.height }
+                    if rect.maxY > bottom {
+                        // Up off the edge; where that lands on another shape or tab and left of the container's edge doesn't, left of it
+                        // (a shape's name over a neighbor's card takes its clicks); where both do, up still, the bar being the title.
+                        let original = tab.frame
+                        let ancestors = Set(document.containers(of: container, containingKinds: kinds))
+                        tab.frame.origin.y = (bottom - origin.y) / unit - tab.frame.height
+                        func clear(_ frame: CGRect) -> Bool {
+                            let world = CGRect(x: origin.x + frame.minX * unit, y: origin.y + frame.minY * unit, width: frame.width * unit, height: frame.height * unit)
+                            for other in editor.paintOrder(in: world) {
+                                guard other.id != container, !ancestors.contains(other.id), !document.containers(of: other.id, containingKinds: kinds).contains(container),
+                                      let geometry = shapes.geometry(of: other.id), geometry.isClosed, geometry.bounds.intersects(world) else { continue }
+                                return false
+                            }
+                            return !placed.contains { id, other in
+                                guard id != container, let holder = shapes.geometry(of: id)?.bounds, !holder.isNull else { return false }
+                                return CGRect(x: holder.minX + other.frame.minX * unit, y: holder.minY + other.frame.minY * unit,
+                                              width: other.frame.width * unit, height: other.frame.height * unit).intersects(world)
+                            }
+                        }
+                        if !clear(tab.frame) {
+                            var left = original
+                            left.origin.x = -AdornmentLayout.spacing - original.width
+                            if clear(left) { tab.frame = left }
+                        }
+                    }
                 }
                 placed[container] = tab
             }
@@ -678,6 +708,7 @@ extension AdornmentState: EditorService {
         generation += 1
         tabsKept = []
         tabShapesPlaced = []
+        rowShapesPlaced = []
         drawnTabRegion = nil
     }
 

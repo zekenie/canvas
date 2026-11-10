@@ -75,14 +75,17 @@ public struct ConnectionBundle: Hashable, Sendable {
     public var runMarks: [End: RunMarks]
 
     /// The marks the connections of a run end with at one of their shapes (`ConnectionLooks`' answers), and whether one of them is
-    /// fanned there at an odd place, which may stand its marks a nudge further out.
+    /// fanned there at a place that stands its marks nudges further out (`nudges`: the most any of them stand).
     public struct RunMarks: Hashable, Sendable {
         public var marks: Set<EndMark>
-        public var nudged: Bool
+        public var nudges: Int
+        /// A fan's marks stand in this many columns, by their place among the fan modulo it: three, so no two bars within a bar's
+        /// length of each other along the row share one (a fan of three into one short row: places 0 and 2 stand 3 apart end to end).
+        public static let nudgeColumns = 3
 
-        public init(marks: Set<EndMark>, nudged: Bool = false) {
+        public init(marks: Set<EndMark>, nudges: Int = 0) {
             self.marks = marks
-            self.nudged = nudged
+            self.nudges = nudges
         }
     }
 

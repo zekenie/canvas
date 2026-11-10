@@ -46,7 +46,7 @@ enum ArrowStyle {
     /// between two rows: as far apart as a kit row (24 tall) holds two bars (18 tall, 2.5 stroke) with a gap between them, the line's
     /// own stroke inside the row (a bar is longer than the row is tall, so two never fit in it; they are apart, and the lines inside).
     nonisolated static let fanMarkEdge: CGFloat = 1.5
-    /// Spread so, every other one's marks stand this much further out along its line: a bar's stroke and a gap, so two keys' bars
+    /// Spread so, each place's marks stand this much further out than the one before, three columns round along its line: a bar's stroke and a gap, so two keys' bars
     /// into one row never stand in one column end to end, read as one long stroke (UX walk 5, tables-4-2's remainder).
     nonisolated static let fanMarkNudge: CGFloat = 6
     /// Connections parting from one row to different places (`ConnectionBundle.parting`) whose pills are slid to the row leave
@@ -75,6 +75,8 @@ enum ArrowStyle {
     /// a place of its own across it, `narrowTurnMargin` of the gap in from either side at most (`ArrowGeometry`).
     nonisolated static let narrowGap: CGFloat = 80
     nonisolated static let narrowTurnMargin: CGFloat = 0.1
+    /// The least between two lines' turn columns in a run across a narrow gap: a stroke and a gap, so no two lie on each other.
+    nonisolated static let narrowTurnSeparation: CGFloat = 5
     /// A level curve's end keeps this far inside the container both its ends are in (a database's edge), where it can; and it
     /// leaves the side of its row with at least `containerSideRoom` inside it (its turn and half a pill on it), else the other.
     nonisolated static let containerClearance: CGFloat = PartSide.containerClearance
