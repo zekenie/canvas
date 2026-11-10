@@ -40,6 +40,12 @@ extension ArrowDefinition {
         let mark = look?.mark(atStart: bundle?.parting?.end == .start)
         let marked = mark != nil && mark != EndMark.none && mark != .arrowhead
         let stack = line == nil ? bundle.flatMap { Self.partingStack(of: shape, bundle: $0, marked: marked, in: context) } : nil
+        // The farthest marks of the connections between its two shapes, at each side: what a narrow gap's turns keep clear of.
+        if line == nil, let bundle, let reach = runReach(of: shape, look: look, bundle: bundle, in: context) {
+            var run = spread ?? ArrowSpread()
+            (run.startRunReach, run.endRunReach) = reach
+            spread = run
+        }
         if let stack {
             var parted = spread ?? ArrowSpread()
             if stack.end == .start {
@@ -64,6 +70,34 @@ extension ArrowDefinition {
         return (geometry, detail, line, stacked)
     }
 
+    /// How far out from each of its shapes the marks of the connections between the same two shapes (its run, `between`, itself
+    /// among them) reach at that shape's side, the farthest, with a nudge where a fan may stand one out (`ArrowStyle.fanMarkNudge`);
+    /// nil for one in no run, or where none is marked. Read from their records, looks and answers, never their geometry.
+    func runReach(of shape: ShapeRecord<Arrow>, look: ConnectionLook?, bundle: ConnectionBundle, in context: ShapeContext) -> (start: CGFloat, end: CGFloat)? {
+        guard bundle.run != nil, bundle.between.count > 1, let from = shape.props.start.binding?.shapeID,
+              let to = shape.props.end.binding?.shapeID, from != to else { return nil }
+        var reach: (start: CGFloat, end: CGFloat) = (0, 0)
+        for id in bundle.between {
+            let other: ShapeRecord<Arrow>, answer: ConnectionBundle?, theirs: ConnectionLook?
+            if id == shape.id {
+                (other, answer, theirs) = (shape, bundle, look)
+            } else {
+                guard let record = context.shape(id), let typed = record.typed(as: Arrow.self) else { continue }
+                (other, answer) = (typed, context.layoutInput(ConnectionBundle.input, of: record))
+                theirs = self.look(of: typed, in: context)
+            }
+            guard let theirs else { continue }
+            for end in [ArrowEnd.start, .end] {
+                guard let bound = other.props[end].binding?.shapeID, let mark = theirs.mark(atStart: end == .start), mark != .none, mark != .arrowhead else { continue }
+                var out = ArrowMarks.reach(of: mark)
+                if let fan = answer?.fan(at: end == .start ? .start : .end), fan.index % 2 == 1 { out += ArrowStyle.fanMarkNudge }
+                if bound == from { reach.start = max(reach.start, out) }
+                if bound == to { reach.end = max(reach.end, out) }
+            }
+        }
+        return reach.start > 0 || reach.end > 0 ? reach : nil
+    }
+
     /// How wide an arrow's label is at most, world units: its pill's widest face and the padding either side, and its words; 0 for
     /// one with neither. Read from its record and Adornments' answer, as `ArrowLabels.laid` sizes it unsqueezed.
     static func labelWidth(of arrow: ShapeRecord<Arrow>, in context: ShapeContext) -> CGFloat {
@@ -79,9 +113,10 @@ extension ArrowDefinition {
     /// where its far end is among theirs, top to bottom, (`shift`, steps from the middle one, `partingLineSpacing` a step or as many as the row's band holds), so each line leaves on its own; a marked end
     /// stays (keys from different tables to one row lay their bars on each other: UX walk 2 structure new-2). Its pill, slid to the row, stacks
     /// past the pills of those before it in the stack whose pills are slid there too, on a straight stub of its line that turns
-    /// after it, so it stays level with its row (alone, at the row, as any slid pill is, on its stub). Nil for one alone there.
+    /// after it, so it stays level with its row. A pill slid to its row alone there (no parting: one row's only relation in a fan
+    /// into one table, or a closed header's bundle lead) is a stack of one, on the same stub (`loneStack`). Nil for any other.
     static func partingStack(of shape: ShapeRecord<Arrow>, bundle: ConnectionBundle, marked: Bool, in context: ShapeContext) -> PartingStack? {
-        guard let parting = bundle.parting, parting.count > 1 else { return nil }
+        guard let parting = bundle.parting, parting.count > 1 else { return loneStack(of: shape, bundle: bundle, in: context) }
         let shift = marked ? 0 : CGFloat(parting.index) - CGFloat(parting.count - 1) / 2
         let steps = CGFloat(parting.count - 1)
         let own = labelWidth(of: shape, in: context)
@@ -100,6 +135,19 @@ extension ArrowDefinition {
         // Its pill stays inside the row as its line moves (its neighbors' pills are in theirs).
         let keep = context.layoutInput(AdornmentLead.faces, of: shape)?.sizes.first?.height ?? 0
         return PartingStack(end: parting.end, shift: shift, steps: steps, along: along, stub: along + own / 2 + ArrowStyle.labelClearance, keep: keep)
+    }
+
+    /// A pill slid to its row by a fan at its far end, with no other connection parting from that row: a stack of one, its line
+    /// straight past it before it turns (UX walk 5 evolve-1: on a curve that had already turned toward a table far above or below, a
+    /// row's only pill sat a whole row off, beside a row without that relation). Only at a row its shape lists, with a label.
+    static func loneStack(of shape: ShapeRecord<Arrow>, bundle: ConnectionBundle, in context: ShapeContext) -> PartingStack? {
+        guard let end = slidToward(bundle, of: shape.props) else { return nil }
+        guard let binding = shape.props[end == .start ? ArrowEnd.start : .end].binding, let part = binding.part,
+              context.geometry(of: binding.shapeID)?.parts.frame(part) != nil else { return nil }
+        let own = labelWidth(of: shape, in: context)
+        guard own > 0 else { return nil }
+        let along = ArrowStyle.labelClearance + own / 2
+        return PartingStack(end: end, shift: 0, steps: 0, along: along, stub: along + own / 2 + ArrowStyle.labelClearance)
     }
 
     /// A label laid along its line (`laid`, at `position`) moved out along it, away from the row it parts from with others, until no

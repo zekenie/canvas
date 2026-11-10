@@ -70,9 +70,12 @@ public struct ConnectionBundle: Hashable, Sendable {
     /// in across a gap too narrow for lines to run side by side (Arrows' narrow gap): each at a place of its own, keys that keep their
     /// order never crossing. Nil for one alone between its shapes.
     public var run: Fan?
+    /// The connections of that run (itself among them), in its order: whose marks at each side the turns keep clear of (UX walk 5
+    /// tables-1: a line turned inside another key's circle). Empty with no `run`.
+    public var between: [ShapeID]
 
     public init(role: Role = .alone, slot: Int = 0, slots: Int = 1, fans: [Fan] = [], entries: [End: PartID] = [:], parting: Fan? = nil,
-                parted: [ShapeID] = [], run: Fan? = nil) {
+                parted: [ShapeID] = [], run: Fan? = nil, between: [ShapeID] = []) {
         self.role = role
         self.slot = slot
         self.slots = slots
@@ -81,6 +84,7 @@ public struct ConnectionBundle: Hashable, Sendable {
         self.parting = parting
         self.parted = parted
         self.run = run
+        self.between = between
     }
 
     /// Says nothing: drawn as ever.

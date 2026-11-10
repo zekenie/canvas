@@ -217,7 +217,8 @@ import TestKit
         for label in labels { expect(label.midY > 100 + 80.0 / 3 && label.midY < 100 + 160.0 / 3, "in the row's band: \(label)") }
         // Their lines leave the row apart, top to bottom as their far ends are, and each runs straight past its pill.
         let geometries = try ids.map { try b.geometry($0) }
-        expect(geometries[0].start.y < geometries[1].start.y - 10, "apart along the row's side: \(geometries.map(\.start))")
+        // Inside the row's inner band (a quarter of its 26.7 either way) and its pills' room: 10 apart.
+        expect(geometries[0].start.y < geometries[1].start.y - 8, "apart along the row's side: \(geometries.map(\.start))")
         for (geometry, label) in zip(geometries, labels) {
             expect(abs(geometry.point(label.maxX - 300 + 2, along: .start).point.y - geometry.start.y) < 1e-6, "straight past its pill: \(label)")
         }
@@ -383,6 +384,77 @@ import TestKit
         expect(bars[1].allSatisfy { q in bars[0].allSatisfy { abs($0.x - q.x) >= 10 } }, "past the first's: \(bars)")
         // Still level where they are.
         for geometry in geometries { expect(abs(geometry.point(17.5 + geometry.markOffset.end, along: .end).inward.y) < 1e-6, "level") }
+    },
+    test("a row's only pill, slid to it by a fan at its far end, sits in its row's band on a level stub, the far table well above or well below (UX walk 5 evolve-1)") {
+        for below in [false, true] {
+            let answers = BundleAnswers()
+            let b = try bundleBoard(answers)
+            // L's rows 0 and 2 (100 to 126.7, 153.3 to 180) into one row of a table far above or below: fanned there, each pill slid to its row.
+            let far = b.h.add(Roster(CGRect(x: 700, y: below ? 600 : -400, width: 200, height: 80), rows: [RosterRow(name: "one")]))
+            let farRow = try require(b.h.editor.document[far]?.typed(as: Roster.self)?.props.rows[0].id)
+            let farEnd = ArrowTerminal.bound(ArrowBinding(shapeID: far, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: farRow))
+            let rows = [0, 2]
+            let ids = rows.map { b.h.add(Arrow(start: b.end(b.left, $0), end: farEnd, text: "label")) }
+            for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: index, count: 2)]) }
+            b.h.editor.connectionBundlesDidChange(Set(ids))
+            for (row, id) in zip(rows, ids) {
+                let band = (100 + 80.0 / 3 * CGFloat(row))...(100 + 80.0 / 3 * CGFloat(row + 1))
+                let label = try require(b.h.editor.arrowLabelFrame(of: id))
+                let geometry = try b.geometry(id)
+                expect(band.contains(label.midY), "row \(row)'s pill in its band \(band) (\(below ? "below" : "above")): \(label)")
+                expect(band.contains(geometry.start.y), "its line leaves its own row: \(geometry.start)")
+                expect(abs(geometry.point(label.maxX - geometry.start.x + 2, along: .start).point.y - geometry.start.y) < 1e-6,
+                       "straight past its pill, turning only after it (\(below ? "below" : "above")): \(label)")
+            }
+        }
+    },
+    test("three connections parting from one row leave it inside its inner band, a quarter of the row either way of its middle, never near its edges (UX walk 5 connect-1)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let ids = [0, 1, 2].map { b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, $0))) }
+        for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(parting: .init(end: .start, index: index, count: 3), parted: ids) }
+        b.h.editor.connectionBundlesDidChange(Set(ids))
+        let row = try require(b.h.editor.shapeContext.geometry(of: b.left)?.parts.frame(b.leftRows[1].id)?.rect)
+        let starts = try ids.map { try b.geometry($0).start.y }
+        for (a, c) in zip(starts, starts.dropFirst()) { expect(c > a + 4, "apart, top to bottom: \(starts)") }
+        for y in starts { expect(abs(y - row.midY) <= row.height * 0.25 + 1e-6, "inside the inner band: \(y) in \(row)") }
+    },
+    test("keys in a narrow gap turn past every key's marks at either side, never through a circle, and two keys into one row stand their bars in columns of their own (UX walk 5 tables-1)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers, looks: true)
+        // customers and orders 75 apart, rows 24 tall, as the walk's: orders' customer_id (nullable) and shipping into customers.id,
+        // billing (nullable) into customers.email between them.
+        let customers = b.h.add(Roster(CGRect(x: 100, y: 400, width: 200, height: 120), rows: ["id", "email", "name", "a", "b"].map { RosterRow(name: $0) }))
+        let orders = b.h.add(Roster(CGRect(x: 375, y: 400, width: 200, height: 144),
+                                    rows: ["id", "total", "null customer", "status", "null billing", "shipping"].map { RosterRow(name: $0) }))
+        @MainActor func end(_ shape: ShapeID, _ index: Int) throws -> ArrowTerminal {
+            let row = try require(b.h.editor.document[shape]?.typed(as: Roster.self)?.props.rows[index].id)
+            return .bound(ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: row))
+        }
+        let customer = b.h.add(Arrow(start: try end(orders, 2), end: try end(customers, 0)))
+        let billing = b.h.add(Arrow(start: try end(orders, 4), end: try end(customers, 1)))
+        let shipping = b.h.add(Arrow(start: try end(orders, 5), end: try end(customers, 0)))
+        let run = [customer, billing, shipping]
+        answers.answers[customer] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], run: .init(end: .start, index: 0, count: 3), between: run)
+        answers.answers[billing] = ConnectionBundle(run: .init(end: .start, index: 1, count: 3), between: run)
+        answers.answers[shipping] = ConnectionBundle(fans: [.init(end: .end, index: 1, count: 2)], run: .init(end: .start, index: 2, count: 3), between: run)
+        b.h.editor.connectionBundlesDidChange(Set(run))
+        let geometries = try run.map { try b.geometry($0) }
+        // Each circle (25 out from its offset, radius 5) clear of every other line by their half strokes and a point.
+        for index in [0, 1] {
+            let owner = geometries[index]
+            let centre = owner.point(25 + owner.markOffset.end, along: .end).point
+            for (other, geometry) in geometries.enumerated() where other != index {
+                let line = try require(geometry.levelBody)
+                expect(line.distance(to: centre) > 5 + 2.5 + 1, "line \(other) clear of line \(index)'s circle at \(centre): \(line.distance(to: centre))")
+            }
+        }
+        // At customers.id the two keys' bars (12, and 17.5 for shipping's "one", out from each one's offset) are never in one column.
+        let near = [12].map { geometries[0].point($0 + geometries[0].markOffset.end, along: .end).point }
+        let theirs = [12, 17.5].map { geometries[2].point($0 + geometries[2].markOffset.end, along: .end).point }
+        for p in near { for q in theirs { expect(abs(p.x - q.x) >= 4, "bars in columns of their own: \(near) and \(theirs)") } }
+        expectEqual(arrowCrossings(try require(geometries[0].levelBody), try require(geometries[1].levelBody)), 0, "in order: never cross")
+        expectEqual(arrowCrossings(try require(geometries[1].levelBody), try require(geometries[2].levelBody)), 1, "swapped: once")
     },
 ])
 

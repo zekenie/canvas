@@ -269,7 +269,7 @@ final class RowBundles {
             }
             for fan in part.fans where answer.fan(at: fan.end) == nil { answer.fans.append(fan) }
             answer.entries.merge(part.entries) { first, _ in first }
-            if answer.run == nil { answer.run = part.run }
+            if answer.run == nil { (answer.run, answer.between) = (part.run, part.between) }
             joined = answer
         }
         // One parting: the one at an end that is not fanned (where a fan slides its pill). Both of an arrow's ends may part (rows of
@@ -454,6 +454,7 @@ final class RowBundles {
             let ordered = group.sorted { ($0.line, document.index(of: $0.arrow) ?? 0) < ($1.line, document.index(of: $1.arrow) ?? 0) }
             for (index, item) in ordered.enumerated() {
                 answers[item.arrow]?.run = ConnectionBundle.Fan(end: item.end, index: index, count: ordered.count)
+                answers[item.arrow]?.between = ordered.map(\.arrow)
             }
         }
 
