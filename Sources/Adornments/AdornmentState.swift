@@ -191,7 +191,7 @@ final class AdornmentState {
         // The shapes drawn zoomed out with a row kept there (a table's bar), in a container: its tab may give way to them.
         var rows: [(record: AnyShapeRecord, row: RowZoomedOutContribution)] = []
         for (order, record) in editor.paintOrder(in: grown).enumerated() {
-            if let row = rowZoomedOut(record.kind), editor.drawsSkeleton(of: record.id), document.container(of: record.id, containingKinds: kinds) != nil {
+            if let row = rowZoomedOut(record.kind), document.container(of: record.id, containingKinds: kinds) != nil, editor.drawsSkeleton(of: record.id) {
                 rows.append((record, row))
             }
             guard hasTab(record.kind) else { continue }
