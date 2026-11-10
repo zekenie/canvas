@@ -543,6 +543,51 @@ extension ShapeAdornments: KeyedExtensionPoint {
     }
 }
 
+/// What a shape draws where its row above its top-left is, zoomed out, where no adornment is drawn but the containers' tabs: Titles'
+/// bar, a table's title far out. A container's tab gives way to it, up off its edge (or left, turned), where the row can't start past
+/// the tab and keep `least` (UX walk 5 structure-3: the first tables' bars moved inside their cards below the tab read as a row of
+/// theirs), as at full zoom the pill gives way to the tab.
+public struct RowZoomedOut: Equatable, Sendable {
+    /// Where it is drawn at rest, world units at the zoom now, as far from the shape's top as it is drawn at the most (selected).
+    public let rect: CGRect
+    /// The least of it, world units, that may show past a tab it starts past: less room than that, and the tab gives way.
+    public let least: CGFloat
+
+    public init(rect: CGRect, least: CGFloat) {
+        self.rect = rect
+        self.least = least
+    }
+}
+
+/// The rows kept zoomed out (`RowZoomedOut`), on the kinds a scope reaches: `scope.rowZoomedOut { shape, context in … }`.
+public enum ShapeRowsZoomedOut {}
+
+extension ShapeRowsZoomedOut: ExtensionPoint {
+    public typealias Contribution = RowZoomedOutContribution
+    public static var owner: PluginID { .adornments }
+    /// Kept on other kinds' shapes says which: the kinds that have a capability.
+    public static var scope: PointScope { .scoped }
+
+    /// "row zoomed out → every shape adopting title pill".
+    public static func summary(of contribution: RowZoomedOutContribution, for target: ShapeTarget) -> String {
+        "row zoomed out → \(target)"
+    }
+}
+
+/// What `ShapeRowsZoomedOut` stores. Only the sugar makes one.
+@MainActor
+public struct RowZoomedOutContribution {
+    let row: @MainActor (AnyShapeRecord, ShapeContext) -> RowZoomedOut?
+}
+
+extension ScopedRegistrar {
+    /// What the shapes of the kinds the scope reaches draw where their row is, zoomed out (nil for one that draws nothing there):
+    /// the containers' tabs give way to it.
+    public mutating func rowZoomedOut(_ row: @escaping @MainActor (AnyShapeRecord, ShapeContext) -> RowZoomedOut?) {
+        contribute(RowZoomedOutContribution(row: row), to: ShapeRowsZoomedOut.self)
+    }
+}
+
 /// What a contribution claims: "box AdornmentsTests.Flag", "* Titles.TitlePill".
 struct AdornmentKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
@@ -674,14 +719,6 @@ extension CanvasEditor {
     public func adornmentRowStart(of id: ShapeID) -> CGFloat {
         guard let state = adornmentState, state.hasTabs, document[id] != nil else { return 0 }
         return state.rowStart(of: id)
-    }
-
-    /// Where the containers' tabs that a closed shape's row above its top-left gives way to are (`adornmentRowStart`), as one
-    /// rect in world units at the zoom now; nil where none meets the row. What Titles' bar zoomed out keeps below when it goes
-    /// inside its shape's top edge, too narrow to start past them.
-    public func adornmentRowTabs(of id: ShapeID) -> CGRect? {
-        guard let state = adornmentState, state.hasTabs, document[id] != nil else { return nil }
-        return state.rowTabs(of: id)
     }
 
     /// The rect a shape's adornment row is laid out against, in world units, at the zoom now: a closed
