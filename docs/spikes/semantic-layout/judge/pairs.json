@@ -1,0 +1,2307 @@
+{
+ "module:Selection": [
+  {
+   "a": "file:Sources/Selection/Brush.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Brush.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Buttons.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Buttons.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Buttons.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Buttons.swift -> SelectionState.swift"
+  },
+  {
+   "a": "extension-point:CanvasButtons",
+   "b": "file:Sources/Selection/Buttons.swift",
+   "label": "CanvasButtons -> Buttons.swift"
+  },
+  {
+   "a": "extension-point:DecorationHits",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "DecorationHits -> Selection.swift"
+  },
+  {
+   "a": "extension-point:DoubleClickPlacement",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "DoubleClickPlacement -> Selection.swift"
+  },
+  {
+   "a": "extension-point:DragCopies",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "DragCopies -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Faces.swift",
+   "b": "file:Sources/Selection/Groups.swift",
+   "label": "Faces.swift -> Groups.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Faces.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Faces.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Faces.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Faces.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/GoingTo.swift",
+   "b": "file:Sources/Selection/Opening.swift",
+   "label": "GoingTo.swift -> Opening.swift"
+  },
+  {
+   "a": "file:Sources/Selection/GoingTo.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "GoingTo.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/GoingTo.swift",
+   "b": "file:Sources/Selection/SelectionHistory.swift",
+   "label": "GoingTo.swift -> SelectionHistory.swift"
+  },
+  {
+   "a": "file:Sources/Selection/GoingTo.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "GoingTo.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/GoingTo.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "GoingTo.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Groups.swift",
+   "b": "file:Sources/Selection/GoingTo.swift",
+   "label": "Groups.swift -> GoingTo.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Groups.swift",
+   "b": "file:Sources/Selection/Parts.swift",
+   "label": "Groups.swift -> Parts.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Groups.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Groups.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Groups.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Groups.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Groups.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "Groups.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Groups.swift",
+   "b": "file:Sources/Selection/Stepping.swift",
+   "label": "Groups.swift -> Stepping.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Handles.swift",
+   "b": "file:Sources/Selection/Buttons.swift",
+   "label": "Handles.swift -> Buttons.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Handles.swift",
+   "b": "file:Sources/Selection/Resizing.swift",
+   "label": "Handles.swift -> Resizing.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Handles.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Handles.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Handles.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Handles.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Handles.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "Handles.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Opening.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Opening.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Opening.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Opening.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Opening.swift",
+   "b": "file:Sources/Selection/Stepping.swift",
+   "label": "Opening.swift -> Stepping.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Parts.swift",
+   "b": "file:Sources/Selection/GoingTo.swift",
+   "label": "Parts.swift -> GoingTo.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Parts.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Parts.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Parts.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Parts.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Parts.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "Parts.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Parts.swift",
+   "b": "file:Sources/Selection/Stepping.swift",
+   "label": "Parts.swift -> Stepping.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Popovers.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Popovers.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Popovers.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Popovers.swift -> SelectionState.swift"
+  },
+  {
+   "a": "extension-point:ReadableZoom",
+   "b": "file:Sources/Selection/GoingTo.swift",
+   "label": "ReadableZoom -> GoingTo.swift"
+  },
+  {
+   "a": "file:Sources/Selection/RefusalShake.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "RefusalShake.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Resizing.swift",
+   "b": "file:Sources/Selection/GoingTo.swift",
+   "label": "Resizing.swift -> GoingTo.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Resizing.swift",
+   "b": "file:Sources/Selection/Parts.swift",
+   "label": "Resizing.swift -> Parts.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Resizing.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "Resizing.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Resizing.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Resizing.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Resizing.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "Resizing.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Selection.swift",
+   "b": "file:Sources/Selection/RefusalShake.swift",
+   "label": "Selection.swift -> RefusalShake.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Selection.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Selection.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Selection.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "Selection.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Selection.swift",
+   "b": "file:Sources/Selection/Stepping.swift",
+   "label": "Selection.swift -> Stepping.swift"
+  },
+  {
+   "a": "extension-point:SelectionGroups",
+   "b": "file:Sources/Selection/Groups.swift",
+   "label": "SelectionGroups -> Groups.swift"
+  },
+  {
+   "a": "extension-point:SelectionObservers",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "SelectionObservers -> Selection.swift"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:CanvasButtons",
+   "label": "SelectionPlugin -> CanvasButtons"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:DecorationHits",
+   "label": "SelectionPlugin -> DecorationHits"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:DoubleClickPlacement",
+   "label": "SelectionPlugin -> DoubleClickPlacement"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:DragCopies",
+   "label": "SelectionPlugin -> DragCopies"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:ReadableZoom",
+   "label": "SelectionPlugin -> ReadableZoom"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "SelectionPlugin -> Selection.swift"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:SelectionGroups",
+   "label": "SelectionPlugin -> SelectionGroups"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:SelectionObservers",
+   "label": "SelectionPlugin -> SelectionObservers"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:ShapeFaces",
+   "label": "SelectionPlugin -> ShapeFaces"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:ShapeOpening",
+   "label": "SelectionPlugin -> ShapeOpening"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:ShapeParts",
+   "label": "SelectionPlugin -> ShapeParts"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:ShapePopovers",
+   "label": "SelectionPlugin -> ShapePopovers"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:ShapeResizing",
+   "label": "SelectionPlugin -> ShapeResizing"
+  },
+  {
+   "a": "plugin:selection",
+   "b": "extension-point:ShapeSelectability",
+   "label": "SelectionPlugin -> ShapeSelectability"
+  },
+  {
+   "a": "file:Sources/Selection/SelectionState.swift",
+   "b": "file:Sources/Selection/SelectionHistory.swift",
+   "label": "SelectionState.swift -> SelectionHistory.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectionState.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "SelectionState.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectionState.swift",
+   "b": "file:Sources/Selection/Stepping.swift",
+   "label": "SelectionState.swift -> Stepping.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectionStyle.swift",
+   "b": "file:Sources/Selection/Stepping.swift",
+   "label": "SelectionStyle.swift -> Stepping.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Brush.swift",
+   "label": "SelectTool.swift -> Brush.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Buttons.swift",
+   "label": "SelectTool.swift -> Buttons.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Faces.swift",
+   "label": "SelectTool.swift -> Faces.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Groups.swift",
+   "label": "SelectTool.swift -> Groups.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Handles.swift",
+   "label": "SelectTool.swift -> Handles.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Labels.swift",
+   "label": "SelectTool.swift -> Labels.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Opening.swift",
+   "label": "SelectTool.swift -> Opening.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Parts.swift",
+   "label": "SelectTool.swift -> Parts.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Resizing.swift",
+   "label": "SelectTool.swift -> Resizing.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "SelectTool.swift -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "SelectTool.swift -> SelectionState.swift"
+  },
+  {
+   "a": "file:Sources/Selection/SelectTool.swift",
+   "b": "file:Sources/Selection/SelectionStyle.swift",
+   "label": "SelectTool.swift -> SelectionStyle.swift"
+  },
+  {
+   "a": "extension-point:ShapeFaces",
+   "b": "file:Sources/Selection/Faces.swift",
+   "label": "ShapeFaces -> Faces.swift"
+  },
+  {
+   "a": "extension-point:ShapeOpening",
+   "b": "file:Sources/Selection/Opening.swift",
+   "label": "ShapeOpening -> Opening.swift"
+  },
+  {
+   "a": "extension-point:ShapeParts",
+   "b": "file:Sources/Selection/Parts.swift",
+   "label": "ShapeParts -> Parts.swift"
+  },
+  {
+   "a": "extension-point:ShapePopovers",
+   "b": "file:Sources/Selection/Popovers.swift",
+   "label": "ShapePopovers -> Popovers.swift"
+  },
+  {
+   "a": "extension-point:ShapeResizing",
+   "b": "file:Sources/Selection/Resizing.swift",
+   "label": "ShapeResizing -> Resizing.swift"
+  },
+  {
+   "a": "extension-point:ShapeSelectability",
+   "b": "file:Sources/Selection/Selection.swift",
+   "label": "ShapeSelectability -> Selection.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Stepping.swift",
+   "b": "file:Sources/Selection/GoingTo.swift",
+   "label": "Stepping.swift -> GoingTo.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Walking.swift",
+   "b": "file:Sources/Selection/GoingTo.swift",
+   "label": "Walking.swift -> GoingTo.swift"
+  },
+  {
+   "a": "file:Sources/Selection/Walking.swift",
+   "b": "file:Sources/Selection/SelectionState.swift",
+   "label": "Walking.swift -> SelectionState.swift"
+  }
+ ],
+ "module:Mentions": [
+  {
+   "a": "file:Sources/Mentions/Mentionable.swift",
+   "b": "file:Sources/Mentions/Mentions.swift",
+   "label": "Mentionable.swift -> Mentions.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/Mentionable.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "Mentionable.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/Mentionable.swift",
+   "b": "file:Sources/Mentions/MentionTextFormat.swift",
+   "label": "Mentionable.swift -> MentionTextFormat.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionCatalog.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionCatalog.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionChoices.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionChoices.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionChoices.swift",
+   "b": "file:Sources/Mentions/MentionPlaces.swift",
+   "label": "MentionChoices.swift -> MentionPlaces.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionChoices.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionChoices.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionCommands.swift",
+   "b": "file:Sources/Mentions/Mentions.swift",
+   "label": "MentionCommands.swift -> Mentions.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionCommands.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionCommands.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionCommands.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionCommands.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionCommands.swift",
+   "b": "file:Sources/Mentions/MentionTextView.swift",
+   "label": "MentionCommands.swift -> MentionTextView.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionDrawing.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionDrawing.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionDrawing.swift",
+   "b": "file:Sources/Mentions/MentionPill.swift",
+   "label": "MentionDrawing.swift -> MentionPill.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionDrawing.swift",
+   "b": "file:Sources/Mentions/Mentions.swift",
+   "label": "MentionDrawing.swift -> Mentions.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionDrawing.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionDrawing.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionDrawing.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionDrawing.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionDrawing.swift",
+   "b": "file:Sources/Mentions/MentionTextFormat.swift",
+   "label": "MentionDrawing.swift -> MentionTextFormat.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionDrawing.swift",
+   "b": "file:Sources/Mentions/MentionTextStyle.swift",
+   "label": "MentionDrawing.swift -> MentionTextStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionEdges.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionEdges.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionFaces.swift",
+   "b": "file:Sources/Mentions/MentionDrawing.swift",
+   "label": "MentionFaces.swift -> MentionDrawing.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionFaces.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionFaces.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionFind.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionFind.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionFind.swift",
+   "b": "file:Sources/Mentions/MentionDrawing.swift",
+   "label": "MentionFind.swift -> MentionDrawing.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionFind.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionFind.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionFind.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionFind.swift -> MentionText.swift"
+  },
+  {
+   "a": "plugin:mention-find",
+   "b": "file:Sources/Mentions/MentionFind.swift",
+   "label": "MentionFindPlugin -> MentionFind.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLabels.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionLabels.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLayout.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionLayout.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLayout.swift",
+   "b": "file:Sources/Mentions/Mentions.swift",
+   "label": "MentionLayout.swift -> Mentions.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLayout.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionLayout.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLayout.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionLayout.swift -> MentionText.swift"
+  },
+  {
+   "a": "extension-point:MentionLayouts",
+   "b": "file:Sources/Mentions/MentionLayout.swift",
+   "label": "MentionLayouts -> MentionLayout.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLights.swift",
+   "b": "file:Sources/Mentions/MentionEdges.swift",
+   "label": "MentionLights.swift -> MentionEdges.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLights.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionLights.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionLights.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionLights.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "plugin:mention-lights",
+   "b": "file:Sources/Mentions/MentionLights.swift",
+   "label": "MentionLightsPlugin -> MentionLights.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionMenus.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionMenus.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionMenus.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionMenus.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionParts.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionParts.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionParts.swift",
+   "b": "file:Sources/Mentions/MentionDrawing.swift",
+   "label": "MentionParts.swift -> MentionDrawing.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionParts.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionParts.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionParts.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionParts.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionParts.swift",
+   "b": "file:Sources/Mentions/MentionTextView.swift",
+   "label": "MentionParts.swift -> MentionTextView.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPicker.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionPicker.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPicker.swift",
+   "b": "file:Sources/Mentions/MentionPlaces.swift",
+   "label": "MentionPicker.swift -> MentionPlaces.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPicker.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionPicker.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPicker.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionPicker.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPicker.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionPicker.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPill.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionPill.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPill.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionPill.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPill.swift",
+   "b": "file:Sources/Mentions/MentionTextStyle.swift",
+   "label": "MentionPill.swift -> MentionTextStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionPlaces.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionPlaces.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionProblems.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionProblems.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionProblems.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionProblems.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionProblems.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionProblems.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionQueries.swift",
+   "b": "file:Sources/Mentions/MentionEdges.swift",
+   "label": "MentionQueries.swift -> MentionEdges.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionQueries.swift",
+   "b": "file:Sources/Mentions/MentionLabels.swift",
+   "label": "MentionQueries.swift -> MentionLabels.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionQueries.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionQueries.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionQueries.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionQueries.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionQueries.swift",
+   "b": "file:Sources/Mentions/MentionTextFormat.swift",
+   "label": "MentionQueries.swift -> MentionTextFormat.swift"
+  },
+  {
+   "a": "plugin:mention-queries",
+   "b": "file:Sources/Mentions/MentionQueries.swift",
+   "label": "MentionQueriesPlugin -> MentionQueries.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionQuote.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionQuote.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionRows.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionRows.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionRows.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionRows.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/Mentions.swift",
+   "b": "file:Sources/Mentions/MentionEdges.swift",
+   "label": "Mentions.swift -> MentionEdges.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/Mentions.swift",
+   "b": "file:Sources/Mentions/MentionFaces.swift",
+   "label": "Mentions.swift -> MentionFaces.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/Mentions.swift",
+   "b": "file:Sources/Mentions/MentionMenus.swift",
+   "label": "Mentions.swift -> MentionMenus.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/Mentions.swift",
+   "b": "file:Sources/Mentions/MentionParts.swift",
+   "label": "Mentions.swift -> MentionParts.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/Mentions.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "Mentions.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionScope.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionScope.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionScope.swift",
+   "b": "file:Sources/Mentions/Mentions.swift",
+   "label": "MentionScope.swift -> Mentions.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionScope.swift",
+   "b": "file:Sources/Mentions/MentionTextFormat.swift",
+   "label": "MentionScope.swift -> MentionTextFormat.swift"
+  },
+  {
+   "a": "extension-point:MentionScopeJoins",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionScopeJoins -> MentionScope.swift"
+  },
+  {
+   "a": "extension-point:MentionScopes",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionScopes -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionSlashBar.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionSlashBar.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionSlashBar.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionSlashBar.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionSlashBar.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionSlashBar.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionSlashBar.swift",
+   "b": "file:Sources/Mentions/MentionTextStyle.swift",
+   "label": "MentionSlashBar.swift -> MentionTextStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionSlashBar.swift",
+   "b": "file:Sources/Mentions/MentionTextView.swift",
+   "label": "MentionSlashBar.swift -> MentionTextView.swift"
+  },
+  {
+   "a": "plugin:mention-slash-bar",
+   "b": "file:Sources/Mentions/MentionSlashBar.swift",
+   "label": "MentionSlashBarPlugin -> MentionSlashBar.swift"
+  },
+  {
+   "a": "plugin:mentions",
+   "b": "extension-point:MentionLayouts",
+   "label": "MentionsPlugin -> MentionLayouts"
+  },
+  {
+   "a": "plugin:mentions",
+   "b": "file:Sources/Mentions/Mentions.swift",
+   "label": "MentionsPlugin -> Mentions.swift"
+  },
+  {
+   "a": "plugin:mentions",
+   "b": "extension-point:MentionScopeJoins",
+   "label": "MentionsPlugin -> MentionScopeJoins"
+  },
+  {
+   "a": "plugin:mentions",
+   "b": "extension-point:MentionScopes",
+   "label": "MentionsPlugin -> MentionScopes"
+  },
+  {
+   "a": "plugin:mentions",
+   "b": "extension-point:MentionTexts",
+   "label": "MentionsPlugin -> MentionTexts"
+  },
+  {
+   "a": "plugin:mentions",
+   "b": "extension-point:ShapeMentions",
+   "label": "MentionsPlugin -> ShapeMentions"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionState.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionCatalog.swift",
+   "label": "MentionState.swift -> MentionCatalog.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionEdges.swift",
+   "label": "MentionState.swift -> MentionEdges.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionLabels.swift",
+   "label": "MentionState.swift -> MentionLabels.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionMatching.swift",
+   "label": "MentionState.swift -> MentionMatching.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionPill.swift",
+   "label": "MentionState.swift -> MentionPill.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionQuote.swift",
+   "label": "MentionState.swift -> MentionQuote.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionState.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionState.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionState.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionState.swift",
+   "b": "file:Sources/Mentions/MentionTextView.swift",
+   "label": "MentionState.swift -> MentionTextView.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionStyle.swift",
+   "b": "file:Sources/Mentions/MentionTextStyle.swift",
+   "label": "MentionStyle.swift -> MentionTextStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionText.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionText.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionText.swift",
+   "b": "file:Sources/Mentions/MentionTextFormat.swift",
+   "label": "MentionText.swift -> MentionTextFormat.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextArea.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionTextArea.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextArea.swift",
+   "b": "file:Sources/Mentions/MentionState.swift",
+   "label": "MentionTextArea.swift -> MentionState.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextArea.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionTextArea.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextArea.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionTextArea.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextArea.swift",
+   "b": "file:Sources/Mentions/MentionTextView.swift",
+   "label": "MentionTextArea.swift -> MentionTextView.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTexts.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionTexts.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTexts.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionTexts.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTexts.swift",
+   "b": "file:Sources/Mentions/MentionTextFormat.swift",
+   "label": "MentionTexts.swift -> MentionTextFormat.swift"
+  },
+  {
+   "a": "extension-point:MentionTexts",
+   "b": "file:Sources/Mentions/MentionDrawing.swift",
+   "label": "MentionTexts -> MentionDrawing.swift"
+  },
+  {
+   "a": "plugin:mention-texts",
+   "b": "file:Sources/Mentions/MentionTexts.swift",
+   "label": "MentionTextsPlugin -> MentionTexts.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextStyle.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionTextStyle.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextStyle.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionTextStyle.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "MentionTextView.swift -> Mentionable.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/MentionPicker.swift",
+   "label": "MentionTextView.swift -> MentionPicker.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/MentionPill.swift",
+   "label": "MentionTextView.swift -> MentionPill.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/MentionPlaces.swift",
+   "label": "MentionTextView.swift -> MentionPlaces.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/MentionScope.swift",
+   "label": "MentionTextView.swift -> MentionScope.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/MentionStyle.swift",
+   "label": "MentionTextView.swift -> MentionStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/MentionText.swift",
+   "label": "MentionTextView.swift -> MentionText.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionTextView.swift",
+   "b": "file:Sources/Mentions/MentionTextStyle.swift",
+   "label": "MentionTextView.swift -> MentionTextStyle.swift"
+  },
+  {
+   "a": "file:Sources/Mentions/MentionValidation.swift",
+   "b": "file:Sources/Mentions/MentionProblems.swift",
+   "label": "MentionValidation.swift -> MentionProblems.swift"
+  },
+  {
+   "a": "plugin:mention-validation",
+   "b": "file:Sources/Mentions/MentionValidation.swift",
+   "label": "MentionValidationPlugin -> MentionValidation.swift"
+  },
+  {
+   "a": "extension-point:ShapeMentions",
+   "b": "file:Sources/Mentions/Mentionable.swift",
+   "label": "ShapeMentions -> Mentionable.swift"
+  }
+ ],
+ "module:Draw": [
+  {
+   "a": "file:Sources/Draw/Draw.swift",
+   "b": "file:Sources/Draw/DrawBoard.swift",
+   "label": "Draw.swift -> DrawBoard.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Draw.swift",
+   "b": "file:Sources/Draw/DrawCommit.swift",
+   "label": "Draw.swift -> DrawCommit.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Draw.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "Draw.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Draw.swift",
+   "b": "file:Sources/Draw/DrawLayout.swift",
+   "label": "Draw.swift -> DrawLayout.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Draw.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "Draw.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Draw.swift",
+   "b": "file:Sources/Draw/Surroundings.swift",
+   "label": "Draw.swift -> Surroundings.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBoard.swift",
+   "b": "file:Sources/Draw/DrawIDs.swift",
+   "label": "DrawBoard.swift -> DrawIDs.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBoard.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawBoard.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBoard.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "DrawBoard.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBoard.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawBoard.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBoard.swift",
+   "b": "file:Sources/Draw/DrawStandIns.swift",
+   "label": "DrawBoard.swift -> DrawStandIns.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBrought.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawBrought.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBrought.swift",
+   "b": "file:Sources/Draw/DrawBoard.swift",
+   "label": "DrawBrought.swift -> DrawBoard.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBrought.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawBrought.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBrought.swift",
+   "b": "file:Sources/Draw/DrawLayout.swift",
+   "label": "DrawBrought.swift -> DrawLayout.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBrought.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "DrawBrought.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawBrought.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawBrought.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "extension-point:DrawChecks",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawChecks -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawBrought.swift",
+   "label": "DrawCommit.swift -> DrawBrought.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawGroups.swift",
+   "label": "DrawCommit.swift -> DrawGroups.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawIDs.swift",
+   "label": "DrawCommit.swift -> DrawIDs.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawCommit.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawLayout.swift",
+   "label": "DrawCommit.swift -> DrawLayout.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "DrawCommit.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawCommit.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawStandIns.swift",
+   "label": "DrawCommit.swift -> DrawStandIns.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/DrawVocabulary.swift",
+   "label": "DrawCommit.swift -> DrawVocabulary.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawCommit.swift",
+   "b": "file:Sources/Draw/StandInRoute.swift",
+   "label": "DrawCommit.swift -> StandInRoute.swift"
+  },
+  {
+   "a": "extension-point:DrawEdgeIdentities",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawEdgeIdentities -> DrawPoints.swift"
+  },
+  {
+   "a": "extension-point:DrawEdges",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawEdges -> DrawPoints.swift"
+  },
+  {
+   "a": "extension-point:DrawEngines",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawEngines -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawGroups.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawGroups.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawGroups.swift",
+   "b": "file:Sources/Draw/DrawIDs.swift",
+   "label": "DrawGroups.swift -> DrawIDs.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawGroups.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawGroups.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawGroups.swift",
+   "b": "file:Sources/Draw/DrawLayout.swift",
+   "label": "DrawGroups.swift -> DrawLayout.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawGroups.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "DrawGroups.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawGroups.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawGroups.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "extension-point:DrawGroups",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawGroups -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawIDs.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawIDs.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawIDs.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawIDs.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawIDs.swift",
+   "b": "file:Sources/Draw/DrawLayout.swift",
+   "label": "DrawIDs.swift -> DrawLayout.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawIDs.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "DrawIDs.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawIDs.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawIDs.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawIDs.swift",
+   "b": "file:Sources/Draw/DrawStandIns.swift",
+   "label": "DrawIDs.swift -> DrawStandIns.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Drawing.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "Drawing.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Drawing.swift",
+   "b": "file:Sources/Draw/Kinds.swift",
+   "label": "Drawing.swift -> Kinds.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Drawing.swift",
+   "b": "file:Sources/Draw/StandInRoute.swift",
+   "label": "Drawing.swift -> StandInRoute.swift"
+  },
+  {
+   "a": "extension-point:DrawLabels",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawLabels -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawLayout.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawLayout.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawLayout.swift",
+   "b": "file:Sources/Draw/DrawObstacles.swift",
+   "label": "DrawLayout.swift -> DrawObstacles.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawLayout.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "DrawLayout.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawLayout.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawLayout.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawLayout.swift",
+   "b": "file:Sources/Draw/DrawStandIns.swift",
+   "label": "DrawLayout.swift -> DrawStandIns.swift"
+  },
+  {
+   "a": "extension-point:DrawNames",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawNames -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawPaths.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawPaths.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawPaths.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawPaths.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawPaths.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawPaths.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawPaths.swift",
+   "b": "file:Sources/Draw/DrawStandIns.swift",
+   "label": "DrawPaths.swift -> DrawStandIns.swift"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawPlugin -> Draw.swift"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawChecks",
+   "label": "DrawPlugin -> DrawChecks"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawEdgeIdentities",
+   "label": "DrawPlugin -> DrawEdgeIdentities"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawEdges",
+   "label": "DrawPlugin -> DrawEdges"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawEngines",
+   "label": "DrawPlugin -> DrawEngines"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawGroups",
+   "label": "DrawPlugin -> DrawGroups"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawLabels",
+   "label": "DrawPlugin -> DrawLabels"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawNames",
+   "label": "DrawPlugin -> DrawNames"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawReports",
+   "label": "DrawPlugin -> DrawReports"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawTextFormats",
+   "label": "DrawPlugin -> DrawTextFormats"
+  },
+  {
+   "a": "plugin:draw-engine",
+   "b": "extension-point:DrawValueWriters",
+   "label": "DrawPlugin -> DrawValueWriters"
+  },
+  {
+   "a": "file:Sources/Draw/DrawPoints.swift",
+   "b": "file:Sources/Draw/DrawTexts.swift",
+   "label": "DrawPoints.swift -> DrawTexts.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawPoints.swift",
+   "b": "file:Sources/Draw/DrawVocabulary.swift",
+   "label": "DrawPoints.swift -> DrawVocabulary.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawQueries.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawQueries.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawQueries.swift",
+   "b": "file:Sources/Draw/DrawVocabulary.swift",
+   "label": "DrawQueries.swift -> DrawVocabulary.swift"
+  },
+  {
+   "a": "extension-point:DrawReports",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawReports -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawStandIns.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawStandIns.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawStandIns.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawStandIns.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawStandIns.swift",
+   "b": "file:Sources/Draw/StandInRoute.swift",
+   "label": "DrawStandIns.swift -> StandInRoute.swift"
+  },
+  {
+   "a": "extension-point:DrawTextFormats",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawTextFormats -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawTexts.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "DrawTexts.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawTexts.swift",
+   "b": "file:Sources/Draw/DrawBoard.swift",
+   "label": "DrawTexts.swift -> DrawBoard.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawTexts.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawTexts.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawTexts.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "DrawTexts.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawTexts.swift",
+   "b": "file:Sources/Draw/DrawVocabulary.swift",
+   "label": "DrawTexts.swift -> DrawVocabulary.swift"
+  },
+  {
+   "a": "extension-point:DrawValueWriters",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "DrawValueWriters -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/DrawVocabulary.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "DrawVocabulary.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Kinds.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "Kinds.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Kinds.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "Kinds.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Kinds.swift",
+   "b": "file:Sources/Draw/DrawVocabulary.swift",
+   "label": "Kinds.swift -> DrawVocabulary.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Measure.swift",
+   "b": "file:Sources/Draw/Draw.swift",
+   "label": "Measure.swift -> Draw.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Measure.swift",
+   "b": "file:Sources/Draw/DrawBoard.swift",
+   "label": "Measure.swift -> DrawBoard.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Measure.swift",
+   "b": "file:Sources/Draw/DrawIDs.swift",
+   "label": "Measure.swift -> DrawIDs.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Measure.swift",
+   "b": "file:Sources/Draw/Drawing.swift",
+   "label": "Measure.swift -> Drawing.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Measure.swift",
+   "b": "file:Sources/Draw/DrawPaths.swift",
+   "label": "Measure.swift -> DrawPaths.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Measure.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "Measure.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/Measure.swift",
+   "b": "file:Sources/Draw/DrawStandIns.swift",
+   "label": "Measure.swift -> DrawStandIns.swift"
+  },
+  {
+   "a": "file:Sources/Draw/StandInRoute.swift",
+   "b": "file:Sources/Draw/DrawPoints.swift",
+   "label": "StandInRoute.swift -> DrawPoints.swift"
+  },
+  {
+   "a": "file:Sources/Draw/StandInRoute.swift",
+   "b": "file:Sources/Draw/Surroundings.swift",
+   "label": "StandInRoute.swift -> Surroundings.swift"
+  }
+ ],
+ "module:Canvas/Model": [
+  {
+   "a": "file:Sources/Canvas/Model/AddedProperty.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "AddedProperty.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/AddedProperty.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "AddedProperty.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/BoardID.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "BoardID.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "b": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "label": "CanvasDocument.swift -> DocumentDelta.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "CanvasDocument.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "CanvasDocument.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "CanvasDocument.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "b": "file:Sources/Canvas/Model/StackingKey.swift",
+   "label": "CanvasDocument.swift -> StackingKey.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/BoardID.swift",
+   "label": "CanvasFile.swift -> BoardID.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "label": "CanvasFile.swift -> CanvasDocument.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "label": "CanvasFile.swift -> ChangeSet.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "label": "CanvasFile.swift -> DocumentDelta.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/FileProperty.swift",
+   "label": "CanvasFile.swift -> FileProperty.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "CanvasFile.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/ShapeMap.swift",
+   "label": "CanvasFile.swift -> ShapeMap.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "CanvasFile.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "CanvasFile.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "b": "file:Sources/Canvas/Model/BoardID.swift",
+   "label": "ChangeSet.swift -> BoardID.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "b": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "label": "ChangeSet.swift -> CanvasDocument.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "ChangeSet.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "ChangeSet.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "ChangeSet.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Containment.swift",
+   "b": "file:Sources/Canvas/Model/BoardID.swift",
+   "label": "Containment.swift -> BoardID.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Containment.swift",
+   "b": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "label": "Containment.swift -> CanvasDocument.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Containment.swift",
+   "b": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "label": "Containment.swift -> CanvasFile.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Containment.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "Containment.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Containment.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "Containment.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Containment.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "Containment.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "b": "file:Sources/Canvas/Model/AddedProperty.swift",
+   "label": "DocumentDelta.swift -> AddedProperty.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "b": "file:Sources/Canvas/Model/BoardID.swift",
+   "label": "DocumentDelta.swift -> BoardID.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "b": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "label": "DocumentDelta.swift -> ChangeSet.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "b": "file:Sources/Canvas/Model/FileProperty.swift",
+   "label": "DocumentDelta.swift -> FileProperty.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "DocumentDelta.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/DocumentDelta.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "DocumentDelta.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Enclosing.swift",
+   "b": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "label": "Enclosing.swift -> CanvasDocument.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Enclosing.swift",
+   "b": "file:Sources/Canvas/Model/Containment.swift",
+   "label": "Enclosing.swift -> Containment.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Enclosing.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "Enclosing.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Enclosing.swift",
+   "b": "file:Sources/Canvas/Model/Settling.swift",
+   "label": "Enclosing.swift -> Settling.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Enclosing.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "Enclosing.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Enclosing.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "Enclosing.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Enclosing.swift",
+   "b": "file:Sources/Canvas/Model/Transaction.swift",
+   "label": "Enclosing.swift -> Transaction.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/FileProperty.swift",
+   "b": "file:Sources/Canvas/Model/AddedProperty.swift",
+   "label": "FileProperty.swift -> AddedProperty.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/FileProperty.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "FileProperty.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ReverseIndex.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "ReverseIndex.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Settling.swift",
+   "b": "file:Sources/Canvas/Model/BoardID.swift",
+   "label": "Settling.swift -> BoardID.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Settling.swift",
+   "b": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "label": "Settling.swift -> CanvasDocument.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Settling.swift",
+   "b": "file:Sources/Canvas/Model/Containment.swift",
+   "label": "Settling.swift -> Containment.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Settling.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "Settling.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Settling.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "Settling.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Settling.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "Settling.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Settling.swift",
+   "b": "file:Sources/Canvas/Model/Transaction.swift",
+   "label": "Settling.swift -> Transaction.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeMap.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "ShapeMap.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeMeta.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "ShapeMeta.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeNaming.swift",
+   "b": "file:Sources/Canvas/Model/AddedProperty.swift",
+   "label": "ShapeNaming.swift -> AddedProperty.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeNaming.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "ShapeNaming.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeNaming.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "ShapeNaming.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "ShapeRecord.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "b": "file:Sources/Canvas/Model/ShapeMeta.swift",
+   "label": "ShapeRecord.swift -> ShapeMeta.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "b": "file:Sources/Canvas/Model/StackingKey.swift",
+   "label": "ShapeRecord.swift -> StackingKey.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "ShapeStack.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "b": "file:Sources/Canvas/Model/ShapeMap.swift",
+   "label": "ShapeStack.swift -> ShapeMap.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "ShapeStack.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/StackReplay.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "StackReplay.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/StackReplay.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "StackReplay.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/StackReplay.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "StackReplay.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/StackReplay.swift",
+   "b": "file:Sources/Canvas/Model/StackingKey.swift",
+   "label": "StackReplay.swift -> StackingKey.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/AddedProperty.swift",
+   "label": "Transaction.swift -> AddedProperty.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/BoardID.swift",
+   "label": "Transaction.swift -> BoardID.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/CanvasDocument.swift",
+   "label": "Transaction.swift -> CanvasDocument.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/CanvasFile.swift",
+   "label": "Transaction.swift -> CanvasFile.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/ChangeSet.swift",
+   "label": "Transaction.swift -> ChangeSet.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/Containment.swift",
+   "label": "Transaction.swift -> Containment.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/FileProperty.swift",
+   "label": "Transaction.swift -> FileProperty.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/Identity.swift",
+   "label": "Transaction.swift -> Identity.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/ShapeRecord.swift",
+   "label": "Transaction.swift -> ShapeRecord.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/ShapeStack.swift",
+   "label": "Transaction.swift -> ShapeStack.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/StackingKey.swift",
+   "label": "Transaction.swift -> StackingKey.swift"
+  },
+  {
+   "a": "file:Sources/Canvas/Model/Transaction.swift",
+   "b": "file:Sources/Canvas/Model/StackReplay.swift",
+   "label": "Transaction.swift -> StackReplay.swift"
+  }
+ ],
+ "module:References": [
+  {
+   "a": "file:Sources/References/PillColors.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "PillColors.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceAnswers.swift",
+   "b": "file:Sources/References/PillColors.swift",
+   "label": "ReferenceAnswers.swift -> PillColors.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceAnswers.swift",
+   "b": "file:Sources/References/ReferenceInterpreting.swift",
+   "label": "ReferenceAnswers.swift -> ReferenceInterpreting.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceAnswers.swift",
+   "b": "file:Sources/References/ReferencePanel.swift",
+   "label": "ReferenceAnswers.swift -> ReferencePanel.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceAnswers.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceAnswers.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceAnswers.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceAnswers.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceAnswers.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceAnswers.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceButtons.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceButtons.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceButtons.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceButtons.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceButtons.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceButtons.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceCondition.swift",
+   "b": "file:Sources/References/ReferenceAnswers.swift",
+   "label": "ReferenceCondition.swift -> ReferenceAnswers.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceCondition.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceCondition.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/PillColors.swift",
+   "label": "ReferenceDefinition.swift -> PillColors.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/ReferenceAnswers.swift",
+   "label": "ReferenceDefinition.swift -> ReferenceAnswers.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/ReferenceCondition.swift",
+   "label": "ReferenceDefinition.swift -> ReferenceCondition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/ReferenceDrawing.swift",
+   "label": "ReferenceDefinition.swift -> ReferenceDrawing.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/ReferenceEditing.swift",
+   "label": "ReferenceDefinition.swift -> ReferenceEditing.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/ReferenceEdits.swift",
+   "label": "ReferenceDefinition.swift -> ReferenceEdits.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceDefinition.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceDefinition.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDefinition.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceDefinition.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDrawing.swift",
+   "b": "file:Sources/References/PillColors.swift",
+   "label": "ReferenceDrawing.swift -> PillColors.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDrawing.swift",
+   "b": "file:Sources/References/ReferenceAnswers.swift",
+   "label": "ReferenceDrawing.swift -> ReferenceAnswers.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDrawing.swift",
+   "b": "file:Sources/References/ReferenceCondition.swift",
+   "label": "ReferenceDrawing.swift -> ReferenceCondition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDrawing.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceDrawing.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDrawing.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceDrawing.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceDrawing.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceDrawing.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferenceCondition.swift",
+   "label": "ReferenceEditing.swift -> ReferenceCondition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferenceDrawing.swift",
+   "label": "ReferenceEditing.swift -> ReferenceDrawing.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferenceEdits.swift",
+   "label": "ReferenceEditing.swift -> ReferenceEdits.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferenceInterpreting.swift",
+   "label": "ReferenceEditing.swift -> ReferenceInterpreting.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferencePath.swift",
+   "label": "ReferenceEditing.swift -> ReferencePath.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferencePicker.swift",
+   "label": "ReferenceEditing.swift -> ReferencePicker.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceEditing.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceEditing.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEditing.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceEditing.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEdits.swift",
+   "b": "file:Sources/References/ReferenceDrawing.swift",
+   "label": "ReferenceEdits.swift -> ReferenceDrawing.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEdits.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceEdits.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceEdits.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceEdits.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceInterpreting.swift",
+   "b": "file:Sources/References/ReferenceEdits.swift",
+   "label": "ReferenceInterpreting.swift -> ReferenceEdits.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceInterpreting.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceInterpreting.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceInterpreting.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceInterpreting.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceInterpreting.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceInterpreting.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceMismatch.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceMismatch.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceMismatch.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceMismatch.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePanel.swift",
+   "b": "file:Sources/References/ReferenceCondition.swift",
+   "label": "ReferencePanel.swift -> ReferenceCondition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePanel.swift",
+   "b": "file:Sources/References/ReferenceDefinition.swift",
+   "label": "ReferencePanel.swift -> ReferenceDefinition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePanel.swift",
+   "b": "file:Sources/References/ReferenceInterpreting.swift",
+   "label": "ReferencePanel.swift -> ReferenceInterpreting.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePanel.swift",
+   "b": "file:Sources/References/ReferencePath.swift",
+   "label": "ReferencePanel.swift -> ReferencePath.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePanel.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferencePanel.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePanel.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferencePanel.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePanel.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferencePanel.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePath.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferencePath.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePicker.swift",
+   "b": "file:Sources/References/ReferenceEdits.swift",
+   "label": "ReferencePicker.swift -> ReferenceEdits.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePicker.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferencePicker.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferencePicker.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferencePicker.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "kind:reference",
+   "b": "file:Sources/References/References.swift",
+   "label": "reference -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceRow.swift",
+   "b": "file:Sources/References/ReferenceCondition.swift",
+   "label": "ReferenceRow.swift -> ReferenceCondition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceRow.swift",
+   "b": "file:Sources/References/ReferenceDefinition.swift",
+   "label": "ReferenceRow.swift -> ReferenceDefinition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceRow.swift",
+   "b": "file:Sources/References/ReferencePath.swift",
+   "label": "ReferenceRow.swift -> ReferencePath.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceRow.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceRow.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceRow.swift",
+   "b": "file:Sources/References/ReferenceState.swift",
+   "label": "ReferenceRow.swift -> ReferenceState.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceRow.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceRow.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/References.swift",
+   "b": "file:Sources/References/ReferenceMismatch.swift",
+   "label": "References.swift -> ReferenceMismatch.swift"
+  },
+  {
+   "a": "file:Sources/References/References.swift",
+   "b": "file:Sources/References/ReferencePath.swift",
+   "label": "References.swift -> ReferencePath.swift"
+  },
+  {
+   "a": "file:Sources/References/References.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "References.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "plugin:references",
+   "b": "kind:reference",
+   "label": "ReferencesPlugin -> reference"
+  },
+  {
+   "a": "plugin:references",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferencesPlugin -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceState.swift",
+   "b": "file:Sources/References/PillColors.swift",
+   "label": "ReferenceState.swift -> PillColors.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceState.swift",
+   "b": "file:Sources/References/ReferenceCondition.swift",
+   "label": "ReferenceState.swift -> ReferenceCondition.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceState.swift",
+   "b": "file:Sources/References/References.swift",
+   "label": "ReferenceState.swift -> References.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceState.swift",
+   "b": "file:Sources/References/ReferenceStyle.swift",
+   "label": "ReferenceState.swift -> ReferenceStyle.swift"
+  },
+  {
+   "a": "file:Sources/References/ReferenceStyle.swift",
+   "b": "file:Sources/References/ReferenceCondition.swift",
+   "label": "ReferenceStyle.swift -> ReferenceCondition.swift"
+  }
+ ]
+}

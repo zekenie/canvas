@@ -1,0 +1,46 @@
+--- a/lib/cut.mjs	2026-11-09 16:06:46
++++ b/lib/cut.mjs	2026-11-10 04:48:26
+@@ -78,8 +78,21 @@
+   const cut = new Set(), graphs = new Map();
+   let looked = 0;
+   for (const cid of [...byContainer.keys()].sort(byTitle)) {
+-    const pairs = [...byContainer.get(cid).values()];
++    let pairs = [...byContainer.get(cid).values()];
+     const kids = layouter.cutKids(cid);
++    // the spike: links cut by meaning before anything is drawn (SEM_PRECUT: a weight under which a note-to-note link is a pill, or
++    // 'density': where a container has more than 1.5 links a child, its least alike note-to-note links down to that)
++    const pre = process.env.SEM_PRECUT;
++    if (pre) {
++      const direct = pairs.filter((p) => !p.kept && p.edges.every((e) => [p.a, p.b].includes(e.from) && [p.a, p.b].includes(e.to)));
++      const mean = (p) => p.w / p.edges.length;
++      let drop = [];
++      if (pre === 'density') { const budget = Math.floor(1.5 * kids.length); if (pairs.length > budget) drop = direct.slice().sort((p, q) => mean(p) - mean(q) || byTitle(p.a + SEP + p.b, q.a + SEP + q.b)).slice(0, pairs.length - budget); }
++      else drop = direct.filter((p) => mean(p) < +pre);
++      const dropped = new Set(drop);
++      for (const p of drop) for (const e of p.edges) cut.add(keyOf(e));
++      pairs = pairs.filter((p) => !dropped.has(p));
++    }
+     const index = new Map(kids.map((t, i) => [t, i]));
+     const degree = new Map();
+     for (const p of pairs) for (const t of [p.a, p.b]) degree.set(t, (degree.get(t) || 0) + 1);
+@@ -206,7 +219,8 @@
+     for (const [k, c] of count) {
+       if (best == null) { best = k; continue; }
+       const cb = count.get(best);
+-      if (c > cb || (c === cb && (less(worth(k), worth(best)) || (!less(worth(best), worth(k)) && k < best)))) best = k;
++      // the spike: the least wanted first (least alike), then the one in the most conflicts
++      if (less(worth(k), worth(best)) || (!less(worth(best), worth(k)) && (c > cb || (c === cb && k < best)))) best = k;
+     }
+     out.push(best);
+     open = open.filter((ks) => !ks.includes(best));
+--- a/lib/restore.mjs	2026-11-09 09:24:54
++++ b/lib/restore.mjs	2026-11-10 05:00:54
+@@ -73,6 +73,8 @@
+     for (const en of layout.plan.byStart.get(u)) {
+       const e = en.e, node = model.node(e.to), pill = own.get(u + SEP + e.to);
+       if (e.cross || e.direct || node.never || holdsShapes(node) || pill == null || !layout.boxes.has(e.to) || through.has(u + SEP + e.to)) continue;
++      // the spike: with SEM_KEEPCUT, a link cut by meaning (under the SEM_PRECUT weight) is not put back
++      if (process.env.SEM_KEEPCUT && +process.env.SEM_PRECUT > 0 && e.weight < +process.env.SEM_PRECUT) continue;
+       const a = layout.boxes.get(u), b = layout.boxes.get(e.to);
+       out.push({ u, e, pill, d: len(a.x + a.w / 2 - b.x - b.w / 2, a.y + a.h / 2 - b.y - b.h / 2) });
+     }

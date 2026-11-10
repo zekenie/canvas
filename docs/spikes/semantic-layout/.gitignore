@@ -1,0 +1,8 @@
+build/
+out/
+out-*/
+out-*.log
+data/texts.json
+data/vec-*.json
+data/graph-sem.json
+judge/rows.json
