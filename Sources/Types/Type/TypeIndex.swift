@@ -180,6 +180,13 @@ public final class TypeIndex {
     /// A type's name, its title; nil for an untitled type and a shape that isn't one.
     public func name(of id: ShapeID) -> String? { entries[id]?.name }
 
+    /// The types called `name` (as `canvas draw` finds a title: whitespace folded), in no order: what words that name a type
+    /// (an endpoint's body) bind to. O(the types).
+    public func types(named name: String) -> [ShapeID] {
+        guard let folded = TitleProperty.folded(name) else { return [] }
+        return entries.compactMap { $0.value.name == folded ? $0.key : nil }
+    }
+
     /// How a type's color is drawn: the color its shape holds where the file has it, else one of
     /// eight by its id (`TypeColors`). Asked of any id, a type that is gone included; it keeps nothing
     /// per type, so it is the color of the commit last heard.

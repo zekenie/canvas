@@ -61,4 +61,55 @@ import TestKit
         spin(engine == nil)
         expect(engine == nil, "the batch ended and let go of the engine")
     },
+    // A batch holds the service across the wait for its answers to be prepared, so the deinit that would cancel it waits too, and
+    // the batch's next step, and the waits the scheduler fires meanwhile, run with the editor gone. Reading the editor then is fatal
+    // (a test whose editor went as it ended crashed the run so), so each asks first whether it is there. Here the service is held
+    // by the test, as a batch holds it, from before the batch's answers come; the next test lets the editor go where the batch
+    // itself holds it.
+    test("a service held past its editor reads nothing of it: a batch asked before the editor went lands nothing, and the wait for quiet asks nothing") {
+        var h: EditorHarness? = try referenceHarness()
+        let scheduler = try require(h?.scheduler)
+        weak var closing = h?.editor
+        weak var engine = h?.editor.queries
+        h?.addBox("Alpha", at: CGRect(x: 100, y: 100, width: 100, height: 60))
+        _ = try require(h?.addReference(query: "box"))
+        h?.wait(0)                                                                       // the hop: asked, the batch is out
+        let state = try require(h?.editor.references)
+        expectEqual(state.batchesAsked, 1)
+        h?.addBox("Beta", at: CGRect(x: 250, y: 100, width: 100, height: 60))           // a commit: the wait for quiet armed
+        h = nil
+        expect(closing == nil, "the editor went, the service held on")
+        spin(engine == nil)
+        expect(engine == nil, "the batch's answers came and it ended")
+        expectEqual(state.batchesLanded, 0, "landing nothing")
+        scheduler.advance(by: .seconds(1))                                               // the wait for quiet and the finding timer
+        expectEqual(state.batchesAsked, 1, "the wait for quiet asked nothing")
+    },
+    test("an editor let go while a batch's answers are prepared, the batch holding the service, is never read as they would land") {
+        var h: EditorHarness? = try referenceHarness()
+        weak var closing = h?.editor
+        weak var engine = h?.editor.queries
+        weak var service = h?.editor.references
+        h?.addBox("Alpha", at: CGRect(x: 100, y: 100, width: 100, height: 60))
+        _ = try require(h?.addReference(query: "box"))
+        // The batch waits here, its answers come and prepared with the editor there.
+        let hold = LandingHold()
+        service?.beforeLanding = { await withCheckedContinuation { hold.waiting = $0 } }
+        h?.wait(0)                                                                       // the hop: asked, the batch is out
+        spin(hold.waiting != nil)
+        expect(hold.waiting != nil, "the batch reached its landing with the editor there")
+        h = nil
+        expect(closing == nil, "the editor went")
+        expect(service != nil, "the service held by the batch alone")
+        hold.waiting?.resume()
+        hold.waiting = nil
+        spin(service == nil && engine == nil)
+        expect(service == nil, "the batch ended, landing nothing, and let the service go")
+        expect(engine == nil, "and the engine")
+    },
 ])
+
+/// Where a batch waits before it lands (`ReferenceState.beforeLanding`), for a test to let it go on.
+@MainActor private final class LandingHold {
+    var waiting: CheckedContinuation<Void, Never>?
+}

@@ -1,5 +1,7 @@
 import Canvas
+import CoreGraphics
 import Draw
+import Selection
 import SlashCommands
 import Titles
 
@@ -185,7 +187,7 @@ extension CanvasEditor {
 
 extension CanvasEditor {
     /// A new type titled `name`, put down beside `owner` as `/move-near` puts a shape beside another
-    /// (`Surroundings.near`), with the starter schema and no words, and `owner` made an instance of
+    /// (`Surroundings.near`), on a side in the clear part of the view where one is free (`PutBeside`), with the starter schema and no words, and `owner` made an instance of
     /// it: one step, "New Type", which stays open while the new note is edited, as a placed note's
     /// does. For an owner that is an arrow (a kind that relates) it is a relationship type, with no ends,
     /// in the step "New Relationship Type", and it replaces the relationship type the arrow had. Nil, with nothing changed, when nothing could be put down: `owner` is not on the board
@@ -203,41 +205,124 @@ extension CanvasEditor {
     /// and as for one owner. One owner is the case of one: beside that shape itself.
     @discardableResult
     public func newType(named name: String, besides owners: [ShapeID]) -> ShapeID? {
+        newType(named: name, besides: owners, givingType: true, editing: true)
+    }
+
+    /// The same, with what goes with it said: `givingType` false makes no owner an instance of it (what names the new type is
+    /// the caller's: an endpoint's body), and `editing` false puts it down settled, nothing selected and nothing edited, so the
+    /// keyboard stays where it is (the core's `Placement.settled()`). Either way one step, "New Type", into which the caller
+    /// may write what names it, in a group of its own of that name.
+    ///
+    /// Put down settled where no clear spot in view is left (the view full), it lands at the clear spot (beside what it is kept
+    /// with, beside each owner, anywhere) whose least pan into view takes none of what the person works with out of view (`keeping`,
+    /// else the owners, the owners, and what is joined to `keeping`), the nearest of those, and the view pans the least to show it,
+    /// all of `keeping` (else the owners) in view as well where it all fits, else its first, else the anchor of a card shown (the
+    /// row it was made from), so the card stays up (Selection's `revealIfOffscreen(_:keepingFirstOf:)`).
+    @discardableResult
+    public func newType(named name: String, besides owners: [ShapeID], givingType: Bool, editing: Bool, keeping: [ShapeID] = []) -> ShapeID? {
         var seen = Set<ShapeID>()
         let owners = owners.filter { seen.insert($0).inserted && file.board(containing: $0) == board }
         guard !owners.isEmpty, let kind = newTypeKind(for: owners), let base = registry.placement(for: kind) else { return nil }
         // Told which shape it made by the transform each record goes through.
         final class Made { var id: ShapeID? }
         let made = Made()
-        let marks = owners.allSatisfy(ownerRelates) && registry.canBeRelationshipType(kind)
-        var placement = base.setting(TitleProperty.self, to: name)
+        let marks = givingType && owners.allSatisfy(ownerRelates) && registry.canBeRelationshipType(kind)
+        var placement = (editing ? base : base.settled()).setting(TitleProperty.self, to: name)
             .setting(TypeSchemaProperty.self, to: SchemaText(TypeSchemaProperty.starter))
         if marks { placement = placement.setting(RelationshipProperty.self, to: true) }
         placement = placement.mapping { record in made.id = record.id; return record }
         guard let surroundings = Surroundings(on: board, moving: placement.size, in: self) else { return nil }
         let landing: Landing?
+        // Put down for the person: on a side of them in the clear part of the view, where one is free.
+        let put = PutBeside.inView(of: self)
         if owners.count == 1 {
-            landing = surroundings.near(owners[0])
+            landing = surroundings.near(owners[0], put: put)
         } else {
             // Beside the box around them all, as a shape that is not on the board yet is landed beside, clear of every owner.
             let shapes = surroundings.reading.shapes
-            landing = shapes.bounds(of: owners).flatMap { box in surroundings.near(box, avoiding: owners.compactMap { shapes.geometry(of: $0)?.bounds }) }
+            landing = shapes.bounds(of: owners).flatMap { box in
+                surroundings.near(box, avoiding: owners.compactMap { shapes.geometry(of: $0)?.bounds }, put: put)
+            }
         }
-        guard let landing else { return nil }
-        return undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) {
+        guard var landing else { return nil }
+        // No side of them in view: the nearest clear spot in view instead, so the type made is seen (one edited is brought
+        // into view as it's selected, wherever it lands).
+        let kept = keeping.isEmpty ? owners : keeping
+        // Brought into view keeping what it was made for: all of it where it fits with it (an API and the types its line names),
+        // else the first (the API), else the row a card hangs from (made from a row's card, the card stays up, the caret in it).
+        let alternatives = [shapeContext.bounds(of: kept), shapeContext.bounds(of: Array(kept.prefix(1))), card?.anchor].compactMap { $0 }
+        if !editing, !surroundings.shows(landing.rect, put: put) {
+            let anywhere = surroundings.anywhere(put: put)
+            if surroundings.shows(anywhere.rect, put: put) {
+                landing = anywhere
+            } else if let view = surroundings.reading.view {
+                landing = fallbackSpot(among: landing, surroundings, near: card?.anchor ?? shapeContext.bounds(of: kept) ?? view,
+                                       keeping: kept, owners: owners, alternatives: alternatives)
+            }
+        }
+        let inView = editing || surroundings.shows(landing.rect, put: put)
+        let newID = undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) { () -> ShapeID? in
             place(placement, in: landing.rect)
             guard let id = made.id, document[id] != nil else { return nil }
-            giveType(id, to: owners)
+            if givingType { giveType(id, to: owners) }
             return id
         }
+        // Nowhere clear in view: brought into view by the least pan, what it was made for kept in view as above.
+        if let id = newID, !inView { revealIfOffscreen([id], keepingFirstOf: alternatives) }
+        return newID
+    }
+
+    /// Where a new type goes when the view is full (no clear spot in it): of the clear spots beside what the person is at (`at`:
+    /// the row a card hangs from, else what it is kept beside, else the view) on each side, beside each owner on each side, beside
+    /// the box `near` found and anywhere, the one whose least pan into view (`revealPan`, keeping the first of `alternatives` that
+    /// fits, as the reveal will) takes none of what the person works with out of view (the shapes `keeping`, the owners and what
+    /// is joined to what it is kept beside, wholly in the clear view now: U11's rule for a put, UX walk 5 apis-5-1, a second new
+    /// type made from a line panned the first, which the same line names, out of view), a pan that takes the first of `keeping`
+    /// (the API the card hangs from) out of view ranking under every one that keeps it; then the one that takes fewest; then the
+    /// nearest `at`, the earlier on a tie.
+    private func fallbackSpot(among found: Landing, _ surroundings: Surroundings, near at: CGRect, keeping: [ShapeID], owners: [ShapeID],
+                              alternatives: [CGRect]) -> Landing {
+        var spots = [found, surroundings.anywhere()]
+        func add(_ spot: Landing?) { if let spot, !spots.contains(spot) { spots.append(spot) } }
+        // Beside a shape, never beside a part of one (the row a card hangs from): the gap is the shape's, so a spot above a row is
+        // above its shape's title row, not flush on its edge (U14-E1). `at` itself weighs only as the nearness.
+        let held = card != nil || keeping.count == 1 ? keeping.first : nil
+        let visible = surroundings.reading.view
+        var besides: [ShapeID] = held.map { [$0] } ?? []
+        // Owners out of view are left out: a spot beside one is out of view, and its pan takes more than the ones in view do.
+        for owner in owners where !besides.contains(owner) {
+            if let bounds = shapeContext.bounds(of: [owner]), visible.map(bounds.intersects) ?? true { besides.append(owner) }
+        }
+        if held == nil { for side in PlacingStyle.sides { add(surroundings.near(at, avoiding: [at], sides: [side])) } }
+        for beside in besides { for side in PlacingStyle.sides { add(surroundings.near(beside, sides: [side])) } }
+        // What the person works with, each shape once: the shapes `keeping`, the owners, and what is joined to what it is kept with.
+        var working = surroundings.joinedInView(to: keeping)
+        for id in keeping + owners {
+            if let bounds = shapeContext.bounds(of: [id]), !working.contains(bounds) { working.append(bounds) }
+        }
+        // What it is kept beside first (the API, the card's shape) weighs more than all the rest: a spot whose pan takes it out of
+        // view ranks under every one that keeps it.
+        let first = shapeContext.bounds(of: Array(keeping.prefix(1)))
+        func lost(_ spot: Landing) -> (first: Bool, count: Int) {
+            guard let count = revealTakesAway(working, bringing: spot.rect, keepingFirstOf: alternatives) else { return (true, working.count + 1) }
+            let lostFirst = first.flatMap { revealTakesAway([$0], bringing: spot.rect, keepingFirstOf: alternatives) }.map { $0 > 0 } ?? false
+            return (lostFirst, count)
+        }
+        func away(_ rect: CGRect) -> CGFloat { let x = rect.midX - at.midX, y = rect.midY - at.midY; return (x * x + y * y).squareRoot() }
+        let ranked = spots.map { (spot: $0, lost: lost($0), away: away($0.rect)) }
+        return ranked.min { a, b in
+            if a.lost.first != b.lost.first { return !a.lost.first }
+            return a.lost.count != b.lost.count ? a.lost.count < b.lost.count : a.away < b.away - 0.5
+        }?.spot ?? found
     }
 
     /// Whether the owner is an arrow of a kind that relates, whose new type is a relationship type.
     func ownerRelates(_ owner: ShapeID) -> Bool { document[owner].map { registry.relates($0.kind) } ?? false }
 
     /// The kind a new type beside `owners` is: the kind of the first that can be a type; for owners that all relate, the first
-    /// kind that can hold the mark as well; else the first that can be a type.
-    func newTypeKind(for owners: [ShapeID]) -> ShapeKind? {
+    /// kind that can hold the mark as well; else the first that can be a type (with no owners, the kind any new type is: a
+    /// note, as shipped). What a plugin that makes types names the kind by, never a literal (the kit's OpenAPI paste).
+    public func newTypeKind(for owners: [ShapeID] = []) -> ShapeKind? {
         func usable(_ kind: ShapeKind) -> Bool { registry.canBeType(kind) && registry.placement(for: kind) != nil }
         if let kind = owners.lazy.compactMap({ self.document[$0]?.kind }).first(where: { registry.canBeType($0) }) { return kind }
         if !owners.isEmpty, owners.allSatisfy(ownerRelates), let kind = registry.kinds.first(where: { usable($0) && registry.canBeRelationshipType($0) }) { return kind }

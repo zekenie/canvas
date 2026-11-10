@@ -157,7 +157,7 @@ func keyedLights() -> [NeighborLight] {
 func lightsPlugin(_ lights: [NeighborLight]) -> Contributor {
     Contributor(id: "lights") { registrar in
         for light in lights {
-            registrar.neighborLight(light.title, color: light.color, keys: light.keys, query: light.query, between: light.between,
+            registrar.neighborLight(light.title, color: light.color, keys: light.keys, serves: light.serves, query: light.query, between: light.between,
                                     caption: light.caption)
         }
     }

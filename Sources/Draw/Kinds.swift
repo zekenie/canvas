@@ -34,6 +34,9 @@ public struct KindSummary: Encodable {
     let attributes: [String: String]
     /// The sides an edge may leave it by, and what it may carry from each.
     let edges: [String: [String]]?
+    /// What an edge to or from one of its rows (`"orders".customer_id`) may carry, either way: a table's columns,
+    /// `foreign-key`. Nil for a kind whose rows take none, or that has no rows.
+    let rows: [String]?
     /// The pills that can stand for one of its shapes, so that an edge to it from another board can go
     /// through one: each kind of pill whose plugin can make a new shape of this kind one it stands for,
     /// with what that takes, in the order pills are made (`registry.standIns`' makers). Nil for none.
@@ -91,6 +94,7 @@ public func kinds(named: String? = nil, schema: Bool = false, in registry: Regis
             attributes[name] = "\(vocabulary.compactType(of: name)) — can't be written: \(name): is one of the language's own keys"
         }
         let sides = (edging?.sides(kind, registry) ?? [:]).filter { !$0.value.isEmpty }
+        let rows = edging?.rows(kind, registry) ?? []
         // Asked of a new shape of the kind, as its placement makes one: a pill can stand for the kind when the pill's
         // plugin can make that shape one it admits (`fulfil`, which changes only a copy here).
         let via: [StandInSummary] = placement.map { placement in
@@ -108,6 +112,7 @@ public func kinds(named: String? = nil, schema: Bool = false, in registry: Regis
                            holds: registry.boardOwningKinds.contains(kind) ? "board" : registry.containingKinds.contains(kind) ? "shapes" : nil,
                            attributes: attributes,
                            edges: sides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: sides.map { ($0.key.rawValue, $0.value) }),
+                           rows: rows.isEmpty ? nil : rows,
                            via: via.isEmpty ? nil : via,
                            schema: schema ? .object(vocabulary.root) : nil)
     }

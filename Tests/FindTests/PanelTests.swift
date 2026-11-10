@@ -88,6 +88,11 @@ final class FindWindow {
 }
 
 @MainActor let panelTests = Suite("Find's panel", [
+    test("a shape's name in its row is given its own width up to the cap, so a long one is cut in the middle inside it, never run on past it") {
+        let short = FindStyle.rowNameWidth("orders API"), long = FindStyle.rowNameWidth(String(repeating: "customer_billing_address ", count: 2))
+        expect(short > 20 && short < FindStyle.rowNameMost, "a short name keeps its own width: \(short)")
+        expectEqual(long, FindStyle.rowNameMost, "a long one is held to the cap")
+    },
     test("⌘F takes the panel over and gives its field the keyboard; typing searches; Return and ⇧Return step") {
         let w = try FindWindow(CanvasFile(root: CanvasDocument(shapes: memos(["pear one", "pear two", "plum"]))))
         w.commandF()
@@ -371,5 +376,25 @@ final class FindWindow {
         // Text with no emoji is cut where it always was.
         let plain = String(repeating: "a", count: 300)
         expectEqual(FindSnippet.range(in: plain, around: 100..<104), 76..<196)
+    },
+    test("a titled shape's row leads with its name, the snippet of a hit elsewhere in it after it; a hit in the name is the snippet alone") {
+        // Every memo named "Basket" by a contribution that names its shapes, as a title does.
+        let naming = Contributor(id: "basket-names") { registrar in
+            registrar.findableTexts("name", of: Memo.self, names: true, texts: { _, _ in [FindableText(field: "name", text: "Basket")] },
+                                    rects: { _, _, ranges, _ in ranges.map { _ in [] } })
+        }
+        let w = try FindWindow(CanvasFile(root: CanvasDocument(shapes: memos(["pear one"]))), more: [naming])
+        w.commandF()
+        w.window.spin { w.fieldHasKeyboard }
+        w.window.type("pear")
+        w.window.spin { w.find.total == 1 && w.find.isSettled && w.rows.count == 1 }
+        let result = try require(w.find.results.first)
+        expectEqual(w.find.rowName(of: result), "Basket")
+        expectEqual(String(FindSnippet.named("Basket", of: result, in: w.find).characters), "Basket  pear one")
+        expectEqual(String(FindSnippet.faint(of: result, in: w.find).characters), "pear one", "the snippet is a text of its own, which a long name never cuts away")
+        expectEqual(w.find.rowLabel(of: 0), "Basket, pear one, memo, hit 1 of 1", "VoiceOver hears the name first too")
+        w.find.query = "bask"
+        w.window.spin { w.find.total == 1 && w.find.isSettled }
+        expectEqual(w.find.rowName(of: try require(w.find.results.first)), nil, "the hit is in the name: the snippet shows it")
     },
 ])

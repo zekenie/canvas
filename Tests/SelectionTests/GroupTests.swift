@@ -50,6 +50,30 @@ struct Row {
 }
 
 @MainActor let groupSelectionTests = Suite("Groups selected as one", [
+    test("a plugin's unit (a bundle of arrows) is selected whole before any group: by a click, a click again, the marquee and Delete") {
+        let groups = GroupsFixture()
+        var unit: [ShapeID] = []
+        let h = try groupsHarness(groups, [Contributor(id: "units") { $0.selectionUnits { _, id in unit.contains(id) ? unit : nil } }])
+        let row = Row(h)
+        unit = [row.a, row.b]
+        groups.paths = [row.a: ["g"], row.b: ["g"], row.c: ["h"], row.d: ["h"]]
+        h.click(at: row.middle(row.b))
+        expectEqual(h.editor.selectedShapeIDs, [row.a, row.b], "the unit, not the group it's in")
+        h.click(at: row.middle(row.b))
+        expectEqual(h.editor.selectedShapeIDs, [row.a, row.b], "a unit has no inside: clicked again, still whole")
+        expectEqual(h.editor.selectionUnit(of: row.a), [row.a, row.b])
+        h.click(at: row.middle(row.c))
+        expectEqual(h.editor.selectedShapeIDs, [row.c, row.d], "a shape in no unit goes on to its group")
+        h.editor.selectedShapeIDs = []
+        // A marquee reaching only a selects b with it.
+        h.press(at: CGPoint(x: -20, y: -20))
+        h.drag(to: CGPoint(x: 60, y: 60))
+        h.release()
+        expectEqual(Set(h.editor.selectedShapeIDs), [row.a, row.b])
+        h.editor.selectedShapeIDs = [row.a, row.b]
+        expect(h.key("\u{7f}"), "Delete is heard")
+        expect(h.editor.document[row.a] == nil && h.editor.document[row.b] == nil, "Delete takes the whole unit")
+    },
     test("a click on a shape in a group selects the group, all of it; a drag moves it all") {
         let groups = GroupsFixture()
         let h = try groupsHarness(groups)
@@ -90,7 +114,7 @@ struct Row {
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [])
     },
-    test("Escape goes out one level at a time, as ⌘↑ steps out: from a shape in a group in a container, the group whole, then the container, brought into view, then nothing; never off the board") {
+    test("Escape goes out one level at a time, as ⌘↑ steps out: from a shape in a group in a container, the group whole, then the container, panned to only when none of it shows, then nothing; never off the board") {
         let groups = GroupsFixture()
         let h = try groupsHarness(groups, [CorralsPlugin()])
         let view = CGSize(width: 400, height: 300)
@@ -111,11 +135,21 @@ struct Row {
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [corral], "the container")
         h.wait(200)
-        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: -50, y: -50, width: 900, height: 300), in: view, inset: 100, maxZoom: 1),
-                    "brought into view")
+        expectEqual(h.editor.camera, Camera(), "some of it in view: the camera stays, never zoomed out to the whole container")
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [], "at the board's own shapes, nothing")
         expectEqual(h.editor.board, .root)
+
+        // With none of it in view, it's panned to, its top-left in view, the zoom kept.
+        h.editor.selectedShapeIDs = [row.a, row.b]
+        h.wait(200)
+        let away = Camera(origin: CGPoint(x: 5000, y: 5000), zoom: 1)
+        h.editor.camera = away
+        h.escape()
+        expectEqual(h.editor.selectedShapeIDs, [corral])
+        h.wait(200)
+        expectEqual(h.editor.camera.zoom, 1, "never zoomed out")
+        expectEqual(h.editor.camera.origin, CGPoint(x: -90, y: -118), "its top-left 40 points in, its title's row counted")
     },
     test("inside a group, a lone shape follows the pointer from the press, and the group stays") {
         let groups = GroupsFixture()

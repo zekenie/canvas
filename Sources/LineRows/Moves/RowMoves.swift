@@ -1,0 +1,468 @@
+import AppKit
+import Canvas
+import Connections
+import CoreGraphics
+import Selection
+
+// Rows moved as wholes, any kind's written as lines: within a shape (⌥↑ ⌥↓ on rows selected as items), into another shape
+// of a kind that takes them, or out on their own into a new shape (the kind's take-out: a new table, its `id uuid pk`
+// first). One function moves them (`moveRows`), and a paste of rows lands through the same steps (`pasteRows`); each is one
+// step the kind's noun names ("Move Column", "Move Columns to New Table"), all or nothing (a read-only source or target
+// refuses it, and shakes). A row keeps its id where it goes, a new one only where the target already holds that id; what's
+// bound to a row moved to another shape is bound to it there through the core's `moveParts`, which tells `PartsMoved` (a
+// mention of the row, a pill for it, on any board), and a new shape is settled where it lands (a table dropped in a database
+// goes in it). The rows moved end selected as items of their shape (Selection's), or a new shape's name is edited at once.
+
+/// Where rows go.
+public enum RowPlace: Hashable, Sendable {
+    /// Among a shape's rows, before `before` (nil: after the last); the same shape reorders.
+    case into(ShapeID, before: PartID?)
+    /// A shape of their own (the kind's take-out), its top-left at a world point.
+    case board(origin: CGPoint)
+    /// A shape of their own, put down beside these shapes as Insert puts one (the insertion spot), or in the view with none.
+    case beside([ShapeID])
+}
+
+/// One kind's rows moved as wholes, erased: what moves need of the kind's model whatever its props. Only `lineRows(_:)`
+/// makes one.
+@MainActor
+public struct LineRowsMoving {
+    /// What its rows are called: the steps' noun.
+    public let noun: LineNoun
+    /// Whether its shapes take rows of a kind (its own always).
+    let takes: @MainActor (ShapeKind) -> Bool
+    /// A shape's rows, in order; nil for a record of another kind.
+    let rows: @MainActor (AnyShapeRecord) -> [PartID]?
+    /// The shape holding only these of its rows, in their order, untitled: what rows on the pasteboard are (the carrier).
+    let carrier: @MainActor (AnyShapeRecord, [PartID]) -> AnyShapeRecord?
+    /// The shape without these rows.
+    let removing: @MainActor (AnyShapeRecord, Set<PartID>) -> AnyShapeRecord?
+    /// The shape with a carrier's rows put in at an index, each renamed as the map says (a row whose id it holds already).
+    let inserting: @MainActor (AnyShapeRecord, AnyShapeRecord, Int, [PartID: PartID]) -> AnyShapeRecord?
+    /// The shape with these rows, in their order, put at an index among the rest.
+    let reordering: @MainActor (AnyShapeRecord, [PartID], Int) -> AnyShapeRecord?
+    /// A carrier's rows in a shape of their own, under a new id (the kind's take-out: a table's `id uuid pk` first; one endpoint, an
+    /// endpoint of its own).
+    let takeOut: @MainActor (AnyShapeRecord) -> AnyShapeRecord?
+    /// What taking a carrier's rows out is called, where the kind names it ("Take Out Endpoint"); nil for the noun's.
+    let takeOutStep: @MainActor (AnyShapeRecord) -> String?
+    /// Whether a shape taken out has its name typed at once (one of the kind's own: a take-out of another kind is that kind's to name).
+    let editsTitle: Bool
+    /// Whether a shape of the kind is its rows (an endpoint of its own): it goes as the last of them goes, and has no take-out.
+    public let goesWithItsRows: Bool
+    /// What a block of only headers is called in steps (an API's "path prefix"); nil for the noun.
+    let headerNoun: LineNoun?
+    /// A carrier's rows as their lines print, one a line: what goes on the pasteboard as text beside them.
+    let lines: @MainActor (AnyShapeRecord, CanvasEditor) -> [String]
+    /// The shape as wide as its rows read whole at rest, where it's narrower (`LineModel.widening`); nil where it's wide enough.
+    let widening: @MainActor (AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?
+
+    public init(noun: LineNoun, takes: @escaping @MainActor (ShapeKind) -> Bool, rows: @escaping @MainActor (AnyShapeRecord) -> [PartID]?,
+                carrier: @escaping @MainActor (AnyShapeRecord, [PartID]) -> AnyShapeRecord?,
+                removing: @escaping @MainActor (AnyShapeRecord, Set<PartID>) -> AnyShapeRecord?,
+                inserting: @escaping @MainActor (AnyShapeRecord, AnyShapeRecord, Int, [PartID: PartID]) -> AnyShapeRecord?,
+                reordering: @escaping @MainActor (AnyShapeRecord, [PartID], Int) -> AnyShapeRecord?,
+                takeOut: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord?, takeOutStep: @escaping @MainActor (AnyShapeRecord) -> String? = { _ in nil },
+                editsTitle: Bool, goesWithItsRows: Bool = false, headerNoun: LineNoun? = nil,
+                lines: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> [String],
+                widening: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> AnyShapeRecord? = { _, _ in nil }) {
+        self.widening = widening
+        self.noun = noun
+        self.takes = takes
+        self.rows = rows
+        self.carrier = carrier
+        self.removing = removing
+        self.inserting = inserting
+        self.reordering = reordering
+        self.takeOut = takeOut
+        self.takeOutStep = takeOutStep
+        self.editsTitle = editsTitle
+        self.goesWithItsRows = goesWithItsRows
+        self.headerNoun = headerNoun
+        self.lines = lines
+    }
+
+    /// A shape's rows' ids, in order; nil for a record of another kind.
+    public func rowIDs(of record: AnyShapeRecord) -> [PartID]? { rows(record) }
+}
+
+/// The kinds whose rows move as wholes: one a kind (`lineRows(_:)`). Owner LineRows.
+public enum LineRowsMoves {}
+
+extension LineRowsMoves: KeyedExtensionPoint {
+    public typealias Contribution = LineRowsMoving
+    public static var owner: PluginID { .lineRows }
+    public static func uniqueKeys(of _: LineRowsMoving, for target: ShapeTarget) -> [AnyHashable] { [target] }
+    public static func summary(of contribution: LineRowsMoving, for target: ShapeTarget) -> String {
+        "row moves (\(contribution.noun.plural)) → \(target)"
+    }
+}
+
+extension Registry {
+    /// How a kind's rows move as wholes, for a kind written as lines.
+    public func rowMoving(of kind: ShapeKind) -> LineRowsMoving? { contributions(to: LineRowsMoves.self, for: kind).first }
+}
+
+/// The names of the steps rows moved as wholes make, from the kind's noun.
+@MainActor
+public enum RowSteps {
+    /// "Move Column", "Move Columns".
+    public static func move(_ noun: LineNoun, count: Int) -> String { "Move \(title(noun, count))" }
+    /// "Move Columns to New Table".
+    public static func takeOut(_ noun: LineNoun, count: Int, into kind: ShapeKind, in registry: Registry) -> String {
+        "Move \(title(noun, count)) to New \(registry.label(of: kind).name)"
+    }
+    /// "Paste Columns".
+    public static func paste(_ noun: LineNoun, count: Int) -> String { "Paste \(title(noun, count))" }
+    /// "Cut Columns", and what went along: "Cut Columns and 2 Arrows".
+    public static func cut(_ noun: LineNoun, count: Int, along: [KindCount], in registry: Registry) -> String {
+        counted("Cut \(title(noun, count))", along: along, in: registry)
+    }
+
+    /// "2 Arrows left out": what a cut took with its rows and a paste could not bring back (its other end isn't on the board).
+    public static func leftOut(_ along: [KindCount], in registry: Registry) -> String {
+        let parts = along.filter { $0.count > 0 }.map { item in
+            let label = registry.label(of: item.kind).name
+            return "\(item.count) \(item.count == 1 ? label : DeleteSteps.plural(label))"
+        }
+        return "\(DeleteSteps.list(parts)) left out"
+    }
+
+    /// "Column" or "Columns".
+    static func title(_ noun: LineNoun, _ count: Int) -> String { count == 1 ? noun.title : noun.pluralTitle }
+
+    /// `name` and what went along, each kind counted even for one: "Delete Column and 1 Arrow".
+    public static func counted(_ name: String, along: [KindCount], in registry: Registry) -> String {
+        let counted = along.filter { $0.count > 0 }
+        guard !counted.isEmpty else { return name }
+        let parts = counted.map { item in
+            let label = registry.label(of: item.kind).name
+            return "\(item.count) \(item.count == 1 ? label : DeleteSteps.plural(label))"
+        }
+        return "\(name) and \(DeleteSteps.list(parts))"
+    }
+}
+
+extension CanvasEditor {
+    /// Moves `rows` of `shape` (those it holds, in its order) to `place`, as one step the kind's noun names, keeping their
+    /// ids (a new one only where the target holds that id already), and returns the shape they're in now: within the shape
+    /// they go before `before` as a block ("Move Column"; a place inside the block is no move); into another shape of a kind
+    /// that takes them, what's bound to them is bound to them there (`moveParts`, which tells `PartsMoved`); out on their own
+    /// into the kind's take-out, put down at the origin or beside shapes as Insert puts one, settled ("Move Columns to New
+    /// Table": a table landing in a database goes in it), selected, its name typed at once where the kind says so (what's
+    /// typed is the same step). The rows end selected as items of their shape. All or nothing: a read-only source or target,
+    /// a read-only container that would take the new shape, or a read-only board refuses it, and what was tried shakes. Nil
+    /// for no move.
+    @discardableResult
+    public func moveRows(_ rows: [PartID], of shape: ShapeID, to place: RowPlace, coalescing key: AnyHashable? = nil) -> ShapeID? {
+        moveRows(rows, of: shape, to: place, coalescing: key, targetWas: nil)
+    }
+
+    /// `moveRows(_:of:to:)` into a shape whose fold was let go for the move: `targetWas` is its frame at rest while it was folded,
+    /// which the step measures its growth from, so what's below is pushed for every row it shows now (review R9).
+    func moveRows(_ rows: [PartID], of shape: ShapeID, to place: RowPlace, coalescing key: AnyHashable?, targetWas: CGRect?) -> ShapeID? {
+        guard let record = document[shape], let moving = registry.rowMoving(of: record.kind) else { return nil }
+        let order = moving.rows(record) ?? []
+        // A header goes with the rows it heads.
+        let wanted = withGroups(Set(rows), of: record)
+        let ids = order.filter(wanted.contains)
+        guard !ids.isEmpty else { return nil }
+        if case .into(let target, let before) = place, target == shape {
+            let selected = Set(rows)
+            return reorderRows(ids, of: shape, before: before, order: order, moving: moving, selecting: ids.filter(selected.contains),
+                               coalescing: key) ? shape : nil
+        }
+        guard let carrier = moving.carrier(record, ids) else { return nil }
+        let noun = stepNoun(of: ids, in: record, moving)
+        let step: String = if case .into = place { RowSteps.move(noun, count: ids.count) } else {
+            takeOutStep(of: carrier, noun: noun, count: ids.count, moving)
+        }
+        return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key, targetWas: targetWas)?.shape
+    }
+
+    /// ⌥↑ (-1) ⌥↓ (+1): `rows` of `shape` moved a place as a block, past the row shown before the first or after the last, so a
+    /// press of a folded shape changes what it shows: rows its fold hides are stepped over. A header takes the rows it heads
+    /// along, open or closed, and a block with one passes a whole group, the one before it or after it (none past the first
+    /// or the last: nothing). Nothing at the ends. Held or repeated, one step (`coalescing`).
+    @discardableResult
+    public func moveRows(_ rows: [PartID], of shape: ShapeID, by delta: Int, coalescing key: AnyHashable? = nil) -> Bool {
+        guard let record = document[shape], let moving = registry.rowMoving(of: record.kind) else { return false }
+        let order = moving.rows(record) ?? []
+        let shown = shapeContext.layoutInput(LineRowsLayout.shown, of: record)
+        let heads = registry.lineRows(of: record.kind)?.rows(record)?.map(\.isHeader) ?? []
+        func isHeader(_ index: Int) -> Bool { heads.indices.contains(index) && heads[index] }
+        let block = withGroups(Set(rows), of: record)
+        let indices = order.indices.filter { block.contains(order[$0]) }
+        guard let first = indices.first, let last = indices.last else { return false }
+        func isShown(_ index: Int) -> Bool { shown?.isShown(index) ?? true }
+        let before: PartID?
+        if indices.contains(where: isHeader) {
+            // A group passes a group: up, above the header before it; down, below the whole group after it.
+            if delta < 0 {
+                guard let above = (0..<first).last(where: { isHeader($0) && !block.contains(order[$0]) }) else { return false }
+                before = order[above]
+            } else {
+                guard let next = ((last + 1)..<order.count).first(where: { isHeader($0) && !block.contains(order[$0]) }) else { return false }
+                let end = ((next + 1)..<order.count).first(where: isHeader) ?? order.count
+                before = end < order.count ? order[end] : nil
+            }
+        } else if delta < 0 {
+            guard let above = (0..<first).last(where: { !block.contains(order[$0]) && isShown($0) }) else { return false }
+            before = order[above]
+        } else {
+            guard let below = ((last + 1)..<order.count).first(where: { !block.contains(order[$0]) && isShown($0) }) else { return false }
+            // Past a closed header, past what it hides.
+            var after = below + 1
+            if let shown { while after < order.count, shown.line(standingFor: after) == shown.line(standingFor: below) { after += 1 } }
+            before = after < order.count ? order[after] : nil
+        }
+        return moveRows(rows, of: shape, to: .into(shape, before: before), coalescing: key ?? AnyHashable(RowMoveRun(shape: shape, rows: Set(rows)))) != nil
+    }
+
+    /// The rows as a block before `before` in their shape, as the kind reorders them: one step, `selecting` selected as items
+    /// after (the rows as they were selected, a header without its group, so a held key's presses are one run), unless the
+    /// shape is edited, whose session keeps its own. No step where the kind's reordering changes nothing.
+    private func reorderRows(_ ids: [PartID], of shape: ShapeID, before: PartID?, order: [PartID], moving: LineRowsMoving,
+                             selecting: [PartID], coalescing key: AnyHashable?) -> Bool {
+        let moved = Set(ids)
+        if let before, moved.contains(before) { return false }
+        let rest = order.filter { !moved.contains($0) }
+        let index = before.flatMap { rest.firstIndex(of: $0) } ?? rest.count
+        guard let record = document[shape], let reordered = moving.reordering(record, ids, index), reordered != record else { return false }
+        let step = RowSteps.move(stepNoun(of: ids, in: record, moving), count: ids.count)
+        let done: Bool? = transactWhole(step, coalescing: key, shaking: [shape]) { transaction in
+            guard let fresh = transaction.document[shape], let reordered = moving.reordering(fresh, ids, index) else { throw Transaction.Refused([shape]) }
+            transaction.update(shape) { $0 = reordered }
+            return true
+        }
+        guard done == true else { return false }
+        if editingShapeID != shape { selectItems((selecting.isEmpty ? ids : selecting).map(AnyHashable.init), of: shape) }
+        announce(step)
+        return true
+    }
+
+    /// Puts a carrier's rows down at `place`, as one step `step`: from `source` (taken out of it) when they move, with
+    /// `arrows` (a paste's, bound to the carrier's rows) bound to where the rows landed, an arrow whose other end isn't on
+    /// the board shown left out; `moves` says the rows are the same rows (a move, a cut's paste), so what's bound to them or
+    /// names them follows (`moveParts`), and the arrows keep their ids where the file doesn't use them. Returns the shape
+    /// they're in.
+    func landRows(_ carrier: AnyShapeRecord, source: ShapeID?, arrows: [AnyShapeRecord], far: [FarArrow] = [], moves: Bool, at place: RowPlace, step: String,
+                  coalescing key: AnyHashable? = nil, targetWas: CGRect? = nil) -> (shape: ShapeID, rows: [PartID])? {
+        guard let moving = registry.rowMoving(of: carrier.kind) else { return nil }
+        let rows = moving.rows(carrier) ?? []
+        guard !rows.isEmpty else { return nil }
+        guard !isBoardReadOnly else {
+            refuseChanges(to: Set([source, board.owner].compactMap { $0 }))
+            return nil
+        }
+        // Where they land, and what each row's id is there.
+        enum Landing {
+            case into(ShapeID, index: Int, renaming: [PartID: PartID])
+            case out(AnyShapeRecord)
+        }
+        let landing: Landing
+        var besideShapes: [ShapeID] = []
+        switch place {
+        case .into(let target, let before):
+            guard let held = document[target], let into = registry.rowMoving(of: held.kind), into.takes(carrier.kind) else { return nil }
+            let order = (into.rows(held) ?? []).filter { target != source || !rows.contains($0) }
+            let taken = Set(order)
+            var renaming: [PartID: PartID] = [:]
+            for row in rows where taken.contains(row) { renaming[row] = PartID() }
+            landing = .into(target, index: before.flatMap { order.firstIndex(of: $0) } ?? order.count, renaming: renaming)
+        case .board(let origin):
+            guard var made = moving.takeOut(carrier) else { return nil }
+            if let wider = moving.widening(made, self) { made = wider }
+            made = placed(made, at: origin)
+            landing = .out(made)
+        case .beside(let shapes):
+            besideShapes = shapes.filter { document[$0] != nil }
+            guard var made = moving.takeOut(carrier) else { return nil }
+            // As wide as its rows read whole, before it's placed.
+            if let wider = moving.widening(made, self) { made = wider }
+            guard let size = laidOutSize(of: made),
+                  let frame = insertionFrame(of: size, beside: shapes.filter { document[$0] != nil }) else { return nil }
+            landing = .out(placed(made, at: frame.origin))
+        }
+        let destination: ShapeID
+        let renaming: [PartID: PartID]
+        switch landing {
+        case .into(let target, _, let map):
+            destination = target
+            renaming = map
+        case .out(let made):
+            destination = made.id
+            renaming = [:]
+        }
+        let landed = rows.map { renaming[$0] ?? $0 }
+        // What a refusal shakes is what the transaction heard refused and what the body names (the source, the target, the container
+        // that would not take a shape put down): the new shape isn't there yet to shake.
+        var left: [KindCount] = []
+        let body = { [self] () -> [ShapeID: CGPoint]? in
+            left = []
+            return transactWhole(step, coalescing: key) { transaction -> [ShapeID: CGPoint] in
+                // A source that is its rows (an endpoint of its own) goes once what's bound to them has followed them.
+                var emptied: ShapeID?
+                if let source, let fresh = transaction.document[source], let from = registry.rowMoving(of: fresh.kind) {
+                    if from.goesWithItsRows, Set(from.rows(fresh) ?? []).isSubset(of: Set(rows)) {
+                        guard !transaction.isReadOnly(fresh) else { throw Transaction.Refused([source]) }
+                        emptied = source
+                    } else {
+                        guard let without = from.removing(fresh, Set(rows)) else { throw Transaction.Refused([source]) }
+                        transaction.update(source) { $0 = without }
+                    }
+                }
+                switch landing {
+                case .into(let target, let index, let renaming):
+                    guard let fresh = transaction.document[target], let into = registry.rowMoving(of: fresh.kind),
+                          let filled = into.inserting(fresh, carrier, index, renaming) else { throw Transaction.Refused([target]) }
+                    let whole = into.widening(filled, self) ?? filled
+                    transaction.update(target) { $0 = whole }
+                    if let targetWas { transaction.restedAs(targetWas, for: target) }
+                case .out(let made):
+                    transaction.insert(made)
+                }
+                var moved: [PartAddress: PartAddress] = [:]
+                for row in rows { moved[PartAddress(carrier.id, part: row)] = PartAddress(destination, part: renaming[row] ?? row) }
+                // A shape that is its one row (an endpoint of its own), gone with it (moved out of it here, or cut), is that row
+                // where it went: what names the shape as a whole follows the row too, on any board.
+                if moving.goesWithItsRows, rows.count == 1, destination != carrier.id, source == nil || emptied == carrier.id {
+                    moved[PartAddress(carrier.id)] = PartAddress(destination, part: renaming[rows[0]] ?? rows[0])
+                }
+                // A paste's arrows, bound to the rows where they landed; one whose other end is on another board comes back through a
+                // pill for that end here (Connections' `reachingFarEnds`, as a key reaches a table across boards), else it's left out
+                // (and said); and one bound to a row of another shape that is gone since is bound to that shape as a whole, as taking
+                // the row out does.
+                var put: [ShapeID] = []
+                var pills: [CGRect] = []
+                func leaveOut(_ arrow: AnyShapeRecord) {
+                    if let at = left.firstIndex(where: { $0.kind == arrow.kind }) { left[at].count += 1 } else { left.append(KindCount(kind: arrow.kind, count: 1)) }
+                }
+                for arrow in arrows {
+                    guard var bound = arrow.movingParts(in: registry, { moved[$0] ?? $0 }) ?? Optional(arrow) else { continue }
+                    if !bound.boundParts(in: registry).allSatisfy({ transaction.document[$0.shape] != nil }) {
+                        guard let reached = reachingFarEnds(of: bound, beside: destination, avoiding: &pills, in: &transaction) else {
+                            leaveOut(arrow)
+                            continue
+                        }
+                        bound = reached
+                    }
+                    bound = bound.movingParts(in: registry, { address in
+                        guard let part = address.part, let held = transaction.document[address.shape], let names = registry.parts(of: held),
+                              !names.contains(where: { $0.id == part }) else { return address }
+                        return PartAddress(address.shape)
+                    }) ?? bound
+                    if !moves || !file.isUnused(bound.id) || transaction.document[bound.id] != nil { bound = bound.copy(as: ShapeID()) }
+                    transaction.insert(bound)
+                    put.append(bound.id)
+                }
+                // A cut's keys that reached its rows through a pill on another board are put back on that board, bound as they
+                // were; `moveParts` then follows them to where the rows went, through the pill or to it as a whole.
+                if moves {
+                    for key in far {
+                        let there = transaction.contents(of: key.board)
+                        guard transaction.mayWrite(on: key.board), there[key.record.id] == nil, file.isUnused(key.record.id),
+                              key.record.boundParts(in: registry).allSatisfy({ there[$0.shape] != nil }) else {
+                            leaveOut(key.record)
+                            continue
+                        }
+                        transaction.insert(key.record, on: key.board)
+                    }
+                    transaction.moveParts(moved)
+                }
+                if let emptied { transaction.delete([emptied]) }
+                guard case .out = landing else { return [:] }
+                switch transaction.settle([destination] + put) {
+                case .settled(let nudges): return nudges
+                case .refused(let container): throw Transaction.Refused([container])
+                }
+            }
+        }
+        var out = false, madeOwnKind = true
+        if case .out(let made) = landing {
+            out = true
+            madeOwnKind = made.kind == carrier.kind
+        }
+        // A take-out of another kind (an endpoint of its own) is named by that kind (its title derived): nothing to type.
+        let editsTitle = out && moving.editsTitle && madeOwnKind
+        var nudges: [ShapeID: CGPoint]?
+        if editsTitle {
+            // The name typed into the new shape is the same step.
+            undoHistory.group(step) {
+                nudges = body()
+                if let nudges { finishLanding(destination, landed: landed, out: true, editsTitle: true, nudges: nudges, beside: besideShapes) }
+            }
+        } else {
+            nudges = body()
+            if let nudges { finishLanding(destination, landed: landed, out: out, editsTitle: false, nudges: nudges, beside: besideShapes) }
+        }
+        guard nudges != nil else { return nil }
+        announce(left.isEmpty ? step : "\(step), \(RowSteps.leftOut(left, in: registry))")
+        return (destination, landed)
+    }
+
+    /// What a landing leaves: the new shape selected and brought into view (keeping what it was put beside in view with it, when
+    /// both fit), its name typed where the kind says so; else the rows selected as items of their shape. A shape that is its
+    /// rows (an endpoint of its own) is selected whole: its row is it.
+    private func finishLanding(_ shape: ShapeID, landed: [PartID], out: Bool, editsTitle: Bool, nudges: [ShapeID: CGPoint], beside: [ShapeID]) {
+        if out {
+            // A shape whose name is typed at once is laid out where it is, under its editing view.
+            var nudges = nudges
+            if editsTitle { nudges[shape] = nil }
+            glide(nudges)
+            selectedShapeIDs = [shape]
+            revealIfOffscreen([shape], keeping: beside)
+            if editsTitle {
+                beginEditing(shape)
+                return
+            }
+            if let kind = document[shape]?.kind, registry.rowMoving(of: kind)?.goesWithItsRows == true { return }
+        }
+        if editingShapeID != shape { selectItems(landed.map(AnyHashable.init), of: shape) }
+    }
+
+    /// `record` with its box's top-left at `origin`.
+    private func placed(_ record: AnyShapeRecord, at origin: CGPoint) -> AnyShapeRecord {
+        guard let box = record.box else { return record }
+        var moved = record
+        moved.box = CGRect(origin: origin, size: box.size)
+        return moved
+    }
+
+    /// `rows` of `record`, and the rows each header among them heads (those after it, up to the next header): a header moves
+    /// with its group.
+    func withGroups(_ rows: Set<PartID>, of record: AnyShapeRecord) -> Set<PartID> {
+        guard let all = registry.lineRows(of: record.kind)?.rows(record), all.contains(where: \.isHeader) else { return rows }
+        var block = rows, heading = false
+        for row in all {
+            if row.isHeader { heading = rows.contains(row.id) } else if heading { block.insert(row.id) }
+        }
+        return block
+    }
+
+    /// What the steps of moving `ids` of `record` call them: the kind's noun, or its header noun for a block of only headers (a
+    /// path prefix moved with nothing under it is no endpoint).
+    func stepNoun(of ids: [PartID], in record: AnyShapeRecord, _ moving: LineRowsMoving) -> LineNoun {
+        guard let header = moving.headerNoun, let rows = registry.lineRows(of: record.kind)?.rows(record) else { return moving.noun }
+        let wanted = Set(ids)
+        let chosen = rows.filter { wanted.contains($0.id) }
+        return !chosen.isEmpty && chosen.allSatisfy(\.isHeader) ? header : moving.noun
+    }
+
+    /// What taking a carrier's rows out is called: the kind's own name for it ("Take Out Endpoint"), else the noun's ("Move Columns
+    /// to New Table").
+    func takeOutStep(of carrier: AnyShapeRecord, noun: LineNoun, count: Int, _ moving: LineRowsMoving) -> String {
+        moving.takeOutStep(carrier) ?? RowSteps.takeOut(noun, count: count, into: carrier.kind, in: registry)
+    }
+
+    /// How big `record` is laid out, as a shape of its own.
+    func laidOutSize(of record: AnyShapeRecord) -> CGSize? {
+        ShapeContext(document: CanvasDocument(shapes: [record]), registry: registry).bounds(of: [record.id])?.size ?? record.box?.size
+    }
+}
+
+/// Moves of one block of rows, repeated, coalesced into one step.
+struct RowMoveRun: Hashable {
+    let shape: ShapeID
+    let rows: Set<PartID>
+}

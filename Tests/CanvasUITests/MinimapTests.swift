@@ -192,12 +192,17 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         canvas.showsMinimap = true
         let minimap = try require(canvas.minimap)
         expectEqual(minimap.frame, CGRect(x: 12, y: 438, width: 200, height: 150))
+        // The corner it covers, its margin in, is told the editor: what keeps a shape in view keeps it out of there.
+        expectEqual(h.editor.coveredCorners, CoveredCorners(bottomLeft: CGSize(width: 212, height: 162)))
+        expectEqual(h.editor.clearView.covered, [CGRect(x: 0, y: 438, width: 212, height: 162)])
         window.setContentSize(CGSize(width: 480, height: 400))
         expectEqual(minimap.frame, CGRect(x: 12, y: 288, width: 120, height: 100), "no narrower than 120 points")
+        expectEqual(h.editor.coveredCorners, CoveredCorners(bottomLeft: CGSize(width: 132, height: 112)))
         window.setContentSize(CGSize(width: 1600, height: 1000))
         expectEqual(minimap.frame, CGRect(x: 12, y: 863, width: 200, height: 125), "no wider than 200 points")
         canvas.showsMinimap = false
         expect(canvas.minimap == nil && minimap.superview == nil)
+        expectEqual(h.editor.coveredCorners, CoveredCorners(), "no minimap, no corner covered")
     },
     test("it draws each shape as a silhouette where it is, the part the canvas shows outlined, the rest under a veil") {
         let h = try minimapEditor()

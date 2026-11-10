@@ -190,7 +190,7 @@ struct RuleContext: Sendable {
         func words(_ record: AnyShapeRecord) -> String? {
             guard let key = world.kinds[record.kind]?.words, let stored = record.propertiesJSON?[key]?.stringValue else { return nil }
             if stored.contains("@[") {
-                for case let .mention(target, _) in MentionText(stored: stored).runs { read.insert(target) }
+                for case let .mention(target, _) in MentionText(stored: stored).runs { read.insert(target.shape) }
             }
             let text = MentionText.plainText(stored: stored, label: world.labels.label(of:)).trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text

@@ -82,6 +82,38 @@ extension TagDefinition: ShapeReferencing {
     }
 }
 
+/// A box shown below another shape, as a connector bound to rows of cards is (`paintsBelowAnchor`): `Tag`'s reverse.
+public struct Underlay: ShapeProps {
+    public static let kind: ShapeKind = "underlay"
+    public static let properties = Properties<Underlay> {
+        Property("target", \.target)
+    }
+    public var target: ShapeID?
+    public init(target: ShapeID?) { self.target = target }
+}
+
+extension Underlay {
+    public init() { self.init(target: nil) }
+}
+
+struct UnderlayDefinition: ShapeDefinition, PaintOrderAnchored {
+    func render(_ shape: ShapeRecord<Underlay>, in context: RenderContext) {}
+    func geometry(of shape: ShapeRecord<Underlay>, in context: ShapeContext) -> ShapeGeometry {
+        ShapeGeometry(outline: [], bounds: .zero, isClosed: false)
+    }
+    func paintAnchor(of shape: ShapeRecord<Underlay>, in document: CanvasDocument) -> ShapeID? { shape.props.target }
+    func paintsBelowAnchor(_ shape: ShapeRecord<Underlay>, in document: CanvasDocument) -> Bool { true }
+}
+
+/// The "underlay" kind, no tool, apart from `FixturesPlugin` so the registry reports tests pin don't change.
+public struct UnderlaysPlugin: CanvasPlugin {
+    public init() {}
+    public var id: PluginID { "underlays" }
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.shape(UnderlayDefinition())
+    }
+}
+
 /// "box", "disc" and "tag" kinds, no tools. What core and horizontal tests draw with, so they
 /// never depend on a real vertical.
 public struct FixturesPlugin: CanvasPlugin {

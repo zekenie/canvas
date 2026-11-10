@@ -27,6 +27,14 @@ import Topology
 @MainActor
 public final class ReferenceState {
     unowned let editor: CanvasEditor
+    /// The editor, held weakly as well: a batch holds this service across its second wait (its answers prepared off the main
+    /// actor), so the deinit that would cancel it waits too, and what a task or a turn of the scheduler does after it waited asks
+    /// first whether the editor is still there (`isEditorGone`), since reading `editor` once it has gone is fatal (a test's editor
+    /// goes as the test ends, with no file to close).
+    private weak var liveEditor: CanvasEditor?
+    /// Whether the editor has gone while a task or a turn of the scheduler waited: such a continuation does nothing, and reads
+    /// nothing of the editor.
+    var isEditorGone: Bool { liveEditor == nil }
     /// The reference being typed into whose list has only the words row left (the hand-off to
     /// natural language): its pill leads with the magnifier.
     private var handingOff: ShapeID?
@@ -106,6 +114,9 @@ public final class ReferenceState {
     /// How many batches have been asked, and how many have landed (debug builds).
     public internal(set) var batchesAsked = 0
     public internal(set) var batchesLanded = 0
+    /// Awaited by a batch between its answers prepared off the main actor and their landing, while the batch holds this service
+    /// (debug builds): a test lets the editor go in that window.
+    public var beforeLanding: (@MainActor () async -> Void)?
     /// How many references answers are kept for (at most `ReferenceStyle.memosKept`), and whether
     /// any are for `id` (debug builds).
     public var memoCount: Int { memo.count }
@@ -122,6 +133,7 @@ public final class ReferenceState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        liveEditor = editor
         paths = ShapePaths(editor: editor)
         settling = editor.topology?.keepsSettling { [weak self] in self?.isFinding ?? false }
         following = editor.topology?.follow { [weak self] change in self?.edgesChanged(change) }
@@ -173,7 +185,7 @@ public final class ReferenceState {
         var place: DrawnPlace?
         if condition.appearance != nil {
             // What trails a direct pill (the eye, a warning) sits on the name's line, so the place has the whole room.
-            place = makePlace(pill: id, target: target.id, room: width - ReferenceStyle.padding)
+            place = makePlace(pill: id, target: target, room: width - ReferenceStyle.padding)
         }
         drawnConditions[id] = (target, condition, width, place)
         return condition
@@ -181,10 +193,10 @@ public final class ReferenceState {
 
     /// The place of `target` seen from the pill `pill`, folded in `room`; nil for the same place. On the root, nothing in the place
     /// opens a board but its lead, the file's name, which changes with no commit.
-    private func makePlace(pill: ShapeID, target: ShapeID, room: CGFloat) -> DrawnPlace? {
-        let steps = placeOfTarget(from: pill, target)
+    private func makePlace(pill: ShapeID, target: ReferenceTarget, room: CGFloat) -> DrawnPlace? {
+        let steps = placeOfTarget(from: pill, target.id) + rowStep(of: target)
         guard !steps.isEmpty else { return nil }
-        let onRoot = editor.file.board(containing: target)?.isRoot == true && steps[0].opensBoard
+        let onRoot = editor.file.board(containing: target.id)?.isRoot == true && steps[0].opensBoard
         return DrawnPlace(steps: steps, line: ReferenceStyle.placeLine(steps, room: room), rootName: onRoot ? editor.rootName : nil)
     }
 
@@ -205,6 +217,14 @@ public final class ReferenceState {
         drawnPlaceSources.formUnion(above)
         drawnPlaceSources.formUnion(own)
         return placeSteps(of: target, beyond: own, from: editor.file.board(containing: pill), noting: true)
+    }
+
+    /// For a pill that stands for a row, the step its place ends with: the shape the row is in, called as a path calls a container
+    /// ("orders API", over "POST /orders"); none for a pill for a shape, or a shape that's gone.
+    func rowStep(of target: ReferenceTarget) -> [PlaceStep] {
+        guard target.row != nil, let record = editor.shape(inFile: target.id) else { return [] }
+        let name = editor.registry.containerName(of: record)
+        return [PlaceStep(name: name.text, opensBoard: false, isPlaceholder: name.isPlaceholder)]
     }
 
     /// The steps from where a viewer inside `own` (outermost first) on `board` is to `target`: the containers `target` is
@@ -252,7 +272,7 @@ public final class ReferenceState {
             guard let first = found.ids.first else { return nil }
             let width = shape.props.frame.width
             if let kept = dynamicPlaces[shape.id], kept.first == first, kept.width == width, !isStale(kept.place) { return kept.place }
-            let place = makePlace(pill: shape.id, target: first, room: width - ReferenceStyle.padding - ReferenceStyle.badgeRoom)
+            let place = makePlace(pill: shape.id, target: ReferenceTarget(id: first, label: ""), room: width - ReferenceStyle.padding - ReferenceStyle.badgeRoom)
             dynamicPlaces[shape.id] = (first, width, place)
             return place
         default:
@@ -583,7 +603,7 @@ public final class ReferenceState {
               let query = shown(props, id: id).query else { return nil }
         return Task { @MainActor [weak self, queries] in
             let results = await queries.matches([QueryMatchRequest(query, edges: .recorded, limit: QueryMatchRequest.every, admitting: admitting)])
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, !isEditorGone else { return }
             let asks = editor.shape(inFile: id)?.typed(as: Reference.self).flatMap { shown($0.props, id: id).query }
             guard asks == query, case .success(let matches)? = results.first else { return then(nil) }
             then(matches.ids)
@@ -642,21 +662,21 @@ public final class ReferenceState {
     /// The whole place and the name, when what the pill shows of the place is folded or cut, or isn't shown: two lines; else none.
     private func whole(placeOf condition: ReferenceCondition, of reference: ShapeRecord<Reference>) -> [NSAttributedString] {
         let width = reference.props.frame.width
-        let target: ShapeID, name: String, room: CGFloat
+        let target: ReferenceTarget, name: String, room: CGFloat
         switch condition {
         case .live(let appearance):
-            guard let id = reference.props.target?.id else { return [] }
-            (target, name, room) = (id, appearance.label, width - ReferenceStyle.padding)
+            guard let held = reference.props.target else { return [] }
+            (target, name, room) = (held, appearance.label, width - ReferenceStyle.padding)
         case .notPublic(let appearance):
-            guard let id = reference.props.target?.id else { return [] }
-            (target, name, room) = (id, appearance.label, width - ReferenceStyle.padding)
+            guard let held = reference.props.target else { return [] }
+            (target, name, room) = (held, appearance.label, width - ReferenceStyle.padding)
         case .found(let text, let found) where !found.all:
             guard let id = found.ids.first else { return [] }
-            (target, name, room) = (id, text, width - ReferenceStyle.padding - ReferenceStyle.badgeRoom)
+            (target, name, room) = (ReferenceTarget(id: id, label: text), text, width - ReferenceStyle.padding - ReferenceStyle.badgeRoom)
         default:
             return []
         }
-        let steps = placeOfPick(from: reference.id, target)
+        let steps = placeOfPick(from: reference.id, target.id) + rowStep(of: target)
         guard !steps.isEmpty else { return [] }
         let line = ReferenceStyle.placeLine(steps, room: room)
         guard line.isShortened || line.isEmpty || !ReferenceStyle.showsPlace(atZoom: editor.camera.zoom) else { return [] }
@@ -712,24 +732,26 @@ public final class ReferenceState {
     /// What VoiceOver says of a reference as its pill shows it.
     private func pillTraits(of reference: ShapeRecord<Reference>) -> AccessibleTraits {
         let condition = state(of: reference.props, id: reference.id)
-        func place(of target: ShapeID) -> String? {
-            let steps = placeOfPick(from: reference.id, target)
+        func place(of target: ReferenceTarget) -> String? {
+            let steps = placeOfPick(from: reference.id, target.id) + rowStep(of: target)
             return steps.isEmpty ? nil : "in " + steps.map(\.name).joined(separator: PlaceFold.separator)
         }
         switch condition {
         case .empty:
             return AccessibleTraits()
         case .live(let appearance):
-            return AccessibleTraits(name: appearance.label, labelParts: reference.props.target.flatMap { place(of: $0.id) }.map { [$0] } ?? [])
+            // A row's kind word, "POST /orders, Endpoint, in Shop › orders API", as a row in a list is read.
+            let kind = reference.props.target?.row == nil ? [] : [appearance.kindName]
+            return AccessibleTraits(name: appearance.label, labelParts: kind + (reference.props.target.flatMap { place(of: $0) }.map { [$0] } ?? []))
         case .notPublic(let appearance):
-            let parts = reference.props.target.flatMap { place(of: $0.id) }.map { [$0] } ?? []
+            let parts = reference.props.target.flatMap { place(of: $0) }.map { [$0] } ?? []
             return AccessibleTraits(name: appearance.label, labelParts: parts + [ReferenceStyle.privateHelp.lowercased()])
         case .missing(let label):
             return AccessibleTraits(name: label, labelParts: [ReferenceStyle.deletedHelp])
         case .unavailable(let label):
             return AccessibleTraits(name: label, labelParts: [ReferenceStyle.unavailableHelp])
         case .found(let text, let found):
-            let there = found.all ? nil : found.ids.first.flatMap { place(of: $0) }
+            let there = found.all ? nil : found.ids.first.flatMap { place(of: ReferenceTarget(id: $0, label: text)) }
             return AccessibleTraits(name: text, labelParts: [ReferenceStyle.matchesLine(found)] + (there.map { [$0] } ?? []))
         case .noMatches(let text), .refused(let text, _):
             return AccessibleTraits(name: text, labelParts: [ReferenceStyle.noMatches])

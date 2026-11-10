@@ -528,11 +528,11 @@ import TestKit
         let chain = parseError(#"edge "A" -> "B" -> "C""#)
         expectEqual(chain?.reason, .unsupported)
         expectEqual(chain?.message, #"edge "A" -> "B": an edge joins two shapes, and this one goes on to a third"#)
-        let text = parseError(#"edge "A" -> "B" "calls""#)
+        let text = parseError(#"edge "A" -> "B" "rings""#)
         expectEqual(text?.reason, .syntax)
-        expectEqual(text?.message, #"edge "A" -> "B": "calls" is a title where none goes"#)
-        expectEqual(text?.hint, #"what an edge says is written after a key: text: "calls""#)
-        guard case .edge(let edge) = try parse(#"edge "A" -> "B" text: "calls" labelPosition: 0.25"#) else { throw RequireFailed() }
+        expectEqual(text?.message, #"edge "A" -> "B": "rings" is a title where none goes"#)
+        expectEqual(text?.hint, #"what an edge says is written after a key: text: "rings""#)
+        guard case .edge(let edge) = try parse(#"edge "A" -> "B" text: "rings" labelPosition: 0.25"#) else { throw RequireFailed() }
         expectEqual(edge.attributes.map(\.key), ["text", "labelPosition"])
     },
     test("an edge's ends are quoted titles joined by ->, <- or <->") {
@@ -692,7 +692,7 @@ import TestKit
         let error = ScriptError(line: 3, reason: .syntax, "bad", hint: "fix it")
         expectEqual(error.description, "line 3: bad (fix it)")
         expectEqual(ScriptError.Reason.noRoom.rawValue, "no_room")
-        expectEqual(ScriptError.Reason.allCases.count, 34)
+        expectEqual(ScriptError.Reason.allCases.count, 35)
         expectEqual(ScriptError.Reason.noGroups.rawValue, "no_groups")
     },
 ])

@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Foundation
 import Selection
@@ -42,6 +43,26 @@ import Types
 }
 
 @MainActor let releaseTests = Suite("The release of a port's drag", [
+    test("Types answers the release as the one list asks it: settled for a type taken, offers for several (the types as rows), nothing for a plain arrow; the list is not opened by the answer") {
+        let w = try Release()
+        let taken = w.editor.addBond(w.ann, w.acme)
+        guard case .settled = w.editor.relationshipAnswer(taken) else { return expect(false, "one fits: settled") }
+        expectEqual(w.types(of: taken), [w.employment], "given in the answer's own step")
+        expect(w.editor.menuToPopUp == nil)
+        let mentorship = w.editor.addRelationshipType("Mentorship", at: CGPoint(x: 800, y: 40))
+        w.drawEnds(of: mentorship)
+        let several = w.editor.addBond(w.ann, w.acme)
+        guard case .offers(let choices, drawnPlain: let drawnPlain) = w.editor.relationshipAnswer(several) else { return expect(false, "several fit: offers") }
+        expectEqual(choices.map(\.title), ["Employment", "Mentorship"])
+        expect(!drawnPlain, "Types takes no channel off")
+        expect(w.editor.menuToPopUp == nil, "the one list opens it, not the answer")
+        expectEqual(w.types(of: several), [], "nothing given until a pick")
+        choices[1].pick(w.editor)
+        expectEqual(w.types(of: several), [mentorship], "a row's pick is Add Type")
+        expectEqual(w.editor.undoHistory.undoName, TypesStyle.addType)
+        let ann2 = w.editor.addInstance("Bo", of: [w.person], at: CGPoint(x: 40, y: 600))
+        guard case .nothing = w.editor.relationshipAnswer(w.editor.addBond(w.ann, ann2)) else { return expect(false, "nothing fits: nothing") }
+    },
     test("an arrow between two notes that one relationship type fits takes it, as one step that Undo takes back, and opens no list") {
         let w = try Release()
         let bond = w.editor.addBond(w.ann, w.acme)

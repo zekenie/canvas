@@ -442,7 +442,7 @@ private final class PickWorld {
         expect(try w.bytes() == start, "one Undo, both boards")
         expectEqual(w.editor.board, world.board)
     },
-    test("a related note moved onto the other board by a drop of its row, with no handler for the move yet: its arrow keeps its end on the pill, now free, is warned of and sits in no row, and one Undo restores it") {
+    test("a related note moved onto the other board by a drop of its row, where the note it is related to is: its arrow goes with it and ends at that note itself, not the pill it had, which stays; the relation is kept, no warning, in Ann's row, and one Undo restores it") {
         let w = try PickWorld()
         defer { w.close() }
         let world = w.world
@@ -450,19 +450,21 @@ private final class PickWorld {
         w.editor.undoHistory.seal()
         let start = try w.bytes(), startFile = w.editor.file
         expectEqual((w.editor.validation?.result(for: arrow)?.issues ?? []).map(\.message), [])
+        let pill = try require(w.references.first, "the pill the pick made for Acme, on the board Ann is on")
         let contents = try require(w.editor.tableOfContents)
         expect(contents.beginDrag(from: world.ann) && contents.drop(on: ContentsDropTarget(row: world.clients, zone: .on)))
         expectEqual(w.editor.file.board(containing: world.ann), world.board, "Ann is on Clients")
         expectEqual(w.editor.board, world.board, "and the window with her")
         expectEqual(w.editor.undoHistory.undoName, "Move")
-        let kept = try require(w.editor.file.record(arrow)?.typed(as: Arrow.self), "the arrow is kept")
-        expect(kept.props.start.binding?.shapeID != world.ann, "its end at Ann is free: \(kept.props.start)")
-        w.editor.goBack()
-        expectEqual(w.editor.board, .root, "Back to the board the arrow stayed on, which is the board Validation checks")
-        expect(!(w.editor.validation?.result(for: arrow)?.issues ?? []).isEmpty, "the arrow is warned of")
+        expectEqual(w.editor.file.board(containing: arrow), world.board, "the arrow went with her")
+        let kept = try require(w.editor.file.record(arrow)?.typed(as: Arrow.self))
+        expectEqual(kept.props.start.binding?.shapeID, world.ann)
+        expectEqual(kept.props.end.binding?.shapeID, world.acme, "straight to Acme, which is on Clients")
+        expectEqual(w.editor.file.board(containing: pill.id), .root, "the pill stays where it was")
+        expectEqual((w.editor.validation?.result(for: arrow)?.issues ?? []).map(\.message), [], "nothing to warn of")
         expectEqual(w.rows.rows(of: world.ann).first { $0.name == "employer" }.map { row -> Int in
             if case .related(let pills, _) = row.content { pills.count } else { 0 }
-        } ?? 0, 0, "and it is in no row")
+        } ?? 0, 1, "and it is in Ann's row")
         w.editor.undo()
         expect(try w.bytes() == start && w.editor.file == startFile, "one Undo restores it")
     },

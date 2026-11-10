@@ -1,0 +1,358 @@
+import AppKit
+@_spi(Host) import Canvas
+import CanvasTesting
+import Find
+import Geometry
+@_spi(Host) import CanvasUI
+import Keyboard
+import LineRows
+import Selection
+import TestKit
+import TextEditing
+
+// The fixture LineRows is held over, a kind of its own as TypesTests' `Memo` is: a tally, a box of entries written a line
+// each, `label [count] [name of another tally] [anything]`. Its count is a number; a name of another tally stands for it
+// (a reference, as an enum's name in a column does), printed as that tally is called now. It offers numbers and the
+// other tallies' names after a label, each tally lit while its name is highlighted.
+
+/// A tally: its name (its own, so the fixture needs no Titles) and its entries.
+struct Tally: BoxShapeProps {
+    static let kind: ShapeKind = "tally"
+    static let properties = Properties<Tally> {
+        Property("frame", \.frame).required()
+        Property("name", \.name)
+        Property("rows", \.rows)
+    }
+    var frame: CGRect
+    var name: String
+    var rows: [TallyRow]
+
+    init(_ frame: CGRect = CGRect(x: 0, y: 0, width: 240, height: 40), name: String = "", rows: [TallyRow] = []) {
+        self.frame = frame
+        self.name = name
+        self.rows = rows
+    }
+
+    init() { self.init(name: "") }
+
+    static let head: CGFloat = 10
+    static let rowHeight: CGFloat = 20
+
+    /// The bar a render draws at the left of an entry's line, and its lead (an entry with a count drags from it).
+    static func bar(in line: CGRect) -> CGRect { CGRect(x: line.minX + 4, y: line.midY - 2, width: 10, height: 4) }
+    static func lead(in line: CGRect) -> CGRect { CGRect(x: line.minX, y: line.minY, width: 20, height: line.height) }
+}
+
+/// An entry: its label, its count, the tally it names, and the words nothing read; and what only its card shows: whether it's
+/// starred, its color, its notes.
+struct TallyRow: SchemaDefined, Hashable, Sendable {
+    static let properties = Properties<TallyRow>(definition: "tally-row") {
+        Property("id", \.id).required()
+        Property("label", \.label)
+        Property("count", \.count)
+        Property("ref", \.ref)
+        Property("unread", \.unread)
+        Property("starred", \.starred)
+        Property("color", \.color)
+        Property("notes", \.notes)
+    }
+    var id: PartID
+    var label: String
+    var count: Int?
+    var ref: ShapeID?
+    var unread: String
+    var starred = false
+    var color: String?
+    var notes: [String] = []
+
+    init(id: PartID = PartID(), _ label: String, count: Int? = nil, ref: ShapeID? = nil, unread: String = "") {
+        self.id = id
+        self.label = label
+        self.count = count
+        self.ref = ref
+        self.unread = unread
+    }
+
+    init() { self.init("") }
+}
+
+/// What tallies drew: each entry's label as its render drew it, in order.
+@MainActor
+final class TallyLog {
+    var drawn: [String] = []
+}
+
+struct TallyDefinition: ShapeDefinition, LaidOutBox {
+    let log: TallyLog
+
+    /// White, and a black bar at the left of each entry's line (faded while a drag takes it: logged "~label").
+    func render(_ shape: ShapeRecord<Tally>, in context: RenderContext) {
+        let cg = context.cg, frame = context.shapes.frame(of: shape)
+        cg.setFillColor(NSColor.white.cgColor)
+        cg.fill(frame)
+        let focused = context.shapes.layoutInput(LineRowsLayout.focused, of: shape)
+        let shown = context.shapes.layoutInput(LineRowsLayout.shown, of: shape)
+        let faded = context.shapes.layoutInput(LineRowsLayout.faded, of: shape) ?? []
+        let waiting = context.shapes.layoutInput(LineRowsLayout.waiting, of: shape)
+        for (index, row) in shape.props.rows.enumerated() where row.id != focused && shown?.isShown(index) != false {
+            log.drawn.append(faded.contains(row.id) ? "~" + row.label : row.label)
+            let line = TallyLines.line(shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting), in: frame)
+            cg.setFillColor(NSColor.black.withAlphaComponent(faded.contains(row.id) ? RowDragStyle.fadedOpacity : 1).cgColor)
+            cg.fill(Tally.bar(in: line))
+        }
+        if let more = shown?.more { log.drawn.append("+\(more.count)") }
+    }
+
+    func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSize {
+        let shown = context.layoutInput(LineRowsLayout.shown, of: shape)
+        let lines = shown?.count ?? shape.props.rows.count + (context.layoutInput(LineRowsLayout.waiting, of: shape) == nil ? 0 : 1)
+        let width = max(shape.frame.width, context.layoutInput(LineRowsLayout.width, of: shape) ?? 0)
+        return CGSize(width: width, height: Tally.head * 2 + Tally.rowHeight * CGFloat(max(lines, 1)))
+    }
+
+    func geometry(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> ShapeGeometry {
+        let frame = context.frame(of: shape), waiting = context.layoutInput(LineRowsLayout.waiting, of: shape)
+        let shown = context.layoutInput(LineRowsLayout.shown, of: shape)
+        let parts = shape.props.rows.enumerated().map { index, row in
+            PartFrame(id: row.id, rect: TallyLines.line(shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting), in: frame),
+                      isShown: shown?.isShown(index) ?? true)
+        }
+        return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
+    }
+}
+
+/// Makes room as its entries grow, as the kit's kinds do (`Transaction.makeRoom()`).
+extension TallyDefinition: MakesRoomAsItGrows {}
+
+extension TallyDefinition: Editable {
+    func makeEditingView(for shape: ShapeRecord<Tally>, context: EditContext<Tally>) -> EditingView {
+        LineRowsView.make(shape, context: context, model: TallyLines(), title: nil)
+    }
+}
+
+extension TallyDefinition: PartedShape {
+    func parts(of shape: ShapeRecord<Tally>) -> [PartName] {
+        shape.props.rows.map { PartName(id: $0.id, name: $0.label, kindWord: "Entry") }
+    }
+}
+
+/// The other tallies by name, in the document's order.
+@MainActor
+func tallies(named name: String, in editor: CanvasEditor) -> [ShapeID] {
+    editor.document.shapes.compactMap { $0.typed(as: Tally.self) }.filter { $0.props.name == name }.map(\.id)
+}
+
+/// An entry's line: `label [count] [tally] [rest]`.
+struct TallyGrammar: LineGrammar {
+    typealias Row = TallyRow
+
+    func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<TallyRow> {
+        let words = Self.words(line.string)
+        guard let label = words.first else { return LineReading(row: nil) }
+        var row = TallyRow(id: id, label.text)
+        var spans = [LineSpan(label.range, .name)]
+        var rest = words.dropFirst()
+        if let second = rest.first {
+            if let count = Int(second.text) {
+                row.count = count
+                spans.append(LineSpan(second.range, .code))
+                rest = rest.dropFirst()
+            } else if let target = line.reference(at: second.range)?.shape ?? tallies(named: second.text, in: context.editor).first {
+                row.ref = target
+                spans.append(LineSpan(second.range, .pill(.systemPurple.withAlphaComponent(0.2), ink: .systemPurple)))
+                rest = rest.dropFirst()
+            }
+        }
+        for word in rest { spans.append(LineSpan(word.range, word.text == "!" ? .keyword : .plain)) }
+        row.unread = rest.map(\.text).joined(separator: " ")
+        return LineReading(row: row, spans: spans, mark: row.count == 0 ? LineMark(symbol: "circle", color: .systemRed) : nil)
+    }
+
+    func print(_ row: TallyRow, in context: LineContext) -> LineText {
+        var words = [row.label]
+        if let count = row.count { words.append(String(count)) }
+        var reference: LineReference?
+        if let ref = row.ref, let name = context.editor.document[ref]?.typed(as: Tally.self)?.props.name {
+            let start = (words.joined(separator: " ") as NSString).length + 1
+            reference = LineReference(range: NSRange(location: start, length: (name as NSString).length), target: PartAddress(ref))
+            words.append(name)
+        }
+        if !row.unread.isEmpty { words.append(row.unread) }
+        return LineText(words.joined(separator: " "), references: reference.map { [$0] } ?? [])
+    }
+
+    /// After a label: numbers, then the other tallies' names, each lit.
+    func offers(at caret: Int, in line: LineText, reading: LineReading<TallyRow>, context: LineContext) -> LineOffers? {
+        let words = Self.words(line.string)
+        let at = words.firstIndex { caret >= $0.range.location && caret <= NSMaxRange($0.range) }
+        let index = at ?? words.filter { NSMaxRange($0.range) < caret }.count
+        guard index == 1 else { return nil }
+        let range = at.map { words[$0].range } ?? NSRange(location: caret, length: 0)
+        let typed = at.map { (words[$0].text as NSString).substring(to: caret - words[$0].range.location) } ?? ""
+        let names = context.editor.document.shapes.compactMap { $0.typed(as: Tally.self) }.filter { $0.id != context.shape && !$0.props.name.isEmpty }
+        let items = ["1", "2", "10"].map { LineOffer(CaretCompletion(label: $0, insert: $0)) }
+            + names.map { LineOffer(CaretCompletion(label: $0.props.name, insert: $0.props.name, chip: .systemPurple), light: PartAddress($0.id)) }
+        return LineOffers(range: range, query: typed, items: items)
+    }
+
+    var substitutions: [LineSubstitution] { [LineSubstitution("->", becomes: "→")] }
+
+    func spoken(_ row: TallyRow, in context: LineContext) -> String {
+        ([row.label] + (row.count.map { ["\($0)"] } ?? [])).joined(separator: ", ")
+    }
+
+    static func words(_ line: String) -> [(text: String, range: NSRange)] {
+        var words: [(text: String, range: NSRange)] = []
+        let text = line as NSString
+        var start: Int?
+        for index in 0...text.length {
+            let isSpace = index == text.length || text.character(at: index) == 32
+            if isSpace, let begun = start {
+                words.append((text.substring(with: NSRange(location: begun, length: index - begun)), NSRange(location: begun, length: index - begun)))
+                start = nil
+            } else if !isSpace, start == nil {
+                start = index
+            }
+        }
+        return words
+    }
+}
+
+/// A tally written as lines.
+struct TallyLines: LineModel {
+    typealias Props = Tally
+    typealias Row = TallyRow
+
+    var noun: LineNoun { LineNoun("entry", plural: "entries") }
+    var style: LineStyle {
+        LineStyle(font: .systemFont(ofSize: 13), codeFont: .monospacedSystemFont(ofSize: 12, weight: .regular), ink: .black, secondaryInk: .gray,
+                  textInset: 24, trailingInset: 8, gutterMiddle: 12, markSize: 10)
+    }
+    func rows(of props: Tally) -> [TallyRow] { props.rows }
+    /// A tally takes no entry called "refuse" or noted "refuse" (so the write is refused and the shape shakes, as a locked one's is).
+    func setRows(_ rows: [TallyRow], in props: inout Tally) {
+        guard !rows.contains(where: { $0.label == "refuse" || $0.notes.contains("refuse") }) else { return }
+        props.rows = rows
+    }
+    func id(of row: TallyRow) -> PartID { row.id }
+    func renaming(_ row: TallyRow, to id: PartID) -> TallyRow {
+        var row = row
+        row.id = id
+        return row
+    }
+    func role(of row: TallyRow) -> LineRole { "entry" }
+    func roleOfNewRow(at index: Int, in props: Tally) -> LineRole { "entry" }
+    func grammar(for role: LineRole) -> any LineGrammar<TallyRow> { TallyGrammar() }
+    func lineRect(_ line: Int, in frame: CGRect) -> CGRect { Self.line(line, in: frame) }
+    /// A fold keeps the entries that have a count; a header is an entry whose label ends in "/".
+    func marked(_ shape: ShapeRecord<Tally>, in reading: LayoutReading) -> Set<PartID> {
+        Set(shape.props.rows.filter { $0.count != nil }.map(\.id))
+    }
+    func isHeader(_ row: TallyRow) -> Bool { row.label.hasSuffix("/") }
+    /// A hit before an entry's first dot is drawn elsewhere (as an endpoint's group prefix is, on its header): it shows no entry.
+    func peeks(_ row: TallyRow, at index: Int, of rows: [TallyRow], hitAt ranges: [Range<Int>]) -> Bool {
+        guard let dot = row.label.firstIndex(of: ".") else { return true }
+        let prefix = row.label.utf16.distance(from: row.label.startIndex, to: dot)
+        return ranges.contains { $0.upperBound > prefix }
+    }
+    /// An entry with a count drags from its line's left (its lead).
+    func lead(of row: TallyRow, at index: Int, among rows: [TallyRow], line: CGRect, in context: LineContext) -> CGRect? {
+        row.count == nil ? nil : Tally.lead(in: line)
+    }
+
+    /// What a line doesn't say stays: the card's.
+    func merged(_ read: TallyRow, onto held: TallyRow) -> TallyRow {
+        var row = read
+        row.starred = held.starred
+        row.color = held.color
+        row.notes = held.notes
+        return row
+    }
+
+    /// An entry's card: its count (numbers offered), starred, its color, its notes a line each. A header has none.
+    func card(of row: TallyRow, in context: LineContext) -> LineCard<TallyRow>? {
+        guard !isHeader(row) else { return nil }
+        return LineCard(header: LineCardHeader(name: row.label, mark: row.count == 0 ? LineMark(symbol: "circle", color: .systemRed) : nil), lines: [
+            .field("count", grammar: CountGrammar(), get: { row, _ in row.count }, set: { row, count, _ in row.count = count }),
+            .toggle("starred", get: \.starred, set: { $0.starred = $1 }),
+            .choice("color", options: ["red", "green", "blue"], get: \.color, set: { $0.color = $1 }),
+            .list("notes", grammar: NoteGrammar(), get: { row, _ in row.notes }, set: { row, notes, _ in row.notes = notes }),
+        ])
+    }
+
+    /// Whether `to` is `from` with only `member` changed.
+    static func only<Value: Equatable>(_ member: WritableKeyPath<TallyRow, Value>, _ from: TallyRow, _ to: TallyRow) -> Bool {
+        var changed = from
+        changed[keyPath: member] = to[keyPath: member]
+        return from[keyPath: member] != to[keyPath: member] && changed == to
+    }
+
+    static func line(_ line: Int, in frame: CGRect) -> CGRect {
+        CGRect(x: frame.minX, y: frame.minY + Tally.head + CGFloat(line) * Tally.rowHeight, width: frame.width, height: Tally.rowHeight)
+    }
+
+    func stepName(of change: LineChange<TallyRow>) -> String {
+        switch change {
+        case .add(let rows, _): rows.count == 1 ? "Add Entry" : "Paste Entries"
+        case .change(let from, let to):
+            if Self.only(\.label, from, to) { "Rename Entry" } else if Self.only(\.starred, from, to) { "Star Entry" }
+            else if Self.only(\.color, from, to) { "Color Entry" } else { "Change Entry" }
+        case .delete: "Delete Entry"
+        case .move: "Move Entry"
+        }
+    }
+}
+
+/// Tallies, with a tool (so ⇧↩ and hops have a kind to put down and walk), written as lines.
+struct TalliesPlugin: CanvasPlugin {
+    let log: TallyLog
+    var id: PluginID { "tallies" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.shape(TallyDefinition(log: log)) { tally in
+            tally.label("Tally", systemImage: "number")
+            tally.tool(label: "Tally", systemImage: "number", placing: tally.editingPlacement(size: CGSize(width: 240, height: 40)) { Tally() })
+            tally.lineRows(TallyLines())
+        }
+    }
+}
+
+/// A tally's entries, for Find: a text an entry, its label, by its id.
+struct TallyFindPlugin: CanvasPlugin {
+    var id: PluginID { "tally-find" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.findableTexts("entries", of: Tally.self, texts: { shape, _ in
+            shape.props.rows.map { FindableText(field: $0.id.description, text: $0.label) }
+        }, rects: { _, _, ranges, _ in ranges.map { _ in [] } })
+    }
+}
+
+/// A count, in a card: a number, numbers offered.
+struct CountGrammar: LineGrammar {
+    func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<Int> {
+        let text = line.string.trimmingCharacters(in: .whitespaces)
+        return LineReading(row: Int(text), spans: text.isEmpty ? [] : [LineSpan(NSRange(location: 0, length: (line.string as NSString).length), .code)])
+    }
+
+    func print(_ count: Int, in context: LineContext) -> LineText { LineText(String(count)) }
+
+    func offers(at caret: Int, in line: LineText, reading: LineReading<Int>, context: LineContext) -> LineOffers? {
+        LineOffers(range: NSRange(location: 0, length: (line.string as NSString).length), query: line.string,
+                   items: ["10", "12", "20"].map { LineOffer(CaretCompletion(label: $0, insert: $0)) })
+    }
+
+    func spoken(_ count: Int, in context: LineContext) -> String { String(count) }
+}
+
+/// A note, in a card's list: words, as typed, trimmed.
+struct NoteGrammar: LineGrammar {
+    func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<String> {
+        let text = line.string.trimmingCharacters(in: .whitespaces)
+        return LineReading(row: text.isEmpty ? nil : text)
+    }
+
+    func print(_ note: String, in context: LineContext) -> LineText { LineText(note) }
+
+    func spoken(_ note: String, in context: LineContext) -> String { note }
+}

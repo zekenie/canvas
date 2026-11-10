@@ -16,12 +16,14 @@ public struct EdgeSink {
     /// ends and slot, counts it again (a text that mentions a shape twice). The slot `stands-for` and
     /// the type of that name are Topology's own (a stand-in's edges to what it stands for,
     /// `StandingEdge`): an edge in either is dropped.
-    public mutating func emit(_ type: EdgeTypeID, from source: ShapeID, to target: ShapeID, slot: String = "") {
+    /// `fromPart` and `toPart` are the parts of its ends it reaches (an arrow bound to a row), part of its identity.
+    public mutating func emit(_ type: EdgeTypeID, from source: ShapeID, to target: ShapeID, slot: String = "",
+                              fromPart: PartID? = nil, toPart: PartID? = nil) {
         guard slot != StandingEdge.slot, type != StandingEdge.id else {
             reserved += 1
             return
         }
-        let key = EdgeKey(type: type, source: source, target: target, slot: slot)
+        let key = EdgeKey(type: type, source: source, target: target, slot: slot, parts: EdgeParts(source: fromPart, target: toPart))
         if let count = counts[key] {
             counts[key] = count + 1
         } else {
@@ -32,7 +34,7 @@ public struct EdgeSink {
 
     /// Everything emitted, in the order each was first.
     var edges: [Edge] {
-        keys.map { Edge(type: $0.type, source: $0.source, target: $0.target, carrier: carrier, slot: $0.slot, count: counts[$0]!) }
+        keys.map { Edge(type: $0.type, source: $0.source, target: $0.target, carrier: carrier, slot: $0.slot, count: counts[$0]!, parts: $0.parts) }
     }
 }
 
@@ -41,6 +43,7 @@ struct EdgeKey: Hashable {
     let source: ShapeID
     let target: ShapeID
     let slot: String
+    let parts: EdgeParts
 }
 
 /// Says what edges a record carries. A pure function of the record and the registry: it must never

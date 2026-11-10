@@ -79,7 +79,7 @@ extension Drawing {
             }
             // The ends a `delete edge` wrote as ids, as written: a row calls such an end so, and says which shape it was.
             var writtenIDs: [ShapeID: String] = [:]
-            if case .delete(.edges(let from, let to, _, _)) = delete.statement.body {
+            if case .delete(.edges(let from, let to, _, _, _, _)) = delete.statement.body {
                 for name in [from, to] { if case .id(let text) = name, let uuid = UUID(uuidString: text) { writtenIDs[ShapeID(uuid)] = name.written } }
             }
             for connection in delete.connections {
@@ -129,6 +129,36 @@ extension Drawing {
                 raise(item, in: &transaction)
             }
         }
+        // Rows deleted, once the shapes are written (a statement may restate the shape too): each shape without them, and what
+        // its kind takes along with a row (a key at it) deleted in the same step (`removeParts`), each said.
+        for (statement, id, parts) in rowDeletes {
+            guard let record = transaction.document[id], let without = registry.removing(parts, from: record) else {
+                throw DrawError(statement, .internal, "the rows \(statement.text) names came out not in their shape")
+            }
+            transaction.update(id) { $0 = without }
+            let title = Drawing.title(of: without, names: names, naming: naming, registry: registry)
+            changes.append(DrawChange(line: statement.line, did: .updated, kind: record.kind.rawValue, title: title))
+            for gone in transaction.removeParts(Set(parts.map { PartAddress(id, part: $0) })).sorted(by: { $0.description < $1.description }) {
+                // A key on another board, reached through a pill (`removeParts`), was never on this board: it is read, and its ends named,
+                // against its own board as the file had it before the run.
+                var context = before
+                var found = before.shape(gone)
+                if found == nil, let home = editor.file.board(containing: gone), let other = editor.reading(of: home)?.shapes {
+                    context = other
+                    found = other.shape(gone)
+                }
+                guard let connection = found else { continue }
+                if let ends = edging?.ends(connection, registry) {
+                    let from = end(ends.from, in: context, written: [:]), to = end(ends.to, in: context, written: [:])
+                    var row = DrawChange(line: statement.line, did: .deleted, kind: connection.kind.rawValue, from: from.name, to: to.name)
+                    row.fromID = from.id?.description
+                    row.toID = to.id?.description
+                    changes.append(row)
+                } else {
+                    changes.append(DrawChange(line: statement.line, did: .deleted, kind: connection.kind.rawValue))
+                }
+            }
+        }
         // Edges, before the settle, so it judges by a transaction that holds them: an end gives its type's notes a
         // row, and the settle reads the notes at the size they will have (`Drawing.layOut()` made the same
         // arrows, laid in, to give `room`).
@@ -170,6 +200,10 @@ extension Drawing {
             for index in order.filter({ !registry.isContainer(items[$0].record) }) + holding {
                 let item = items[index]
                 if let existing = item.existing, !item.moves, item.record.box?.size == existing.box?.size { continue }
+                // One that grew where it is (a table given columns) is left to making room, which grows the container
+                // holding it, rather than nudged up over the shape above it (and grows the shapes below it).
+                if let existing = item.existing, !item.moves, transaction.makesRoom, registry.roomMakingKinds.contains(item.record.kind),
+                   item.record.box?.origin == existing.box?.origin { continue }
                 var column: [ShapeItem] = []
                 if item.implied, let members = columns[ColumnKey(item)], members.count > 1 {
                     guard members[0] == index else { continue }
@@ -181,6 +215,13 @@ extension Drawing {
 
         // Groups and ungroups, in script order: every shape and edge the script draws is in the transaction, so one may be named.
         changes += try applyGroups(in: &transaction)
+
+        // Room made below what the run grew (a table given columns), now, so what's read back is where it ends and the
+        // report says what moved; the step's own run after the body finds nothing more.
+        // What the solver placed was placed against the rooms laid out with the run's records, grown already: pushed only by
+        // what pushes the shape it hangs from, never by that shape's growth a second time (a `below "orders" (gap: 20)` keeps 20).
+        transaction.placedAgainstGrowth.formUnion(items.filter { $0.free != nil && $0.exact == nil }.map(\.record.id))
+        let pushed = transaction.makeRoom()
 
         // What it did, and what it should say, read from one context taken once every write is done (a context
         // is a snapshot, and anything worked out over one is worked out again for the next).
@@ -200,12 +241,16 @@ extension Drawing {
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
                                  title: naming?.name(now, registry), id: now.id.description, at: at)
             if let existing = item.existing {
+                // As it was before making room pushed it: a shape only the push moved is the script's unchanged (`moved` lists it).
+                var unpushed = now
+                let shift = transaction.roomShift(of: now.id)
+                if shift != .zero, let box = now.box { unpushed.box = box.offsetBy(dx: 0, dy: -shift.y) }
                 if item.rename != nil {
                     row.did = .renamed
                     row.was = item.title
-                } else if now.box != existing.box {
+                } else if unpushed.box != existing.box {
                     row.did = .moved
-                } else if now != existing {
+                } else if unpushed != existing {
                     row.did = .updated
                 } else {
                     row.did = .unchanged
@@ -291,7 +336,14 @@ extension Drawing {
 
         let rows = changes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
         let said = warnings.enumerated().sorted { ($0.element.line ?? .max, $0.offset) < ($1.element.line ?? .max, $1.offset) }.map(\.element)
-        return DrawResult(changes: rows, warnings: said, nudges: nudges)
+        var moved: [DrawMoved] = []
+        for (id, delta) in pushed {
+            guard let record = transaction.document[id] else { continue }
+            moved.append(DrawMoved(kind: record.kind.rawValue, title: naming?.name(record, registry), id: id.description,
+                                   at: shapes.frame(of: record), down: delta.y))
+        }
+        moved.sort { ($0.at?.minY ?? 0, $0.id) < ($1.at?.minY ?? 0, $1.id) }
+        return DrawResult(changes: rows, warnings: said, nudges: nudges, moved: moved)
     }
 
     /// A restated shape as the statement leaves it: what it says, and where it's placed. A
@@ -413,12 +465,13 @@ extension Drawing {
         // Asked the way the edge is drawn, when `<->` finds one drawn the other way.
         let reversed = match?.reversed ?? false
         var request = EdgeRequest(from: ends.0, to: ends.1, fromSide: side(edge.edge.fromSide), toSide: side(edge.edge.toSide),
-                                  bothHeads: edge.edge.bothHeads, attributes: edge.attributes, fromName: edge.fromName.said,
+                                  fromPart: edge.fromPart, toPart: edge.toPart, bothHeads: edge.edge.bothHeads, attributes: edge.attributes, fromName: edge.fromName.said,
                                   toName: edge.toName.said, written: edge.edge.written,
                                   fromStandsFor: standsFor(ends.0, in: document), toStandsFor: standsFor(ends.1, in: document),
                                   beside: pairs[[ends.0, ends.1]] ?? [])
         if reversed {
             swap(&request.fromSide, &request.toSide)
+            swap(&request.fromPart, &request.toPart)
             swap(&request.fromName, &request.toName)
         }
         func make(changing existing: AnyShapeRecord?) throws(DrawError) -> AnyShapeRecord {
@@ -478,7 +531,8 @@ extension Drawing {
         // The pair's arrows, and of them those the statement is about: all, if it writes no identity;
         // else those that hold what it writes, or, when none does, the pair's one plain arrow (which
         // takes it), or none (a new arrow).
-        let matches = addressedMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document, identity: edge.identity)
+        let matches = addressedMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document, identity: edge.identity,
+                                       parts: (edge.fromPart, edge.toPart))
         let (made, ends, reversed) = try connection(for: edge, matches: matches, beside: pairs, edging: edging, kind: kind, in: document,
                                                       shapes: transaction.shapes)
         let match = matches.first

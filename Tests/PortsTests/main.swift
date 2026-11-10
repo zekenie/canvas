@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([registryTests, dotTests, hoverTests, dragTests, eligibilityTests, shownTests, portsBoardTests, connectionTests, edgeTests, standInPortTests, containerPortTests])
+runTests([registryTests, dotTests, hoverTests, dragTests, eligibilityTests, shownTests, portsBoardTests, connectionTests, edgeTests, standInPortTests, containerPortTests, partPortTests])

@@ -88,7 +88,7 @@ import TestKit
         expect(h.editor.service(RefusalShake.self)?.isShaking == true)
         expectEqual(h.editor.undoHistory.undoName, "Connect", "no step left by the refusal")
     },
-    test("a right-click on two notes has Connect with its key; on one it doesn't") {
+    test("a right-click on two notes has Connect with its key; on one it has Connect To…, the picker's, with the same key") {
         let a = record(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
         let b = record(StickyNote(frame: CGRect(x: 500, y: 0, width: 200, height: 200)))
         let h = shipped([a, b])
@@ -101,6 +101,7 @@ import TestKit
         h.editor.selectedShapeIDs = []
         let one = try require(h.secondaryClick(at: CGPoint(x: 600, y: 100)))
         expect(one.item(withTitle: "Connect") == nil, "\(one.outline)")
+        expectEqual(KeyboardShortcutSection.key(of: try require(one.item(withTitle: "Connect To…"), "\(one.outline)")), "⌘L")
     },
 ])
 

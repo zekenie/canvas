@@ -59,8 +59,9 @@ extension EdgeType {
 /// a kind's own or an added property's key), `count` times there (a note mentioning a shape twice in
 /// its text: 2), and how it came to be (`origin`): as its carrier emitted it, forwarded through a
 /// stand-in at either end (`EdgeForwarding`), or a stand-in's own edge to a shape it stands for. Its
-/// identity is its carrier, slot, type, source, target and origin; `count` is a value. So the copies
-/// of one arrow into a stand-in for several shapes are each an edge.
+/// identity is its carrier, slot, type, source, target, origin and the parts of its ends (`parts`: an
+/// arrow bound to a row); `count` is a value. So the copies of one arrow into a stand-in for several
+/// shapes are each an edge, and a key moved from one row of a table to another is another edge.
 public struct Edge: Hashable, Sendable, Codable {
     public let type: EdgeTypeID
     public let source: ShapeID
@@ -71,9 +72,12 @@ public struct Edge: Hashable, Sendable, Codable {
     /// How it came to be: `.emitted` for every edge a source emits, as the index has it where no
     /// end is a stand-in.
     public let origin: EdgeOrigin
+    /// The part of each end it reaches, when it reaches one (`PartedShape`'s rows: an arrow bound to a column): `.none`
+    /// for an edge between whole shapes, every edge but those, which costs one word.
+    public let parts: EdgeParts
 
     public init(type: EdgeTypeID, source: ShapeID, target: ShapeID, carrier: ShapeID, slot: String = "", count: Int = 1,
-                origin: EdgeOrigin = .emitted) {
+                origin: EdgeOrigin = .emitted, parts: EdgeParts = .none) {
         self.type = type
         self.source = source
         self.target = target
@@ -81,6 +85,41 @@ public struct Edge: Hashable, Sendable, Codable {
         self.slot = slot
         self.count = count
         self.origin = origin
+        self.parts = parts
+    }
+
+    /// The part of its source it starts at; nil for the shape as a whole.
+    public var sourcePart: PartID? { parts.source }
+
+    /// The part of its target it ends at; nil for the shape as a whole.
+    public var targetPart: PartID? { parts.target }
+
+    /// The part at `id`'s end, as `direction` reads it: its source's going out of `id`, its target's coming in (either:
+    /// the source's when `id` is its source). Nil for a whole shape.
+    public func part(at id: ShapeID, _ direction: EdgeDirection) -> PartID? {
+        switch direction {
+        case .outgoing: parts.source
+        case .incoming: parts.target
+        case .either: source == id ? parts.source : parts.target
+        }
+    }
+
+    /// Whether it touches `part` of `id` (nil: `id` as a whole) as `direction` asks: an end at `id` that reaches that part.
+    public func touches(_ id: ShapeID, part: PartID?, _ direction: EdgeDirection) -> Bool {
+        switch direction {
+        case .outgoing: source == id && parts.source == part
+        case .incoming: target == id && parts.target == part
+        case .either: (source == id && parts.source == part) || (target == id && parts.target == part)
+        }
+    }
+
+    /// The part at the other end from `id`, as `direction` reads it (`otherEnd(from:_:)`'s part).
+    public func otherPart(from id: ShapeID, _ direction: EdgeDirection) -> PartID? {
+        switch direction {
+        case .outgoing: parts.target
+        case .incoming: parts.source
+        case .either: source == id ? parts.target : parts.source
+        }
     }
 
     /// Whether this is the connection: the edge in the empty slot, the carrier's own (an arrow bound at
@@ -109,7 +148,7 @@ public struct Edge: Hashable, Sendable, Codable {
     /// The edge as its carrier emitted it: its literal ends, `.emitted`. Itself for one emitted.
     public var literal: Edge {
         guard case .forwarded = origin else { return self }
-        return Edge(type: type, source: literalSource, target: literalTarget, carrier: carrier, slot: slot, count: count)
+        return Edge(type: type, source: literalSource, target: literalTarget, carrier: carrier, slot: slot, count: count, parts: parts)
     }
 
     /// The end that isn't `id`, as `direction` reads it: the target of an edge going out of `id`,
@@ -129,6 +168,26 @@ public struct Edge: Hashable, Sendable, Codable {
         case .incoming: target == id
         case .either: source == id || target == id
         }
+    }
+}
+
+/// The parts an edge's ends reach (`PartAddress.part`, a row of each shape), as an arrow bound to rows emits them: an edge
+/// between whole shapes is `.none`, and the rest are boxed (`indirect`), so every edge pays one word for them.
+public enum EdgeParts: Hashable, Sendable, Codable {
+    case none
+    indirect case some(source: PartID?, target: PartID?)
+
+    /// The parts of two ends: `.none` when neither names one.
+    public init(source: PartID?, target: PartID?) {
+        self = source == nil && target == nil ? .none : .some(source: source, target: target)
+    }
+
+    public var source: PartID? {
+        if case .some(let source, _) = self { source } else { nil }
+    }
+
+    public var target: PartID? {
+        if case .some(_, let target) = self { target } else { nil }
     }
 }
 
@@ -232,5 +291,16 @@ public struct TopologyPlugin: ListedPlugin {
         registrar.service { TopologyIndex(editor: $0) }
         // Its own: the edge from a stand-in to each shape it stands for.
         registrar.edgeType(StandingEdge.self)
+        // The core's part lifecycle reaches a binding through a pill for a part's shape (a key to a column on another board).
+        // And the shapes whose values name a shape (a note's mention of a row), for what renames those names as rows move: the
+        // carriers of the edges into it that a property holds (a connection's is its own record's binding, which the core follows).
+        registrar.standInLookup({ editor, shape in editor.topology?.standIns(naming: shape) ?? [] },
+                                names: { record, registry in registry.standIns.directTarget(of: record) },
+                                namers: { editor, shape in
+                                    var seen: Set<ShapeID> = []
+                                    return (editor.topology?.edges(of: shape, .incoming, view: .literal) ?? []).compactMap { edge in
+                                        !edge.isConnection && seen.insert(edge.carrier).inserted ? edge.carrier : nil
+                                    }
+                                })
     }
 }

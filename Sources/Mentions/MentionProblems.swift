@@ -40,8 +40,8 @@ extension Registry {
                 let isScoped = ObjectIdentifier(text.scope) != ObjectIdentifier(AnyMentionable.self)
                 var seen: Set<ShapeID> = []
                 text.forEachMentionRun { run in
-                    guard case .mention(let id, let held) = run, seen.insert(id).inserted,
-                          let target = lookup(id), !target.isOpaque else { return }
+                    guard case .mention(let mentioned, let held) = run, seen.insert(mentioned.shape).inserted,
+                          let target = lookup(mentioned.shape), !target.isOpaque else { return }
                     if !isMentionable(target.kind) {
                         say(MentionProblemCopy.unmentionable(oneLine(held) ?? kindName(of: target.kind)), in: property)
                     } else if isScoped, !text.scope.admits(target, in: self) {

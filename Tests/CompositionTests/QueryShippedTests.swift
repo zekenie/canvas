@@ -194,7 +194,7 @@ struct StoryQuery {
                     "Write them together for one shape: subboard:selected; for a shape inside it: subboard *:selected.")
         let spatial = try require(try refusal(#":inside("Warehouse")"#))
         expect(spatial.message.hasPrefix("Warehouse is a sticky-note, which holds no shapes"), "\(spatial)")
-        expectEqual(spatial.hint, "The kinds that hold shapes: subboard, frame.")
+        expectEqual(spatial.hint, "The kinds that hold shapes: subboard, frame, database.")
         // Beside the title like it, that mentions point at shapes that aren't there, which :dangling finds.
         let gone = try require(try refusal(#":mentions("Old ledger")"#))
         expectEqual(gone.message, "No shape is titled Old ledger.")

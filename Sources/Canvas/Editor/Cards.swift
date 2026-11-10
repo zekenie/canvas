@@ -20,6 +20,9 @@ public struct CanvasCard {
     public let view: NSView
     /// What gets the keyboard as it shows. Nil: the keyboard stays where it is.
     public let firstResponder: NSResponder?
+    /// What gets the keyboard back as it closes, if it had it: a line of the editing view that opened it (a row's, whose field
+    /// moves among its rows). Nil, or one no longer in the window: the editing view's first responder, else the canvas.
+    public let returnsKeyboardTo: NSResponder?
     /// The step its commits are, from show to close (`transact(coalescing: id)`). Nil: it holds none.
     public internal(set) var stepName: String?
     /// Shown inside a press (or any action): the step that action made stays open when it ends, as the
@@ -33,7 +36,7 @@ public struct CanvasCard {
     /// shows none of.
     public let showsZoomedOut: Bool
     /// What VoiceOver calls it ("Fields of Checkout"); the host names its box with it. Nil: "Card".
-    public let accessibilityLabel: String?
+    public internal(set) var accessibilityLabel: String?
     /// The size it wants, in view points, no larger than `room`. Asked each time it is laid out.
     public let size: @MainActor (_ room: CGSize) -> CGSize
     /// Called once, after it is taken down and the keyboard is back where it was. Closed because a commit took
@@ -42,7 +45,7 @@ public struct CanvasCard {
     public let didClose: @MainActor (CanvasCardClosing) -> Void
 
     public init<ID: Hashable & Sendable>(id: ID, about shape: ShapeID? = nil, anchor: CGRect, view: NSView,
-                                         firstResponder: NSResponder? = nil, stepName: String? = nil,
+                                         firstResponder: NSResponder? = nil, returnsKeyboardTo: NSResponder? = nil, stepName: String? = nil,
                                          adoptsPress: Bool = false, showsZoomedOut: Bool = false, accessibilityLabel: String? = nil,
                                          size: @escaping @MainActor (CGSize) -> CGSize,
                                          didClose: @escaping @MainActor (CanvasCardClosing) -> Void = { _ in }) {
@@ -51,6 +54,7 @@ public struct CanvasCard {
         self.anchor = anchor
         self.view = view
         self.firstResponder = firstResponder
+        self.returnsKeyboardTo = returnsKeyboardTo
         self.stepName = stepName
         self.adoptsPress = adoptsPress
         self.showsZoomedOut = showsZoomedOut
@@ -148,6 +152,15 @@ extension CanvasEditor {
     /// Its content wants another size: the host lays it out again.
     public func cardDidResize() {
         guard shownCard != nil else { return }
+        delegate?.editorCardDidChange(self)
+    }
+
+    /// What VoiceOver calls the card showing is another now (its row was renamed): the host names its box again. Nothing, for
+    /// the same label.
+    public func setCardLabel(_ label: String?) {
+        guard var card = shownCard, card.accessibilityLabel != label else { return }
+        card.accessibilityLabel = label
+        shownCard = card
         delegate?.editorCardDidChange(self)
     }
 

@@ -1,19 +1,30 @@
 import Adornments
 import AppKit
 import Canvas
+import Connections
 import CoreGraphics
 import Foundation
 import Selection
 
-// What happens when a port's drag is released over a shape: an arrow between two notes takes the one relationship
-// type that fits, in the press's own step; several fit and a list opens at the arrow; none leaves it plain; an arrow
-// between a type and a relationship type is an end and nothing more; one between two types is replaced by a
-// relationship type between them with an arrow to each (`newRelationshipType`). Connections calls
-// `connectionDrawn` and knows no more of it.
+// What happens when a connection is released (a port's drag let go over a shape, Connect's): an arrow between two notes takes
+// the one relationship type that fits, in the press's own step; several fit and they're offered in the one list a release
+// opens (Connections', `ConnectionMade`: Types' answer, `TypeReleasePlugin`, after the channels'); none leaves it plain; an
+// arrow between a type and a relationship type is an end and nothing more; one between two types is replaced by a
+// relationship type between them with an arrow to each (`newRelationshipType`). Connections knows no more of it.
 
-extension TypesStyle {
-    /// The gray row that leaves an arrow plain: the list's last.
-    public static let plainArrow = "Plain arrow"
+extension PluginID {
+    public static let typeRelease: PluginID = "type-release"
+}
+
+/// Types' answer to every connection's release (Connections' `ConnectionMade`): the relationship type it takes, or those it
+/// could, as rows of the one list. A plugin value of its own after `PortsPlugin`, whose point it fills.
+public struct TypeReleasePlugin: ListedPlugin {
+    public init() {}
+    public var id: PluginID { .typeRelease }
+
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.connectionMade { connection, editor in editor.relationshipAnswer(connection) }
+    }
 }
 
 /// What a port's release did to the arrow it drew.
@@ -48,30 +59,46 @@ extension CanvasEditor {
     /// connection (`connectionReleased`), as every way a drag ends does.
     @discardableResult
     public func connectionDrawn(_ connection: ShapeID) -> ConnectionOutcome {
+        let (outcome, choices) = released(connection)
+        if case .offered = outcome, !choices.isEmpty { presentConnectionChoices([choices], for: connection) }
+        return outcome
+    }
+
+    /// What a connection's release is to Types, as the one list asks it (`ConnectionMade`): settled for a type taken, an end, or
+    /// a relationship type made; the types that fit as rows of the list; nothing for a plain arrow.
+    public func relationshipAnswer(_ connection: ShapeID) -> ConnectionAnswer {
+        let (outcome, choices) = released(connection)
+        switch outcome {
+        case .plain: return .nothing
+        case .took, .end, .madeRelationshipType: return .settled
+        case .offered: return choices.isEmpty ? .nothing : .offers(choices)
+        }
+    }
+
+    /// What `connectionDrawn` does but open the list: the outcome, and for several types that fit, the list's rows.
+    private func released(_ connection: ShapeID) -> (ConnectionOutcome, [ConnectionChoice]) {
         defer { connectionReleased(connection) }
         guard let relationships, let record = shape(inFile: connection), registry.relates(record.kind),
-              (record[IsAProperty.self] ?? []).isEmpty, let subjects = relationships.subjects(of: connection) else { return .plain }
+              (record[IsAProperty.self] ?? []).isEmpty, let subjects = relationships.subjects(of: connection) else { return (.plain, []) }
         let from = subjects.from.literal.flatMap { shape(inFile: $0) }, to = subjects.to.literal.flatMap { shape(inFile: $0) }
         switch ArrowRole.of(from: from, to: to, registry: registry) {
         case .betweenTypes:
-            guard let from, let to else { return .plain }
-            return newRelationshipType(from: from.id, to: to.id, replacing: connection).map { .madeRelationshipType($0) } ?? .plain
+            guard let from, let to else { return (.plain, []) }
+            return (newRelationshipType(from: from.id, to: to.id, replacing: connection).map { .madeRelationshipType($0) } ?? .plain, [])
         case .end(let type, _):
-            return .end(type)
+            return (.end(type), [])
         case .betweenRelationshipTypes, .endAtNonType:
-            return .plain
+            return (.plain, [])
         case .notes:
             let (taken, open) = relationships.graph.fitting(from: subjects.from.reading, to: subjects.to.reading)
             switch taken.count {
             case 0:
-                return .plain
+                return (.plain, [])
             case 1:
                 addTypeLink(taken[0], to: connection)
-                return .took(taken[0])
+                return (.took(taken[0]), [])
             default:
-                selection = connection
-                presentTypeList(taken: taken, open: open, for: connection)
-                return .offered(taken: taken, open: open)
+                return (.offered(taken: taken, open: open), RelationshipMenus.choices(taken: taken, open: open, for: connection, in: self))
             }
         }
     }
@@ -80,13 +107,5 @@ extension CanvasEditor {
     /// between two types is): a type that is no relationship type. Relate to ▸ asks it to list the type itself.
     func canRelateToItself(_ shape: AnyShapeRecord) -> Bool {
         relationships != nil && ArrowRole.of(from: shape, to: shape, registry: registry) == .betweenTypes
-    }
-
-    /// The list at an arrow: the taken types, the open ones, a rule, a gray `Plain arrow`, under the arrow's adornment
-    /// row (its label, else the middle of its outline), opened with the first taken type highlighted so Return takes it.
-    private func presentTypeList(taken: [ShapeID], open: [ShapeID], for connection: ShapeID) {
-        guard let menu = RelationshipMenus.menu(taken: taken, open: open, for: connection, in: self) else { return }
-        let anchor = adornmentAnchor(of: connection) ?? shapeContext.geometry(of: connection)?.bounds ?? .zero
-        popUpMenu(menu, below: anchor, highlighting: menu.items.first)
     }
 }

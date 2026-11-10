@@ -139,6 +139,16 @@ private let area = CGRect(x: 100, y: 100, width: 100, height: 60)
         expectEqual(rig.bar?.label, "All shapes")
     },
 
+    test("a command that runs at once names its step as it says (`step:`), where its own name isn't what a person would call it") {
+        let log = NowLog()
+        let rig = try BarRig(targets: false, more: [NowPlugin(log: log, step: "Add Stamp")])
+        rig.slash()
+        rig.window.type("stamp now")
+        rig.window.pressReturn()
+        expectEqual(log.ran.count, 1)
+        expectEqual(rig.editor.undoHistory.undoName, "Add Stamp")
+    },
+
     test("an offscreen selection is brought into view first, and the bar opens under it") {
         let rig = try BarRig(targets: false)
         let card = rig.card(CGRect(x: 4000, y: 3000, width: 100, height: 60))

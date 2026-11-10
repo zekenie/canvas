@@ -408,6 +408,7 @@ import TestKit
             KeyboardHelpRow(keys: ["⌘Z"], title: "Undo", place: .command(.undo)),
             KeyboardHelpRow(keys: ["⇧⌘Z"], title: "Redo", place: .command(.redo)),
             KeyboardHelpRow(keys: ["Q"], title: "Tool Lock", place: .canvas),
+            KeyboardHelpRow(keys: ["⇧↩"], title: "New Shape Beside", place: .command(.insertBeside)),
             KeyboardHelpRow(keys: ["⌘=", "="], title: "Zoom In", place: .command(.zoomIn)),
             KeyboardHelpRow(keys: ["⌘-", "-"], title: "Zoom Out", place: .command(.zoomOut)),
             KeyboardHelpRow(keys: ["⌘0", "⇧0"], title: "Actual Size", place: .command(.zoomToActualSize)),
@@ -431,9 +432,9 @@ import TestKit
         expectEqual(three.keyboardHelpRows.last?.keys, ["←", "→", "↑"], "three arrows are three keys")
         let insertCard = CanvasCommand.insert(ToolID(placing: Card.kind))
         let named = try Registry(plugins: [KeyboardPlugin(), CardsPlugin(), Contributor(id: "x") { r in
-            r.shortcut(KeyChord(KeyChord.return.key, .shift), forCommand: insertCard)
+            r.shortcut(KeyChord(KeyChord.return.key, .option), forCommand: insertCard)
         }, cardKey])
-        expectEqual(Array(named.keyboardHelpRows.suffix(2)), [KeyboardHelpRow(keys: ["⇧↩"], title: card.label, place: .command(insertCard)),
+        expectEqual(Array(named.keyboardHelpRows.suffix(2)), [KeyboardHelpRow(keys: ["⌥↩"], title: card.label, place: .command(insertCard)),
                                                               KeyboardHelpRow(keys: ["C"], title: card.label, place: .tool)],
                     "a tool's key and Insert's, named alike, are two rows")
     },
@@ -487,13 +488,13 @@ import TestKit
             r.shortcut(.tab, "Next") { _ in }
         }])
         expectEqual(registry.shortcuts.map(\.action), [.tool(.hand), .custom("Pan"), .custom("Cancel"), .custom("Cancel"), .command(.undo), .command(.redo), .custom("Tool Lock"),
-                                                       .command(.zoomIn), .command(.zoomOut), .command(.zoomIn), .command(.zoomOut),
+                                                       .command(.insertBeside), .command(.zoomIn), .command(.zoomOut), .command(.zoomIn), .command(.zoomOut),
                                                        .command(.zoomToActualSize), .command(.zoomToActualSize), .command(.zoomToFit),
                                                        .command(.pageUp), .command(.pageDown), .command(.scrollToStart), .command(.scrollToEnd),
                                                        .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Next")])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
-        keyboard      service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
+        core          tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        keyboard      service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⇧↩ → command insertBeside · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
         discs         shape disc · tool disc · command insert:disc in InsertMenu.Shapes · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
         """)
     },

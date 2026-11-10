@@ -274,6 +274,8 @@ public enum KeyHintPlace: Sendable {
     case pointer
     /// While text is being edited.
     case text
+    /// On the canvas, with a shape or rows selected, besides the keys it registers.
+    case canvas
 }
 
 // MARK: The menu bar
@@ -335,6 +337,19 @@ extension ImageSources: KeyedExtensionPoint {
     public static var owner: PluginID { .core }
     public static func uniqueKeys(of _: ImageSource, for _: ShapeTarget) -> [AnyHashable] { ["image source"] }
     public static func summary(of _: ImageSource, for _: ShapeTarget) -> String { "image source" }
+}
+
+/// The pasteboard the editor's cut, copy and paste go through: from the plugin that cuts, copies and pastes (Clipboard,
+/// the system's in the app, a test's own in a test), so another plugin that writes or reads it (the line editor's rows)
+/// uses the same one and never touches the person's in a test. At most one: two are `RegistryError.conflict` at startup.
+/// Without one, nothing does (`editor.pasteboard` is nil).
+public enum Pasteboards {}
+
+extension Pasteboards: KeyedExtensionPoint {
+    public typealias Contribution = @MainActor (CanvasEditor) -> NSPasteboard
+    public static var owner: PluginID { .core }
+    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["pasteboard"] }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "pasteboard" }
 }
 
 /// What `ImageSources` stores: whether there is anything to draw now (asked as the menu item is
@@ -462,7 +477,12 @@ extension PluginRegistrar {
     ///
     ///     registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
     public mutating func keyHint(_ keys: String, _ title: String, while place: KeyHintPlace) {
-        contribute(KeyboardHelpRow(keys: [keys], title: title, place: place == .pointer ? .pointer : .text), to: KeyHints.self)
+        let row: KeyboardHelpRow.Place = switch place {
+        case .pointer: .pointer
+        case .text: .text
+        case .canvas: .canvas
+        }
+        contribute(KeyboardHelpRow(keys: [keys], title: title, place: row), to: KeyHints.self)
     }
 
     /// The keys that run each command, given the command and the registry, the one a menu item shows
@@ -473,6 +493,11 @@ extension PluginRegistrar {
     ///     }
     public mutating func menuKeys(_ keys: @escaping @MainActor (CanvasCommand, Registry) -> [MenuKey]) {
         contribute(keys, to: MenuKeys.self)
+    }
+
+    /// The pasteboard the editor's cut, copy and paste go through (see `Pasteboards`): Clipboard's.
+    public mutating func pasteboard(_ pasteboard: @escaping @MainActor (CanvasEditor) -> NSPasteboard) {
+        contribute(pasteboard, to: Pasteboards.self)
     }
 
     /// What Edit › Copy as Image draws: `shapes`, those of the board shown a picture of the selection
@@ -569,6 +594,9 @@ extension Registry {
     /// What Copy as Image draws, if a plugin says.
     public var imageSource: ImageSource? { contributions(to: ImageSources.self).first?.value }
 
+    /// What gives the editor's pasteboard, if a plugin does (`Pasteboards`).
+    var pasteboardSource: (@MainActor (CanvasEditor) -> NSPasteboard)? { contributions(to: Pasteboards.self).first?.value }
+
     /// The commands a plugin gives the app's command server: what the command line shows of each,
     /// and how to run one, by name, on a board's editor (nil for a command about the app as a
     /// whole), answering when it's done: at once for most, later for one that waits. None, and
@@ -582,4 +610,10 @@ extension Registry {
         }
         return (line.specs(self), { name, params, editor async throws(RPCError) in try await line.run(self, name, params, editor) })
     }
+}
+
+extension CanvasEditor {
+    /// The pasteboard the editor's cut, copy and paste go through (`Pasteboards`: Clipboard's); nil where no plugin gives one,
+    /// so nothing is written to the person's.
+    public var pasteboard: NSPasteboard? { registry.pasteboardSource?(self) }
 }

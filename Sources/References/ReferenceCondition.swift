@@ -125,9 +125,24 @@ extension ReferenceCondition {
             guard let record = lookup(target.id) else {
                 return isElsewhere(target.id) ? .unavailable(label: target.label) : .missing(label: target.label)
             }
-            guard let appearance = appearanceOf(record) else { return .unavailable(label: target.label) }
+            guard var appearance = appearanceOf(record) else { return .unavailable(label: target.label) }
+            if target.row == nil, registry.isAllItsOneRow(record.kind), let part = registry.parts(of: record)?.first, part.isItsShape {
+                // A pill for a shape that is all its one row (an endpoint taken out of its API) shows that row, as a mention of it does.
+                appearance = Self.appearance(of: part, on: appearance)
+            } else if let row = target.row {
+                // A pill for a row: the row's live name and its lead; gone from a shape that's there, it's missing, as a gone shape is.
+                guard let part = registry.parts(of: record)?.first(where: { $0.id == row }) else { return .missing(label: target.label) }
+                appearance = Self.appearance(of: part, on: appearance)
+            }
             return registry.isPublic(record) ? .live(appearance) : .notPublic(appearance)
         }
+    }
+
+    /// How a row a pill stands for shows: its name, its lead's symbol (else its shape's), its lead's chip (an endpoint's method,
+    /// drawn as the row draws it), and its kind word ("Endpoint"), in its shape's tint.
+    static func appearance(of part: PartName, on shape: MentionAppearance) -> MentionAppearance {
+        let symbol = if case .symbol(let name) = part.lead { name } else { shape.systemImage }
+        return MentionAppearance(label: part.name, systemImage: symbol, kindName: part.kindWord, detail: part.kindWord, tint: shape.tint, lead: part.lead)
     }
 
     /// `of(...).standsForNothing`, without working out a name: the answer a skeleton needs, which is
@@ -150,6 +165,7 @@ extension ReferenceCondition {
             }
         case .direct:
             guard let target = props.target, let record = lookup(target.id) else { return true }
+            if let row = target.row, registry.parts(of: record)?.contains(where: { $0.id == row }) != true { return true }
             return !canStand(for: record, registry: registry)
         }
     }

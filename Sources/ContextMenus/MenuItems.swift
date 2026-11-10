@@ -88,13 +88,16 @@ public struct MenuItem<Value> {
     /// transaction. Setting what a shape already has commits nothing. Over a `MenuSubject` (an item
     /// for the canvas), `edit` is handed the subject instead, once, in the item's undo group and in
     /// no transaction, and changes the document only through `editor.transact`, as `perform` does.
+    /// `shownIn` asks besides `when` of what only the editor knows (an arrow's end drawn with a mark its connection's meaning
+    /// gives: what its kept geometry says), for each shape by id; nil, nothing more.
     public init(_ title: String, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
                 when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isChecked: (@MainActor (Value) -> Bool)? = nil,
+                shownIn: (@MainActor (ShapeID, CanvasEditor) -> Bool)? = nil,
                 edit: @escaping @MainActor (inout Value) -> Void) {
         entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: isShown,
-                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .edit(edit)))
+                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .edit(edit)), isShownIn: shownIn)
     }
 
     /// For what editing each shape can't do (reordering, deleting, selecting): `perform` gets the
@@ -179,6 +182,8 @@ public struct MenuEntry<Value> {
     let content: Content
     /// What the undo step is called, if not the title.
     var stepName: String?
+    /// Whether it shows for a shape, asked of the editor besides `isShown` (`MenuItem`'s `shownIn`); nil: as `isShown` says.
+    var isShownIn: (@MainActor (ShapeID, CanvasEditor) -> Bool)?
 
     enum Content {
         case item(isEnabled: @MainActor (Value) -> Bool, isChecked: (@MainActor (Value) -> Bool)?, action: Action)

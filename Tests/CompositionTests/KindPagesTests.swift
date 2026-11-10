@@ -61,14 +61,18 @@ private func renderKindsPage(_ answer: [JSON]) -> String {
             out += "\n"
         }
         let edges = kind["edges"]?.objectValue ?? [:]
-        if edges.isEmpty {
+        let rows = kind["rows"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        if edges.isEmpty, rows.isEmpty {
             out += "**edges**: none\n"
+        } else if edges.isEmpty {
+            out += "**edges**: at its rows only (`\"T\".row`), on \(rows.map(code).joined(separator: ", "))\n"
         } else {
             out += "| edges leave by | channels |\n|---|---|\n"
             for side in sideOrder + edges.keys.filter({ !sideOrder.contains($0) }).sorted() {
                 guard let channels = edges[side]?.arrayValue?.compactMap(\.stringValue) else { continue }
                 out += "| \(side) | \(channels.map(code).joined(separator: ", ")) |\n"
             }
+            if !rows.isEmpty { out += "\n**edges at its rows** (`\"T\".row`): \(rows.map(code).joined(separator: ", "))\n" }
         }
         if let via = kind["via"]?.arrayValue, !via.isEmpty {
             out += "\n**via**: " + via.map { pill in

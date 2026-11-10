@@ -14,7 +14,7 @@ func registerMentionParts(into registrar: inout PluginRegistrar) {
         drawn.shapeParts(named: "mentions") { editor, shape in
             // A skeleton draws no pill, so none is a part (Adornments' and References' drop out the same way).
             guard let mentions = editor.mentions, !editor.drawsSkeleton(of: shape.id) else { return [] }
-            var seen: Set<ShapeID> = []
+            var seen: Set<PartAddress> = []
             return editor.mentionPills(of: shape.id).compactMap { pill in
                 guard pill.isLive, seen.insert(pill.target).inserted else { return nil }
                 let label = mentions.resolve(pill.target).appearance?.label ?? ""

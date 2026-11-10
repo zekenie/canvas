@@ -86,7 +86,8 @@ public struct StandInSpot: Equatable, Sendable {
     /// The last pill of the column already beside `near` on that side, which the new one goes past;
     /// nil for the first.
     public var after: ShapeID?
-    /// How far past `after` (`LayoutProblem.impliedListStep`), else the normal gap from `near`.
+    /// How far past `after` (`LayoutProblem.impliedListStep`), else the gap from `near` (draw's normal one, or more for a pill
+    /// whose line carries a label).
     public var step: CGFloat
     /// What it lines up with in the column: the left edge of a column right of `near`, the right edge
     /// of one left of it; none above and below it, where the middles do.
@@ -104,7 +105,12 @@ public struct StandInSpot: Equatable, Sendable {
     /// what it is solved against, are Draw's): beside `near` named `nearName`, or, past `after`
     /// named `afterName`, a step below it (above, in a column above `near`) and lined up with it.
     func clauses(near nearName: String, after afterName: String?) -> [Clause] {
-        guard after != nil, let afterName else { return [Clause(relation: .direction(direction), targets: [Target(.title(nearName))])] }
+        guard after != nil, let afterName else {
+            // The normal gap is draw's own for a placement that says none; any other is said.
+            let gap = step == GapName.normal.value ? nil : Gap.units(step)
+            return [Clause(relation: .direction(direction), targets: [Target(.title(nearName))], gap: gap,
+                           written: gap.map { Clause.written(.direction(direction), naming: [nearName], gap: $0) })]
+        }
         let way: Direction = direction == .above ? .above : .below, gap = Gap.units(step)
         var clauses = [Clause(relation: .direction(way), targets: [Target(.title(afterName))], gap: gap,
                               written: Clause.written(.direction(way), naming: [afterName], gap: gap))]
@@ -165,16 +171,18 @@ extension StandInRoute {
 
     /// A pill of `kind` for `far` to reuse, or nil to make one. `.any`: the board's first in the
     /// container `near` is in; `.host(h)`: the one an arrow of `h` already runs into, in any
-    /// container; `.never`: none. `excluding` are shapes the caller is deleting.
-    public func existing(for far: ShapeID, kind: ShapeKind, sharing: Sharing, near: ShapeID, in document: CanvasDocument,
+    /// container; `.never`: none. `excluding` are shapes the caller is deleting. A pill matches on its
+    /// shape and its row (`row`: a pill for that row of `far`, an endpoint; nil: a pill for `far` as a whole),
+    /// so a key to a column reuses the table's pill and never an endpoint's.
+    public func existing(for far: ShapeID, row: PartID? = nil, kind: ShapeKind, sharing: Sharing, near: ShapeID, in document: CanvasDocument,
                          excluding: Set<ShapeID> = [], index: Index? = nil) -> ShapeID? {
         let kinds = registry.containingKinds
-        return existing(for: far, kind: kind, sharing: sharing, container: kinds.isEmpty ? nil : document.container(of: near, containingKinds: kinds),
+        return existing(for: far, row: row, kind: kind, sharing: sharing, container: kinds.isEmpty ? nil : document.container(of: near, containingKinds: kinds),
                         in: document, excluding: excluding, index: index)
     }
 
     /// The same where the container is known (of a shape the caller has yet to put down).
-    func existing(for far: ShapeID, kind: ShapeKind, sharing: Sharing, container: ShapeID?, in document: CanvasDocument,
+    func existing(for far: ShapeID, row: PartID? = nil, kind: ShapeKind, sharing: Sharing, container: ShapeID?, in document: CanvasDocument,
                   excluding: Set<ShapeID> = [], index: Index? = nil) -> ShapeID? {
         switch sharing {
         case .never:
@@ -182,18 +190,24 @@ extension StandInRoute {
         case .any:
             let kinds = registry.containingKinds
             for pill in (index ?? self.index(of: document)).pills[far] ?? [] where !excluding.contains(pill) {
-                guard document[pill]?.kind == kind,
+                guard let record = document[pill], record.kind == kind, standIns.forwarding(of: record)?.part == row,
                       (kinds.isEmpty ? nil : document.container(of: pill, containingKinds: kinds)) == container else { continue }
                 return pill
             }
             return nil
         case .host(let host):
             for tie in (index ?? self.index(of: document)).tied[host] ?? [] where !excluding.contains(tie.arrow) && !excluding.contains(tie.other) {
-                guard let stood = Self.read(tie.other, in: document, standIns), stood.shape == far, stood.kind == kind else { continue }
+                guard let stood = Self.read(tie.other, in: document, standIns), stood.shape == far, stood.kind == kind,
+                      let record = document[tie.other], standIns.forwarding(of: record)?.part == row else { continue }
                 return tie.other
             }
             return nil
         }
+    }
+
+    /// The row a pill stands for (`Forwarding.row`: an endpoint's), nil for a pill for a shape as a whole and any other shape.
+    public func row(of pill: ShapeID, in document: CanvasDocument) -> PartID? {
+        document[pill].flatMap { standIns.forwarding(of: $0)?.part }
     }
 
     /// Where a new pill goes beside `near` (a shape of `reading`'s board): right of it where it is
@@ -239,6 +253,13 @@ extension StandInRoute {
     /// has planned and not yet put down). Nil for a spot that is not on the board.
     public func landing(of size: CGSize, at spot: StandInSpot, in surroundings: Surroundings, avoiding: [CGRect] = []) -> Landing? {
         surroundings.landing(of: size, at: spot, avoiding: avoiding)
+    }
+
+    /// The same against a box instead of a shape of the board: where a pill goes beside a shape that is not on the board yet (one
+    /// a move is bringing here, `planned` the box it will have) or past a pill that is planned and not put down. The spot's `near`
+    /// and `after` only say how it is placed (a column past a pill, or beside the shape); `planned` is what it is placed against.
+    public func landing(of size: CGSize, at spot: StandInSpot, against planned: CGRect, in surroundings: Surroundings, avoiding: [CGRect] = []) -> Landing? {
+        surroundings.landing(of: size, at: spot, planned: planned, avoiding: avoiding)
     }
 
     private func columnEnd(beside near: ShapeID, _ direction: Direction, in reading: BoardReading, excluding: Set<ShapeID>,

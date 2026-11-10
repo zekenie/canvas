@@ -22,8 +22,8 @@ public struct AccessibleTraits: Sendable, Equatable {
     public var states: [String]
     /// What can be done with it, said after a pause. The first plugin's that says one.
     public var help: String?
-    /// What it is said to be in its kind's label's place ("Mirror", for a reference shown as one): the first plugin's that
-    /// says one; nil, its kind's label.
+    /// What it is said to be in its kind's label's place ("Mirror", for a reference shown as one; "9 arrows", an arrow that
+    /// draws for several, bundled): the first plugin's that says one; nil, its kind's label.
     public var kind: String?
 
     public init(name: String? = nil, kind: String? = nil, labelParts: [String] = [], value: String? = nil, states: [String] = [],
@@ -60,24 +60,30 @@ public enum AnnouncementPriority: Sendable {
 public struct AccessiblePart {
     /// Stable from frame to frame (the part's own key).
     public var id: AnyHashable
-    /// What VoiceOver calls it: "Locked", "Go to Original", "Arrow to Payment".
-    public var title: String
+    /// What VoiceOver calls it: "Locked", "Go to Original", "Arrow to Payment". Worked out when asked, so listing a
+    /// shape's many parts (a table's rows) costs their rects alone.
+    @MainActor public var title: String { titled() }
+    private let titled: @MainActor () -> String
     public var role: Role
     /// Where it is, in world units.
     public var rect: CGRect
     /// What pressing it does, as its click does.
     public var press: @MainActor (CanvasEditor) -> Void
+    /// Whether it is selected: a row of its shape selected as an item (Selection's).
+    public var isSelected: Bool
 
-    /// What kind of control it is, as the host gives it a role.
+    /// What kind of control it is, as the host gives it a role: `row` is a row of the shape (a table's column), selectable.
     public enum Role: Sendable {
-        case button, menuButton, link, checkbox, handle, connection
+        case button, menuButton, link, checkbox, handle, connection, row
     }
 
-    public init(id: AnyHashable, title: String, role: Role, rect: CGRect, press: @escaping @MainActor (CanvasEditor) -> Void) {
+    public init(id: AnyHashable, title: @autoclosure @escaping @MainActor () -> String, role: Role, rect: CGRect, isSelected: Bool = false,
+                press: @escaping @MainActor (CanvasEditor) -> Void) {
         self.id = id
-        self.title = title
+        self.titled = title
         self.role = role
         self.rect = rect
+        self.isSelected = isSelected
         self.press = press
     }
 }
@@ -169,6 +175,18 @@ extension CanvasEditor {
         return AccessibleDescription(name: name ?? kind, kind: kind, label: label, value: value, help: help)
     }
 
+    /// What VoiceOver and every list call a shape or a part of it, on any board of the file: the shape's name
+    /// (`accessibleDescription(of:)`) for a shape as a whole; for a part, its name (`PartedShape.parts(of:)`) read with its
+    /// shape's ("id in customers"), or alone for one that stands alone (an endpoint). Nil for a shape that isn't there, or a
+    /// part it doesn't have.
+    public func accessibleName(of address: PartAddress) -> String? {
+        guard let record = shape(inFile: address.shape) else { return nil }
+        let shape = accessibleDescription(of: record).name
+        guard let id = address.part else { return shape }
+        guard let part = registry.parts(of: record)?.first(where: { $0.id == id }) else { return nil }
+        return part.standsAlone ? part.name : Style.partInShape(part.name, shape)
+    }
+
     /// Text with something to say, trimmed; nil for none.
     private static func said(_ text: String?) -> String? {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
@@ -217,7 +235,8 @@ extension CanvasEditor {
         var seen = Set<ShapeID>(), list: [ShapeID] = []
         let document = document
         func add(_ id: ShapeID) {
-            if document[id] != nil, seen.insert(id).inserted { list.append(id) }
+            // A shape drawn as part of another (an arrow bundled under its lead) is no element: its lead speaks for it.
+            if document[id] != nil, context.geometry(of: id)?.isHidden != true, seen.insert(id).inserted { list.append(id) }
         }
         if let order = registry.contributions(to: CorePoints.AccessibleOrder.self).first?.value {
             order(self).forEach(add)

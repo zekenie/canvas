@@ -184,6 +184,14 @@ public final class CanvasEditor {
         }
     }
 
+    /// What the host's chrome will cover of the canvas along its edges once it settles with what the editor shows now
+    /// (the inspector a selection just made shows, which comes in on the window's next pass): `coveredEdges` as it is
+    /// headed, as `cameraTarget` is the camera as it is headed. Nil, as by default, for the edges as they are laid out.
+    /// What the clear part a fit, a reveal or an insertion goes by is worked out from (`unobscuredViewport`), so a shape
+    /// put down and selected at once is placed and brought into view in what will be clear of the inspector, never in
+    /// what it is about to cover. Read when asked, so it reads the selection as it is then.
+    @_spi(Host) @ObservationIgnored public var coveredEdgesAhead: (@MainActor () -> CoveredEdges)?
+
     /// How far down the host's views over the canvas reach on the board shown, in view points, from the top
     /// of the part its chrome leaves clear (`coveredTop`: the path's pill inside a subboard): where a view
     /// the host places in that part (a plugin's, `registrar.hostOverlay`) goes to stay clear of them. None
@@ -191,15 +199,42 @@ public final class CanvasEditor {
     public var hostViewsReach: CGFloat { max(coveredTop(board), 0) }
 
     /// The part of the view nothing the host puts over the canvas covers, on the board shown, in view
-    /// points: the view, less what the host's chrome covers along its edges (`coveredEdges`) and,
-    /// under the top's, what its views over the canvas cover there (`coveredTop`). What a fit fits
-    /// shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`. Empty before the view
-    /// has a size; at least a point either way however much is covered.
+    /// points: the view, less what the host's chrome covers along its edges as it is headed
+    /// (`coveredEdgesAhead`, else `coveredEdges`: the inspector a selection just made counts before it has
+    /// slid in) and, under the top's, what its views over the canvas cover there (`coveredTop`). What a
+    /// fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`; and where Insert
+    /// puts a shape down. Empty before the view has a size; at least a point either way however much is
+    /// covered.
     public var unobscuredViewport: CGRect { unobscuredViewport(on: board) }
 
+    /// How much of the clear part's corners the host's own views over the canvas cover, in view points from each corner (the
+    /// minimap, bottom-left, while it shows; `CoveredCorners`). None unless the host says. A fit fills the clear part
+    /// (`unobscuredViewport`) whatever its corners; what keeps one shape in view reads `clearView`, which leaves them out.
+    @_spi(Host) @ObservationIgnored public var coveredCorners = CoveredCorners()
+
+    /// The part of the view a shape is kept in, in view points: the clear part (`unobscuredViewport`), less the corners of it the
+    /// host's views cover (`coveredCorners`). What a reveal by the least pan (`animateCamera(toShow:…)`), the caret kept in view
+    /// (`EditContext.keepInView`) and a shape put down for a person (Draw's `PutBeside`, through `reading(of:)`'s `covered`)
+    /// judge "in view" by, so nothing lands, or is kept, under the minimap.
+    public var clearView: ClearView { clearView(on: board) }
+
+    func clearView(on target: BoardID) -> ClearView {
+        let rect = unobscuredViewport(on: target)
+        return ClearView(rect: rect, covered: coveredCorners.rects(in: rect))
+    }
+
+    /// The same, of the chrome as it is laid out now (`coveredEdges`), whatever it is headed for: what of a
+    /// selection is in view now, which the view keeps as the inspector slides in (`keepInViewWhileSettling`).
+    var laidOutViewport: CGRect { unobscuredViewport(on: board, edges: coveredEdges) }
+
     func unobscuredViewport(on target: BoardID) -> CGRect {
+        // While a service takes a change in, what the host's rule reads (the selection) may be half taken in: the edges as laid out.
+        let ahead = hearing.contains(where: \.isBusy) ? nil : coveredEdgesAhead?()
+        return unobscuredViewport(on: target, edges: ahead ?? coveredEdges)
+    }
+
+    private func unobscuredViewport(on target: BoardID, edges: CoveredEdges) -> CGRect {
         guard viewportSize.width > 0, viewportSize.height > 0 else { return .zero }
-        let edges = coveredEdges
         let left = min(max(edges.left, 0), viewportSize.width - 1)
         let right = min(max(edges.right, 0), viewportSize.width - 1 - left)
         let top = min(max(edges.top + max(coveredTop(target), 0), 0), viewportSize.height - 1)
@@ -230,10 +265,25 @@ public final class CanvasEditor {
             let id = newValue.flatMap { document[$0] == nil ? nil : $0 }
             guard id != hintedID else { return }
             hintedID = id
+            hintedPartID = nil
             setNeedsDisplay()
         }
     }
     private var hintedID: ShapeID?
+
+    /// A part of the hinted shape lit as the target (a row a connection would end on: `PartedShape`), its rect from the shape's
+    /// kept geometry (`ShapeGeometry.parts`) drawn in the hint's color. Set after `hintedShapeID`, which clears it whenever it
+    /// changes; nil with no hint, and drawn only while the hinted shape's geometry lists the part.
+    public var hintedPart: PartID? {
+        get { hintedPartID }
+        set {
+            let part = hintedID == nil ? nil : newValue
+            guard part != hintedPartID else { return }
+            hintedPartID = part
+            setNeedsDisplay()
+        }
+    }
+    private var hintedPartID: PartID?
     /// Starts as the registry's default tool.
     public private(set) var currentToolID: ToolID
     /// While true (tool lock, tldraw's `toggle-tool-lock`: Keyboard's Q), putting a shape down keeps the
@@ -255,12 +305,21 @@ public final class CanvasEditor {
         }
     }
     public private(set) var editingShapeID: ShapeID?
+    /// While a shape is edited, the part of it the keys are on (a row with the caret, or the one row selected whole while it's
+    /// typed in), as its editing view says; nil while the keys are on none (its title), and once editing ends. What a panel shows
+    /// as its subject: the row, not the shape.
+    public var editingPart: PartID? {
+        didSet { if editingShapeID == nil, editingPart != nil { editingPart = nil } }
+    }
     /// The shape on the board shown that the shape being edited is edited through, where a stand-in shows it in its place
     /// (`beginEditing(_:through:at:clickCount:)`: a mirror of its original); nil for a shape edited where it is. The shape
     /// edited is then on any board (`shape(inFile:)`), its view laid over the stand-in (`editingFrame`).
     public private(set) var editingStandIn: ShapeID?
     /// The kind of the shape edited through a stand-in, as editing began: a commit that turns it into another ends editing.
     @ObservationIgnored var editingThroughKind: ShapeKind?
+    /// The stand-in's frame as editing through it began, at rest: what it is lifted beyond while the shape shown in it is laid
+    /// out larger (`liftedWhileEdited`).
+    @ObservationIgnored var editingStandInRest: CGRect?
     /// While a shape is edited, where the press that began it was, in world units
     /// (`beginEditing(_:at:)`); nil if none said, and once editing ends.
     public private(set) var editingStartPoint: CGPoint?
@@ -334,7 +393,8 @@ public final class CanvasEditor {
         inputs: layoutInputs, sizes: laidOutSizes, lend: { [unowned self] in resolveService($0) },
         shape: { [unowned self] in storedDocument[$0] ?? Self.shape($0, inFile: storedFile, registry: registry) },
         board: { [unowned self] in storedFile.board(containing: $0) },
-        fileValues: { [unowned self] in storedFile.fileValues })
+        fileValues: { [unowned self] in storedFile.fileValues },
+        nearby: { [unowned self] board, rect in board == self.board ? shapeIndex.ids(touching: rect, in: shapeContext) : nil })
     /// Moves whenever shapes were laid out again without a commit (`shapesDidChangeLayout`). What
     /// keeps something worked out from geometry keys it by this beside `revision`.
     @ObservationIgnored public internal(set) var layoutRevision = 0
@@ -350,6 +410,8 @@ public final class CanvasEditor {
     /// Where the camera was on boards of this file in an earlier session (the host remembers them):
     /// where a board shown for the first time this session starts.
     @_spi(Host) @ObservationIgnored public var rememberedCameras: [BoardID: Camera] = [:]
+    /// What plugins keep of how the file is viewed on this Mac (`setViewValue`), by key, encoded.
+    @ObservationIgnored var viewValueStore: [String: Data] = [:]
     /// Pictures of the boards the shapes drawn own (`RenderContext.drawBoardPreview`), built a
     /// frame's worth at a time while `draw(in:)` asks for the next frame (`nextPreviewFrame`).
     @_spi(Host) @ObservationIgnored public let boardPreviews: BoardPreviews
@@ -418,6 +480,13 @@ public final class CanvasEditor {
     @ObservationIgnored var cameraBeforeFit: (before: Camera, fit: Camera)?
     /// What the camera keeps in view while the view around it settles (CanvasEditor+Camera.swift).
     @ObservationIgnored var keptView: KeptView?
+    /// What the shape Insert is putting down goes beside (`insert(_:named:beside:)`), while it is placed: what a service
+    /// told it was placed (`didPlace`) keeps in view with it, as it brings it into view. Empty otherwise.
+    @ObservationIgnored public internal(set) var placingBeside: [ShapeID] = []
+    /// A command that says its own step as it ends (the command bar's) is running: a shape it puts down is heard in
+    /// those words, once, not also as the editor's own ("Add Note"). The bar's, set as it runs a command and cleared once
+    /// it has said it.
+    @ObservationIgnored public var isSayingStep = false
     // The popover (Popovers.swift): the one showing, the one waiting its delay and its timer, and
     // while one has just gone, the end of that moment.
     @ObservationIgnored var shownPopover: CanvasPopover?
@@ -671,8 +740,8 @@ public final class CanvasEditor {
     }
 
     /// Whether a transaction may begin now: none is under way, no change is being delivered, and no step
-    /// is being put back.
-    var canTransact: Bool { !isApplying && delivery == nil && !isTransacting }
+    /// is being put back. What a view that commits as it's torn down asks first (a row's draft, as editing ends).
+    public var canTransact: Bool { !isApplying && delivery == nil && !isTransacting }
 
     /// `origin` says whether an editing view commits (`EditContext`), whose commits are its session's step.
     func transact<T>(_ name: String?, coalescing key: AnyHashable?, origin: UndoHistory.Origin,
@@ -688,13 +757,15 @@ public final class CanvasEditor {
         do {
             defer { isTransacting = false }
             result = try body(&transaction)
+            // What it grew makes room below it, in the same step (MakingRoom.swift).
+            if !isReplacingFile { transaction.makeRoom() }
         }
         // Committing can end editing, and an editing view may save as it closes: outside the
         // transaction, so it can.
         if transaction.hasChanges, isReplacingFile {
             commit(transaction)
         } else if transaction.hasChanges {
-            undoHistory.willCommit(transaction.changes, from: storedFile, name: name, coalescing: key, origin: origin)
+            undoHistory.willCommit(transaction.changes, from: storedFile, name: transaction.stepName ?? name, coalescing: key, origin: origin)
             commit(transaction)
             undoHistory.didCommit()
         }
@@ -730,10 +801,12 @@ public final class CanvasEditor {
                                       registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess,
                                       layout: layoutSource)
         transaction.mayReachBoardShown = false
+        transaction.boardShown = board
         let result: T
         do {
             defer { isTransacting = false }
             result = try body(&transaction)
+            if !isReplacingFile { transaction.makeRoom() }
         }
         // The owners too: an empty board isn't among the boards a deletion takes. Whatever the transaction
         // deleted counts, on whichever board, brought there or not.
@@ -744,7 +817,7 @@ public final class CanvasEditor {
         if isReplacingFile {
             commit(transaction, onHidden: target)
         } else {
-            undoHistory.recordStep(on: target, name: name, changes: transaction.changes, from: storedFile) {
+            undoHistory.recordStep(on: target, name: transaction.stepName ?? name, changes: transaction.changes, from: storedFile) {
                 commit(transaction, onHidden: target)
             }
         }
@@ -860,6 +933,11 @@ public final class CanvasEditor {
         for service in serviceOrder { service.shapeTintsDidChange(in: self) }
     }
 
+    /// Services hear that the host put back the view values an earlier session saved (`restoreViewValues`).
+    func tellViewValuesRestored() {
+        for service in serviceOrder { service.viewValuesDidChange(in: self) }
+    }
+
     /// Services hear that a view kept while the view settled moved the camera (`keepViewAfterViewChange`).
     func tellViewKept(from old: Camera, to new: Camera) {
         for service in serviceOrder { service.viewWasKept(from: old, to: new, in: self) }
@@ -879,7 +957,9 @@ public final class CanvasEditor {
                    subtree: { [unowned self] in storedFile.subtree(ownedBy: $0) },
                    contents: { [unowned self] in storedFile[$0] },
                    canShow: { [unowned self] in Self.canShow($0, in: storedFile, registry: registry) },
-                   values: { [unowned self] in storedFile.fileValues })
+                   values: { [unowned self] in storedFile.fileValues },
+                   standIns: { [unowned self] in registry.standInLookup?(self, $0) ?? [] },
+                   namers: { [unowned self] in registry.namingLookup?(self, $0) ?? [] })
     }
 
     /// A board of the file: `document` for the one shown, else its shapes as the file has them
@@ -1304,9 +1384,10 @@ public final class CanvasEditor {
     /// included). Nil for a board it can't show (`canShow`). Observed through `document`.
     public func reading(of target: BoardID) -> BoardReading? {
         if target == board {
-            let clear = unobscuredViewport
+            let clear = clearView, camera = cameraTarget
             return BoardReading(board: board, document: document, shapes: shapeContext, index: shapeIndex,
-                                view: clear.isEmpty ? nil : cameraTarget.toWorld(clear), isBoardReadOnly: isBoardReadOnly)
+                                view: clear.rect.isEmpty ? nil : camera.toWorld(clear.rect), covered: clear.covered.map { camera.toWorld($0) },
+                                isBoardReadOnly: isBoardReadOnly)
         }
         guard canShow(target) else { return nil }
         let contents = file[target]
@@ -1314,10 +1395,11 @@ public final class CanvasEditor {
             let index = ShapeIndex()
             return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index, layout: layoutSource))
         }
-        let index = ShapeIndex(), clear = unobscuredViewport(on: target)
+        let index = ShapeIndex(), clear = clearView(on: target)
         return BoardReading(board: target, document: contents,
                             shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index, layout: layoutSource), index: index,
-                            view: clear.isEmpty ? nil : arrival.toWorld(clear), isBoardReadOnly: isReadOnly(board: target))
+                            view: clear.rect.isEmpty ? nil : arrival.toWorld(clear.rect), covered: clear.covered.map { arrival.toWorld($0) },
+                            isBoardReadOnly: isReadOnly(board: target))
     }
 
     // MARK: Tools
@@ -1357,7 +1439,7 @@ public final class CanvasEditor {
     /// is placed, nothing else happens (the tool stays, nothing's selected), and services hear the
     /// board's owner refused. (Other tools create shapes with `transact { $0.insert(...) }`, as a
     /// port's drag does.)
-    /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
+    /// The insert names its undo step "Add" and the placing tool's label ("Add Note"), which VoiceOver hears.
     public func place(_ placement: Placement, at point: CGPoint) {
         put(placement.shape(at: point), placing: placement, from: undoHistory.isPressHeld && session == nil ? point : nil)
     }
@@ -1388,8 +1470,14 @@ public final class CanvasEditor {
     /// placed, and the container, or the board's owner, is heard refused); the default tool comes back
     /// (unless the tool is locked), services hear `didPlace`, and an editing placement's shape is edited.
     /// It never follows the pointer.
-    public func place(_ placement: Placement, in frame: CGRect) {
-        put(placement.make(frame), placing: placement, from: nil)
+    ///
+    /// Returns the new shape's id; nil when nothing was put down (a read-only board, or a read-only container
+    /// that wouldn't take it).
+    @discardableResult
+    public func place(_ placement: Placement, in frame: CGRect) -> ShapeID? {
+        let record = placement.make(frame)
+        put(record, placing: placement, from: nil)
+        return document[record.id] != nil ? record.id : nil
     }
 
     /// Puts a new container down around shapes on the board shown, holding them (Frames' Create
@@ -1523,7 +1611,8 @@ public final class CanvasEditor {
         }
         let tool = ToolID(placing: placement.kind)
         let label = registry.tools.first { $0.id == tool }?.label
-        let follows = point != nil
+        let settled = placement.completion == .settled
+        let follows = point != nil && !settled
         let before = follows ? undoHistory.snapshots() : [:]
         var nudges: [ShapeID: CGPoint] = [:]
         if follows || registry.containingKinds.isEmpty {
@@ -1536,8 +1625,14 @@ public final class CanvasEditor {
             }) else { return }
             nudges = landed.nudges
         }
+        // Settled: put down and left at that, the selection, the tool and the keyboard where they are.
+        if settled { return glide(nudges) }
         if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace([record.id], in: self) }
+        // VoiceOver hears the step the Undo menu names ("Add Table", or the group's: "Create Database"), as it hears a row's
+        // commit, however it was put down (a tool's click, Insert, ⇧↩); a command's own words, once, are the bar's. A placement
+        // settled is part of the step that made it (a line's commit), heard there.
+        if document[record.id] != nil, !isSayingStep { announce(undoHistory.undoName ?? "Add \(label ?? "Shape")") }
         let edits = placement.completion == .edit
         if let point, session == nil {
             session = PlacingSession([record.id], from: point, edits: edits, restoring: before, in: self)
@@ -1628,8 +1723,8 @@ public final class CanvasEditor {
     /// laid over where the stand-in draws it, at the stand-in's scale (`editingFrame`), writing the shape on whichever board
     /// it is (`EditContext.update`), in an editing step made on the board shown, so ⌘Z here takes it back without leaving.
     /// `point` is where the press that began it was, in the board shown's world units (the view reads it in the shape's own,
-    /// `EditContext.startPoint`). Returns false for a shape the stand-in doesn't show, one kept aside or of a kind that isn't
-    /// `Editable`; and for a read-only stand-in or shape, which is refused: the stand-in shakes, the one the person sees
+    /// `EditContext.startPoint`). Returns false for a shape the stand-in doesn't show, one kept aside, of a kind that isn't
+    /// `Editable` or whose editor reaches only the board shown (`Editable.editsThroughStandIn`); and for a read-only stand-in or shape, which is refused: the stand-in shakes, the one the person sees
     /// (services hear it, `didRefuseChanges`). Editing ends as it does for any shape, and with the stand-in: gone, read-only,
     /// or no longer showing it.
     @discardableResult
@@ -1637,7 +1732,7 @@ public final class CanvasEditor {
         guard standIn != id else { return beginEditing(id, at: point, clickCount: clickCount) }
         endEditing()
         guard let transform = placement(of: id, through: standIn), let record = shape(inFile: id), !record.isOpaque,
-              let definition = registry.definition(for: record.kind) as? any Editable else { return false }
+              let definition = registry.definition(for: record.kind) as? any Editable, definition.editsThroughStandIn else { return false }
         guard !isReadOnly(standIn), !isReadOnly(inFile: id) else {
             refuseChanges(to: [standIn])
             return false
@@ -1645,6 +1740,7 @@ public final class CanvasEditor {
         letWaitingShapesGo()
         editingStartPoint = point.map { $0.applying(transform.inverted()) }
         editingStartClickCount = point == nil ? 1 : clickCount
+        editingStandInRest = document[standIn].flatMap { shapeContext.frame(of: $0) }
         editingShapeID = id
         editingStandIn = standIn
         editingThroughKind = record.kind
@@ -1682,7 +1778,9 @@ public final class CanvasEditor {
         let standIn = editingStandIn
         let mayDiscard = discarding && !undoHistory.isInAction && standIn == nil
         editingShapeID = nil
+        editingPart = nil
         editingStandIn = nil
+        editingStandInRest = nil
         editingThroughKind = nil
         editingStartPoint = nil
         editingStartClickCount = 1
@@ -1722,6 +1820,18 @@ public final class CanvasEditor {
         return shown
     }
 
+    /// The shapes in a world rect that are painted just below their anchor (`PaintOrderAnchored.paintsBelowAnchor`: a key, under
+    /// the cards it joins), back to front: nothing, at no cost, on a board with none, and otherwise a look at what is in the rect
+    /// for them, never the shapes themselves (what draws over the cards those pass beneath asks this each frame).
+    public func shapesPaintedBelowAnchor(in rect: CGRect) -> [AnyShapeRecord] {
+        let context = shapeContext
+        let below = shapeIndex.belowAnchor(in: context)
+        guard !below.isEmpty else { return [] }
+        var found: [AnyShapeRecord] = []
+        forEachShape(in: rect) { record, _ in if below.contains(record.id) { found.append(record) } }
+        return found
+    }
+
     /// `paintOrder(in:)`'s shapes, back to front, each with its kept extent (world units): the one rule for what
     /// may show in a rect, for what reads the extents too (VoiceOver's shapes in view, ranked by their middles).
     func forEachShape(in rect: CGRect, _ body: (AnyShapeRecord, CGRect) -> Void) {
@@ -1730,13 +1840,78 @@ public final class CanvasEditor {
         // through every shape.
         let positions = shapeIndex.positions(touching: rect, in: context)
         guard !positions.isEmpty else { return }
-        let list = shapeIndex.paintList(in: context), shapes = document.shapes, only = drawnShapes
+        let list = shapeIndex.paintList(in: context), shapes = document.shapes, only = drawnShapes, hidden = shapeIndex.hidden
+        // The shape being edited, laid out larger than it stores (a line typed longer than it is, its waiting line), is painted
+        // after the rest, so what its widening now overlaps (a shape put down beside it) never covers its rows while the caret is
+        // in it. Nothing moves: it is back in its place in the order as it stops being larger, or edited.
+        let lifted = liftedWhileEdited(in: context)?.id
+        var held: (record: AnyShapeRecord, extent: CGRect)?
         for position in positions {
             let record = shapes[list.order[position]]
             if let only, !only.contains(record.id) { continue }
+            // Drawn as part of another (`ShapeGeometry.isHidden`: an arrow bundled under its lead): never shown on its own.
+            if !hidden.isEmpty, hidden.contains(record.id) { continue }
+            if record.id == lifted {
+                held = (record, list.extents[position])
+                continue
+            }
             body(record, list.extents[position])
         }
+        if let held { body(held.record, held.extent) }
     }
+
+    /// The shape edited, where it is laid out larger than it is at rest (wider: a line typed longer than it is; taller: its waiting
+    /// line) and holds no shapes (a container's would be covered): painted, and hit, above the shapes in its way until it is back
+    /// to its size or no longer edited. With the frame it is laid out in and the frame it has at rest: laid out without what is
+    /// set for it while it's handled, as `makeRoom()` measures it, never its stored box, whose height a kind laid out by its rows
+    /// keeps from when it was made (review R25: a table typed to ten rows stores one).
+    func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
+        // Edited through a stand-in (a mirror), it is the stand-in that grows with what is typed, and the stand-in that is lifted,
+        // from the frame it had as editing began; the shape edited (on any board) is never lifted from here.
+        if let standIn = editingStandIn {
+            guard let record = document[standIn], record.box != nil, !registry.isContainer(record), let rest = editingStandInRest,
+                  let frame = context.frame(of: record),
+                  frame.width > rest.width + Self.liftSlack || frame.height > rest.height + Self.liftSlack else { return nil }
+            return (standIn, frame, rest)
+        }
+        guard let id = editingShapeID, let record = document[id], record.box != nil, !registry.isContainer(record),
+              let frame = context.frame(of: record), let rest = restingFrame(of: record),
+              frame.width > rest.width + Self.liftSlack || frame.height > rest.height + Self.liftSlack else { return nil }
+        return (id, frame, rest)
+    }
+
+    /// `record`'s frame at rest (`LayoutReading.isResting`, the values set for it while it's handled left out), kept until the
+    /// file or the layout changes: what the shape edited is lifted beyond.
+    private func restingFrame(of record: AnyShapeRecord) -> CGRect? {
+        if let kept = restingEdited, kept.id == record.id, kept.revision == revision, kept.layout == layoutRevision { return kept.frame }
+        let editor = layoutSource
+        let source = LayoutSource(inputs: layoutInputs, sizes: laidOutSizes, lend: editor.lend, shape: editor.shape, board: editor.board,
+                                  fileValues: editor.fileValues, isChanged: { _ in true }, writes: [], run: LayoutSource.nextRun(), isResting: true)
+        let frame = ShapeContext(document: document, registry: registry, camera: camera, index: nil, layout: source).frame(of: record)
+        restingEdited = frame.map { (record.id, revision, layoutRevision, $0) }
+        return frame
+    }
+
+    /// The shape edited's frame at rest, as of a revision of the file and of the layout (`restingFrame(of:)`).
+    @ObservationIgnored private var restingEdited: (id: ShapeID, revision: Int, layout: Int, frame: CGRect)?
+
+    /// Where the shape edited is laid out beyond the box it stores (its widening, its waiting line's room), world units, and the
+    /// shape: nil where it is laid out in its box. A plugin that draws over the shapes (pills, chips) leaves what it draws for
+    /// another shape out of these, so what the shape edited draws there is never covered while the caret is in it.
+    public var editedShapeOverflow: (id: ShapeID, areas: [CGRect])? {
+        guard let lifted = liftedWhileEdited(in: shapeContext) else { return nil }
+        var areas: [CGRect] = []
+        if lifted.frame.maxX > lifted.box.maxX {
+            areas.append(CGRect(x: lifted.box.maxX, y: lifted.frame.minY, width: lifted.frame.maxX - lifted.box.maxX, height: lifted.frame.height))
+        }
+        if lifted.frame.maxY > lifted.box.maxY {
+            areas.append(CGRect(x: lifted.frame.minX, y: lifted.box.maxY, width: lifted.frame.width, height: lifted.frame.maxY - lifted.box.maxY))
+        }
+        return (lifted.id, areas)
+    }
+
+    /// How much wider than it stores an edited shape is laid out before it is painted above the rest, world units.
+    private static let liftSlack: CGFloat = 0.5
 
     /// The shapes of the board shown that are drawn, nil for all of them: a picture of some of a
     /// board's shapes (Edit › Copy as Image, `BoardPicture(file:registry:board:showing:)`), whose
@@ -1746,6 +1921,11 @@ public final class CanvasEditor {
         didSet { setNeedsDisplay() }
     }
 
+    /// Whether any shape of the board shown is drawn as part of another (`ShapeGeometry.isHidden`: a bundle's member arrow), as far
+    /// as the shapes laid out so far say. False where nothing is, so what only matters for such shapes (Selection's taking a hidden
+    /// pick with its unit) costs nothing there, and asks no plugin.
+    public var hasHiddenShapes: Bool { !shapeIndex.hidden.isEmpty }
+
     /// The front-most shape under a world point, of those `include` accepts. Only shapes near the
     /// point are asked (see `ShapeDefinition.hitMargin`).
     public func shape(at point: CGPoint, where include: (AnyShapeRecord) -> Bool = { _ in true }) -> ShapeID? {
@@ -1753,9 +1933,17 @@ public final class CanvasEditor {
         // Front to back, those near enough to be asked (`ShapeIndex.mayHit`), found in the cells round the point.
         let positions = shapeIndex.positions(mayHit: point, zoom: camera.zoom, in: context)
         guard !positions.isEmpty else { return nil }
-        let list = shapeIndex.paintList(in: context), shapes = document.shapes
+        let list = shapeIndex.paintList(in: context), shapes = document.shapes, hidden = shapeIndex.hidden
+        // The shape edited, painted above what its widening overlaps, is hit first there too.
+        if let lifted = liftedWhileEdited(in: context)?.id, let record = document[lifted], let index = document.index(of: lifted),
+           positions.contains(list.positions[index]), include(record),
+           registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
+            return lifted
+        }
         for position in positions {
             let record = shapes[list.order[position]]
+            // A shape drawn as part of another is hit as that one (its lead), never itself.
+            if !hidden.isEmpty, hidden.contains(record.id) { continue }
             if include(record), registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
                 return record.id
             }

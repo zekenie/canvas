@@ -1,6 +1,7 @@
 import Adornments
 import AppKit
 import Canvas
+import Connections
 import Foundation
 import Selection
 
@@ -93,9 +94,10 @@ extension RelationshipOfferPill: ClickableAdornment {
 
     /// A click lists the types that fit, as a port's release lists them, under the pill: a pick types the arrow.
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
-        guard let offers = editor.service(RelationshipOffers.self), let (taken, open) = offers.fitting(click.shape),
-              let menu = RelationshipMenus.menu(taken: taken, open: open, for: click.shape, in: editor) else { return }
-        editor.popUpMenu(menu, below: click.rect, highlighting: menu.items.first)
+        guard let offers = editor.service(RelationshipOffers.self), let (taken, open) = offers.fitting(click.shape) else { return }
+        let choices = RelationshipMenus.choices(taken: taken, open: open, for: click.shape, in: editor)
+        guard !choices.isEmpty else { return }
+        editor.presentConnectionChoices([choices], for: click.shape, below: click.rect)
     }
 }
 

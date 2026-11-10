@@ -17,17 +17,21 @@ public struct BoardReading {
     /// it would be on showing it (as it was left, else remembered, else a first visit's fit). Nil
     /// while the editor has no view (headless).
     public let view: CGRect?
+    /// The corners of `view` the host's own views cover (the minimap, `CanvasEditor.coveredCorners`), world units: a shape
+    /// put down for a person, or kept in view, keeps out of them. None headless, or with nothing covered.
+    public let covered: [CGRect]
     /// Whether the board can't change (`editor.isReadOnly(board:)`: a locked subboard's, at any
     /// depth): nothing on it changes, and nothing goes on it.
     public let isBoardReadOnly: Bool
     private let index: ShapeIndex
 
-    init(board: BoardID, document: CanvasDocument, shapes: ShapeContext, index: ShapeIndex, view: CGRect?, isBoardReadOnly: Bool) {
+    init(board: BoardID, document: CanvasDocument, shapes: ShapeContext, index: ShapeIndex, view: CGRect?, covered: [CGRect] = [], isBoardReadOnly: Bool) {
         self.board = board
         self.document = document
         self.shapes = shapes
         self.index = index
         self.view = view
+        self.covered = covered
         self.isBoardReadOnly = isBoardReadOnly
     }
 

@@ -21,7 +21,7 @@ public struct TitleFindPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.forShapes(adopting: .titled) { titled in
-            titled.findableTexts("title", look: .ring, followsZoom: true,
+            titled.findableTexts("title", look: .ring, followsZoom: true, names: true,
                                  zoomedOut: { record, _, context in
                                      context.editor.titleCover(of: record.id)?.rect ?? context.editor.titlePillRect(of: record.id)
                                  },

@@ -85,13 +85,12 @@ extension CanvasEditor {
         let size = shapeContext.layingOut(with: [probe]).frame(of: probe)?.size ?? placement.size
         // The end on another board: the pill that stands for it, reused or made, and what it takes.
         let farFirst = firstBoard != board, far = farFirst ? first : second, near = farFirst ? second : first
-        var pill: (kind: ShapeKind, reused: ShapeID?, record: AnyShapeRecord?, fulfil: Bool, standingFor: ShapeKind)?
         let verdicts = FarVerdicts(self)
+        let farLabel = firstBoard != secondBoard ? shape(inFile: far).flatMap { registry.mentionAppearance(of: $0)?.label } ?? "" : ""
         if firstBoard != secondBoard {
-            guard let route = verdicts.route, let record = shape(inFile: far), verdicts.verdict(of: far) != .cannot, let found = verdicts.kind(for: record) else { return nil }
-            let reused = route.existing(for: far, kind: found.kind, sharing: .host(near), near: near, in: document)
-            pill = (found.kind, reused, nil, found.fulfils, record.kind)
+            guard verdicts.route != nil, shape(inFile: far) != nil, verdicts.verdict(of: far) != .cannot else { return nil }
         }
+        var pill: PlacedPill?
         guard let surroundings = Surroundings(on: board, moving: size, in: self) else { return nil }
         let landing: Landing?
         if first == second {
@@ -101,7 +100,7 @@ extension CanvasEditor {
             bounds.size.height += TypesStyle.relationshipRowGrowth
             landing = surroundings.near(bounds.insetBy(dx: -max(0, TypesStyle.endArrowRoom - PlacingStyle.arrowRoom),
                                                        dy: -max(0, TypesStyle.endArrowRoom - PlacingStyle.arrowRoom)))
-        } else if pill == nil {
+        } else if firstBoard == secondBoard {
             landing = surroundings.between(first, second, growing: TypesStyle.relationshipRowGrowth, room: TypesStyle.endArrowRoom)
         } else {
             landing = surroundings.near(near)
@@ -111,18 +110,13 @@ extension CanvasEditor {
         guard let landing else { return nil }
         let middle = Self.pillMiddle(of: landing, between: first, second, in: surroundings)
         let record = placement.shape(at: middle.point)
-        // A new pill goes where a draw run puts it, past the new type.
-        var farLanding: Landing?
-        if let pending = pill, pending.reused == nil, let route = verdicts.route, let record = shape(inFile: far) {
-            let label = registry.mentionAppearance(of: record)?.label ?? ""
-            guard var made = registry.standIns.make(pending.kind, standingFor: far, label: label) else { return nil }
-            route.seat(&made, beside: near, in: self)
-            guard let pillSize = made.box?.size, let pillSurroundings = Surroundings(on: board, moving: pillSize, in: self) else { return nil }
-            let spot = route.spot(beside: near, edgeIs: farFirst ? .to : .from, side: nil, in: pillSurroundings.reading)
-            guard let spotLanding = route.landing(of: pillSize, at: spot, in: pillSurroundings, avoiding: [landing.rect]) else { return nil }
-            made.box = spotLanding.rect
-            pill?.record = made
-            farLanding = spotLanding
+        // The pill for the far type: the one the near type already has an arrow into for it is reused, else a new one goes where a
+        // draw run puts it, past the new type.
+        if firstBoard != secondBoard {
+            guard let route = verdicts.route,
+                  let placed = route.placePill(standingFor: far, label: farLabel, beside: near, edgeIs: farFirst ? .to : .from, sharing: .host(near),
+                                               avoiding: [landing.rect], verdicts: verdicts, in: self) else { return nil }
+            pill = placed
         }
         let made: ShapeID? = undoHistory.group(TypesStyle.newRelationshipType) {
             // Whole or not at all (`transactWhole`): a read-only container a shape would land in refuses it,
@@ -130,29 +124,14 @@ extension CanvasEditor {
             let drawn: Void? = transactWhole(TypesStyle.newRelationshipType) { transaction in
                 if let connection { transaction.delete([connection]) }
                 var ends = (first, second)
-                if let pending = pill {
-                    if pending.fulfil { transaction.update(inFile: far) { _ = registry.standIns.fulfil(pending.kind, &$0) } }
-                    // Asked again as the step leaves the far type: it may have gone private or away since.
-                    guard let farBoard = transaction.board(containing: far), let there = transaction.contents(of: farBoard)[far],
-                          registry.standIns.admits(pending.kind, there) else { throw Transaction.Refused() }
-                }
+                if let pill { try pill.claim(in: &transaction, registry: registry) }
                 transaction.insert(record)
                 guard case .settled = transaction.settle([record.id]) else { throw Transaction.Refused() }
-                if let pending = pill {
-                    if let reused = pending.reused {
-                        if farFirst { ends.0 = reused } else { ends.1 = reused }
-                    } else if let pillRecord = pending.record {
-                        transaction.insert(pillRecord)
-                        guard transaction.document[pillRecord.id] != nil else { throw Transaction.Refused() }
-                        guard case .settled = transaction.settle([pillRecord.id]) else { throw Transaction.Refused() }
-                        for above in farLanding?.above ?? [] {
-                            guard let mine = transaction.document.index(of: pillRecord.id), let theirs = transaction.document.index(of: above), theirs > mine else { continue }
-                            transaction.move(pillRecord.id, above: above)
-                        }
-                        if farFirst { ends.0 = pillRecord.id } else { ends.1 = pillRecord.id }
-                    }
+                if let pill {
+                    let end = try pill.put(in: &transaction)
+                    if farFirst { ends.0 = end } else { ends.1 = end }
                 }
-                let stood: [ShapeKind] = pill.map { [$0.standingFor] } ?? []
+                let stood: [ShapeKind] = pill.map { [$0.farKind] } ?? []
                 // The first arrow is in the document before the second is made: a type related to itself joins one
                 // pair twice, and the maker reads the bend of the arrow the second goes beside from there.
                 guard let toIt = registry.drawConnection(from: ends.0, to: record.id, in: transaction.shapes, standingFor: (farFirst ? stood : [], [])) else { throw Transaction.Refused() }

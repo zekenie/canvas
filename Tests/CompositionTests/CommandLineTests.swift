@@ -469,9 +469,9 @@ edge "API" -> "Cache" channel: none
         // Another language's word for a shape is told the kind like it; its word for a connection, the edge.
         let word = try refusedInProcess(#"note "Idea" text: "Try a cache""#, on: editor)
         expectEqual(word.reason, "unknown_kind")
-        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: emoji-sticker, frame, reference, sticky-note, subboard; a statement starts with its kind, as in sticky-note "A""#)
+        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: api, database, enum-type, frame, reference, sticky-note, subboard, table; a statement starts with its kind, as in sticky-note "A""#)
         expectEqual(try refusedInProcess(#"link "A""#, on: editor).hint,
-                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: emoji-sticker, frame, reference, sticky-note, subboard"#)
+                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: api, database, enum-type, frame, reference, sticky-note, subboard, table"#)
         // A kind no tool places: an arrow is an edge.
         let placing = try refusedInProcess(#"arrow "A""#, on: editor)
         expectEqual(placing.reason, "not_placeable")
@@ -628,7 +628,7 @@ edge "API" -> "Cache" channel: none
         expectEqual(joined["changes"]?.arrayValue?.map { $0["channel"] }, ["frame-link", "frame-link"])
         let apart = try refusedInProcess(#"edge "Login" -> "Sprint 2""#, on: editor)
         expectEqual(apart.reason, "no_channel")
-        expectEqual(apart.message, #""Login" and "Sprint 2" share no channel: a sticky-note connects on note-link, a frame on frame-link"#)
+        expectEqual(apart.message, #""Login" and "Sprint 2" share no channel: a sticky-note connects on note-link and calls, a frame on frame-link and calls"#)
         let holds = try refusedInProcess(#"edge "Sprint 1" -> "Login""#, on: editor)
         expectEqual(holds.reason, "cannot_connect")
         expectEqual(holds.message, #""Sprint 1" can't be connected to "Login", which it holds"#)

@@ -7,9 +7,10 @@ enum MentionQuote {
     /// The plain text of `runs` around the first mention of `target` (nil if there's none): each
     /// mention "@" and the name `name` gives, else the name it holds; every run of whitespace, line
     /// breaks included, one space; the mention whole, and as much of the text on either side as
-    /// makes about `length` characters, half on each side where both have that much, cut between
+    /// makes about `length` characters, a third before it and the rest after where both have that much, cut between
     /// words where it can be and marked "…" where text is left out.
-    static func quote(_ runs: [MentionRun], around target: ShapeID, length: Int, name: (ShapeID) -> String?) -> String? {
+    /// A mention of a row is the mention of `target` when `target` is that row, or its shape as a whole (part nil).
+    static func quote(_ runs: [MentionRun], around target: PartAddress, length: Int, name: (PartAddress) -> String?) -> String? {
         var before = "", found: String?, after = ""
         for run in runs {
             let plain: String
@@ -18,7 +19,7 @@ enum MentionQuote {
                 plain = text
             case .mention(let id, let label):
                 plain = "@" + (name(id) ?? label)
-                if found == nil, id == target {
+                if found == nil, id.shape == target.shape, target.part == nil || id.part == target.part {
                     found = plain
                     continue
                 }
@@ -28,7 +29,8 @@ enum MentionQuote {
         guard let found else { return nil }
         let mention = String(folded(found)), head = folded(before), tail = folded(after)
         let room = max(0, length - mention.count)
-        var headTaken = min(head.count, room / 2)
+        // A third before it and the rest after, so a row that cuts the quote at its end still shows the mention.
+        var headTaken = min(head.count, room / 3)
         let tailTaken = min(tail.count, room - headTaken)
         headTaken = min(head.count, room - tailTaken)
         return lead(head, taking: headTaken) + mention + trail(tail, taking: tailTaken)

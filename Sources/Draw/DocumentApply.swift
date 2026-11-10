@@ -342,7 +342,8 @@ struct DocumentRun {
     /// One run of `draw` on the copy, on `board`, of `lines`; each line's subject (a node's key, an edge's place) in `about`.
     private mutating func run(_ lines: [String], about: [Subject], on board: BoardID, places: [Int: CGPoint] = [:], dryRun: Bool = false,
                               in copy: CanvasEditor) throws(DrawError) -> DrawResult {
-        let options = DrawOptions(reserved: made, places: places, keys: ids, board: board, program: true)
+        var options = DrawOptions(reserved: made, places: places, keys: ids, board: board, program: true)
+        options.makesRoom = false
         return try Draw.draw(script: lines.joined(separator: "\n"), dryRun: dryRun, reveal: false, program: program, options: options, in: copy)
     }
 

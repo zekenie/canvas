@@ -1,7 +1,7 @@
 import Foundation
 
 // Kits: a named set of the plugins the app ships, which a file turns on or off as one (File ▸ Kits ▸
-// Stickers). A plugin joins a kit (`registrar.join`), and while its kit is off in a file, what it gives a
+// Engineering). A plugin joins a kit (`registrar.join`), and while its kit is off in a file, what it gives a
 // point a kit switches (`KitSwitched`: the ways in a person makes or does something with, a tool, a
 // command, a key, a slash command, a menu's item, a paste reader) is gone from that file. Everything
 // else it gives stays: the registry is built once with every plugin, so a kit's kinds, looks, panel
@@ -21,20 +21,20 @@ public struct KitID: RawRepresentable, Hashable, Comparable, Codable, Sendable, 
 
 /// A kit: the type is the key, as a file property's is, and says everything about the kit once.
 ///
-///     public enum StickersKit {}
-///     extension StickersKit: Kit {
-///         public static let id: KitID = "stickers"
-///         public static var title: String { "Stickers" }
+///     public enum EngineeringKit {}
+///     extension EngineeringKit: Kit {
+///         public static let id: KitID = "engineering"
+///         public static var title: String { "Engineering" }
 ///     }
 ///
-/// Each plugin of the kit joins it, in its `register(into:)` (`registrar.join(StickersKit.self)`): there is
+/// Each plugin of the kit joins it, in its `register(into:)` (`registrar.join(EngineeringKit.self)`): there is
 /// no list of a kit's plugins anywhere, and the kit is the plugins that join it. A module whose ways in are
 /// partly always on puts those in a plugin value of their own, which joins nothing.
 public protocol Kit: SendableMetatype {
     /// What a file keeps while the kit is on (`KitsOn`): unique among kits, and never changed once shipped.
     static var id: KitID { get }
     /// What it's called: its item in File ▸ Kits, its submenu in Insert, its segment in the toolbar, and the
-    /// steps that turn it on and off ("Turn On Stickers").
+    /// steps that turn it on and off ("Turn On Engineering").
     static var title: String { get }
 }
 
@@ -131,7 +131,7 @@ extension KitsOn: FileProperty {
 }
 
 extension CanvasCommand {
-    /// File ▸ Kits ▸ the kit's title: turns the kit on in the file, or off, in one step ("Turn On Stickers"),
+    /// File ▸ Kits ▸ the kit's title: turns the kit on in the file, or off, in one step ("Turn On Engineering"),
     /// checked while it's on. The core gives every kit one (no kit switches it).
     public static func kit(_ id: KitID) -> CanvasCommand { CanvasCommand("kit:\(id.rawValue)") }
 }

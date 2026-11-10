@@ -86,6 +86,7 @@ final class PartElement: NSAccessibilityElement {
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { onPart(NSAccessibility.Role.unknown) { _, part in part.role.accessibilityRole } }
     override func accessibilityLabel() -> String? { onPart(nil) { _, part in part.title } }
+    override func isAccessibilitySelected() -> Bool { onPart(false) { _, part in part.isSelected } }
     override func accessibilityFrame() -> NSRect {
         onPart(.zero) { canvas, part in NSAccessibility.screenRect(fromView: canvas, rect: canvas.editor.camera.toView(part.rect)) }
     }
@@ -122,6 +123,7 @@ extension AccessiblePart.Role {
         case .link, .connection: .link
         case .checkbox: .checkBox
         case .handle: .handle
+        case .row: .row
         }
     }
 }
@@ -279,9 +281,15 @@ final class ShapeElements {
         return element
     }
 
-    /// The shape VoiceOver's focus is on: the one selected last, while the canvas has the keyboard (`editor.hasKeyboard`);
-    /// none while a list, a field or the editing view has it, though a row of the table of contents selects as it goes.
-    var focusedShape: ShapeID? { editor.hasKeyboard ? editor.accessibleSelection.last : nil }
+    /// The shape VoiceOver's focus is on: the one selected last that is an element of its own, while the canvas has the
+    /// keyboard (`editor.hasKeyboard`); none while a list, a field or the editing view has it, though a row of the table of
+    /// contents selects as it goes. A shape drawn as part of another (a bundle's hidden member) is never the focus: the one
+    /// that draws it, selected with it, is (the bundle's lead, "9 arrows").
+    var focusedShape: ShapeID? {
+        guard editor.hasKeyboard else { return nil }
+        let context = editor.shapeContext
+        return editor.accessibleSelection.last { context.geometry(of: $0)?.isHidden != true }
+    }
 
     /// Whether the shape's element has the focus: the canvas has the keyboard, it's the one selected last, and no part of
     /// it has the keyboard.

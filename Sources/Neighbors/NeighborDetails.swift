@@ -22,10 +22,17 @@ public struct NeighborDetailsPlugin: ListedPlugin {
         registrar.forEveryShape { every in
             every.details {
                 DetailSection<AnyShapeRecord>(in: NeighborsTab.self, id: "neighbors") { shape in
-                    NeighborListView(subject: shape.shapeID, list: shape.service(NeighborList.self))
+                    NeighborListView(subject: PartAddress(shape.shapeID), list: shape.service(NeighborList.self))
                 }
                 // Going to what's connected changes nothing of the shape.
                 .enabledWhileReadOnly()
+            }
+        }
+        // A row of a kind with rows, selected as the panel's subject, has the tab too: its own connections, from the lights that
+        // serve rows, beside the row's own tab its kind gives.
+        registrar.forShapes(adopting: .parts) { parted in
+            parted.rowDetails(in: NeighborsTab.self, id: "neighbors") { row in
+                NeighborListView(subject: row.address, list: row.service(NeighborList.self))
             }
         }
     }
@@ -44,7 +51,7 @@ extension NeighborsTab: DetailTab {
 /// asked only while they are, and observes the answer. Until the service has heard (a panel is drawn
 /// once before it appears) the lists it holds are another shape's, or none: nothing is shown of them.
 struct NeighborListView: View {
-    let subject: ShapeID
+    let subject: PartAddress
     let list: NeighborList?
 
     var body: some View {
@@ -76,7 +83,7 @@ struct NeighborLists: View {
 
     var body: some View {
         let searching = !list.search.isEmpty
-        let lists = list.groups.indices.map { (group: $0, shown: list.shown(in: $0)) }.filter { $0.shown.count > 0 }
+        let lists = list.order.map { (group: $0, shown: list.shown(in: $0)) }.filter { $0.shown.count > 0 }
         let stamp = list.listing?.stamp ?? 0
         VStack(alignment: .leading, spacing: NeighborStyle.spacing) {
             if searching || list.total >= NeighborStyle.searchFrom {

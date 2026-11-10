@@ -52,11 +52,15 @@ final class DrawTextLookup {
     private let keys: [String: ShapeID]
     /// Every shape the script draws or restates, by id, for a key that names one.
     private let ownByID: [ShapeID: Own]
+    /// Whether a title that several shapes have names the first of them, as a put's names do (`DrawOptions.Naming.nearest`),
+    /// rather than being refused.
+    private let nearest: Bool
 
     init(editor: CanvasEditor, target: BoardReading, naming: DrawNaming?, items: [ShapeItem], itemsByTitle: [String: [Int]],
-         unresolved: Set<String>, deleted: Set<ShapeID>, fileNames: FileNames?, keys: [String: ShapeID] = [:]) {
+         unresolved: Set<String>, deleted: Set<ShapeID>, fileNames: FileNames?, keys: [String: ShapeID] = [:], nearest: Bool = false) {
         self.editor = editor
         self.keys = keys
+        self.nearest = nearest
         var byID: [ShapeID: Own] = [:]
         if !keys.isEmpty {
             // What a shape a program's run writes is called: the title its statement gives it (`title:`), else the one it has.
@@ -155,7 +159,7 @@ final class DrawTextLookup {
 
         // The board the run draws on, by itself: one is the shape, two or more are ambiguous.
         let here = admitted(live.filter { $0.board == target.board })
-        if here.count > 1 { throw several(here, title, on: "the board") }
+        if here.count > 1, !nearest { throw several(here, title, on: "the board") }
         if let found = here.first { return DrawTextShape(id: found.id, title: title) }
         // Then the rest of the file, as an edge finds a shape there: the board the window shows
         // first, else the one other board that has one.
@@ -163,7 +167,8 @@ final class DrawTextLookup {
             switch names.beyond(title, among: live.filter { $0.board != target.board }, admitting: admitted, shownAs: "the board the window shows") {
             case .shape(let found):
                 return DrawTextShape(id: found.id, title: title)
-            case .ambiguous(let message, _):
+            case .ambiguous(let message, let places):
+                if nearest, let found = places.first { return DrawTextShape(id: found.id, title: title) }
                 throw DrawError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.textHint)
             case .none:
                 break
@@ -181,6 +186,26 @@ final class DrawTextLookup {
         throw DrawError("there's no shape called \(quoted(title))", reason: ScriptError.Reason.unknownTitle.rawValue,
                         hint: guesses.isEmpty ? "a title is one the file has as the script starts, or one the script draws"
                                   : "did you mean \(listed(guesses.map(quoted), or: true))?")
+    }
+
+    /// A shape found by a name, as the script starts it: one it draws or restates, else the file's.
+    func record(of shape: DrawTextShape) -> AnyShapeRecord? { record(of: shape.id) }
+
+    /// The same, by id.
+    func record(of id: ShapeID) -> AnyShapeRecord? {
+        ownByID[id]?.record ?? own.values.first { $0.id == id }?.record ?? editor.file.record(id)
+    }
+
+    /// The row called `row` of `shape` (found by `shape(called:)`), among the rows its record has as the script starts it: the
+    /// record a statement of the script starts it as, else the file's.
+    func row(named row: String, of shape: DrawTextShape, said: String) throws(DrawError) -> DrawTextRow {
+        let record = record(of: shape)
+        guard let record, let parts = editor.registry.parts(of: record) else {
+            throw DrawError("\(said) is \(record.map { indefinite($0.kind) } ?? "a shape"), which has no rows", reason: ScriptError.Reason.unknownRow.rawValue,
+                            hint: "name a row of a shape that has them, as \"orders\".customer_id")
+        }
+        let fold = { (name: String) in self.naming?.fold(name) }
+        return DrawTextRow(shape: shape, record: record, row: try Drawing.row(named: row, among: parts, said: said, fold: fold))
     }
 
     /// The shape a key names: one the script draws or restates, else the file's, held to what `admits` takes; what it's called is

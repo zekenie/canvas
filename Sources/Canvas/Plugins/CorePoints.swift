@@ -53,6 +53,20 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
+    /// What hears parts moved from one shape to another (`Transaction.moveParts`, `registrar.partsMoved`).
+    enum PartsMoved: ExtensionPoint {
+        typealias Contribution = @MainActor ([PartAddress: PartAddress], inout Transaction) -> Void
+        static var owner: PluginID { .core }
+    }
+
+    /// What finds the stand-ins whose record names a shape (a reference pill for a table), on any board the editor can show
+    /// (`registrar.standInLookup`, Topology's): what `removeParts` and `moveParts` reach a binding through. One at most.
+    enum StandInLookups: KeyedExtensionPoint {
+        typealias Contribution = StandInLookup
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the stand-in lookup"] }
+    }
+
     /// What a kind keeps in step as its shapes are written (`ShapeRegistrar.keepsInStep`).
     enum KeepsInStep: ExtensionPoint {
         typealias Contribution = StepRule
@@ -94,6 +108,10 @@ enum CorePoints {
     /// The tool the editor starts in, and returns to on Escape and after placing a shape. One
     /// plugin may claim it; otherwise it's the Hand.
     enum DefaultTool {}
+
+    /// The tool ⇧↩ puts a shape down with when the selection is no one kind a tool places
+    /// (`registrar.insertsBesideByDefault`). One plugin may claim it; otherwise ⇧↩ does nothing then.
+    enum InsertBesideByDefault {}
 
     /// What a secondary click opens. One plugin may claim it; otherwise there's no menu.
     enum SecondaryClickMenu: KeyedExtensionPoint {
@@ -196,6 +214,19 @@ extension CorePoints.DefaultTool: KeyedExtensionPoint {
     }
 }
 
+extension CorePoints.InsertBesideByDefault: KeyedExtensionPoint {
+    typealias Contribution = ToolID
+    static var owner: PluginID { .core }
+    static func uniqueKeys(of _: ToolID, for _: ShapeTarget) -> [AnyHashable] { ["the tool that inserts beside by default"] }
+    /// The claimed tool must exist and place a shape.
+    static func check(_ registry: Registry) throws(RegistryError) {
+        guard let id = registry.insertsBesideByDefault else { return }
+        guard registry.placement(forTool: id) != nil else {
+            throw .invalid(point: "InsertBesideByDefault", reason: "no plugin registers a tool \(id) that places a shape")
+        }
+    }
+}
+
 struct ToolKey: Hashable, CustomStringConvertible {
     let id: ToolID
     var description: String { "tool \(id)" }
@@ -274,7 +305,8 @@ struct ServiceRegistration {
 }
 
 /// Installed ahead of every plugin list: the Hand, undo and redo (Edit › Undo and Redo, AppKit's own
-/// items, which text answers first), and zooming, in View (their keys Keyboard gives). Zoom In and
+/// items, which text answers first), Insert's first item, a shape of the selection's kind beside it (`.insertBeside`), and
+/// zooming, in View (their keys Keyboard gives). Zoom In and
 /// Zoom Out are dimmed at the last stop, Actual Size at 100%, and Zoom to Fit with nothing to fit.
 /// Paging, the commands of Page Up, Page Down, Home and End (Keyboard's keys too), have no menu
 /// item: a key a menu names that no ⌘ is held with would take it from text, where those keys move
@@ -285,6 +317,12 @@ struct CorePlugin: CanvasPlugin {
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
         registrar.command(.undo, title: "Undo", answering: .undo, isEnabled: { $0.editor.canUndo }) { $0.editor.undo() }
         registrar.command(.redo, title: "Redo", answering: .redo, isEnabled: { $0.editor.canRedo }) { $0.editor.redo() }
+        // Insert's first item: a shape of the selection's kind beside it (⇧↩, Keyboard's), named for what it will make.
+        registrar.command(.insertBeside, title: "New Shape Beside", in: InsertMenu.Shapes.self, placed: .first, runs: .whenIdle,
+                          menuTitle: { editor in editor.insertBesideTitle(editor.commandSubject.shapes) },
+                          isEnabled: { $0.editor.canInsertBeside($0.shapes) }) { subject in
+            if let tool = subject.editor.toolBeside(subject.shapes) { subject.editor.insert(tool, beside: subject.shapes) }
+        }
         registrar.command(.zoomIn, title: "Zoom In", in: ViewMenu.Zoom.self, isEnabled: { $0.editor.zoomInStop != nil }) { subject in
             if let stop = subject.editor.zoomInStop { subject.editor.zoom(toPercent: stop) }
         }
@@ -299,4 +337,14 @@ struct CorePlugin: CanvasPlugin {
         registrar.command(.scrollToStart, title: "Start of Board", isEnabled: { $0.editor.canScrollToEnds }) { $0.editor.scrollToStart() }
         registrar.command(.scrollToEnd, title: "End of Board", isEnabled: { $0.editor.canScrollToEnds }) { $0.editor.scrollToEnd() }
     }
+}
+
+/// What finds the stand-ins naming a shape (`registrar.standInLookup`): the editor's index of the file as it is, and what one record
+/// names, for a stand-in a transaction put in that no index holds yet.
+@MainActor
+struct StandInLookup {
+    let lookup: @MainActor (CanvasEditor, ShapeID) -> [ShapeID]
+    let names: @MainActor (AnyShapeRecord, Registry) -> ShapeID?
+    /// The shapes whose records name a shape as a value, by the same index.
+    let namers: @MainActor (CanvasEditor, ShapeID) -> [ShapeID]
 }

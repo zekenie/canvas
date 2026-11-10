@@ -24,7 +24,8 @@ extension SelectTool: Tool {
     func cursor(in editor: CanvasEditor) -> CanvasCursor {
         if let button = editor.selectionState?.hoveredButton { return button.source.cursor }
         guard let handle = editor.hoveredHandle else { return .standard }
-        return (handle.base as? ResizeHandle)?.cursor ?? .openHand
+        guard let resize = handle.base as? ResizeHandle else { return .openHand }
+        return resize.cursor(axes: editor.selection.flatMap { editor.document[$0] }.map { editor.registry.resizedAxes(of: $0) } ?? .both)
     }
 
     /// The rest of a double-click (a press whose click count is 2 or more) whose first click, on a
@@ -96,6 +97,14 @@ extension SelectTool: Tool {
         let face = isPlain && isReached ? editor.faceHit(on: hit, at: pointer.world) : nil
         let keepsSelection = command || unitSelected || insideSelection
         let wasOnlySelection = editor.selectedShapeIDs == [id]
+        // An item's lead (an endpoint's method chip, a row's mark) is pressed before faces: a click runs it, a drag drags its
+        // item. The shape is selected only once the press turns out to be a click, so a drag of a row from an unselected
+        // shape leaves the selection, and the inspector it shows, as they were until the drop.
+        if isPlain, pointer.clickCount == 1, isReached, hit.isOnShape, let lead = editor.itemLead(on: id, at: pointer.world) {
+            editor.session = PointingLeadSession(shape: id, lead: lead, press: pointer.view, wasSelected: wasOnlySelection,
+                                                 selecting: keepsSelection ? nil : unit)
+            return
+        }
         if !keepsSelection {
             editor.selectedShapeIDs = shift ? editor.selectedShapeIDs + unit : unit
         }
@@ -140,6 +149,15 @@ extension SelectTool: Tool {
                                                   brushesOnDrag: false, face: face)
             return
         }
+        // Its items, one level in (`ShapeItems`: a table's rows), as a group's parts are: on the only selected shape, a press on
+        // one waits for the threshold, and its release selects it (⇧ the run to it, ⌘ it toggled), or, the only one selected,
+        // opens it. A press anywhere else on the shape drops them.
+        if wasOnlySelection, isReached, hit.isOnShape, pointer.clickCount == 1, !pointer.modifiers.contains(.option),
+           let item = editor.item(at: pointer.world, of: id) {
+            editor.session = PointingItemSession(shape: id, item: item, press: pointer.view, modifiers: pointer.modifiers, in: editor)
+            return
+        }
+        editor.selectionState?.clearItems()
         // A click on the only selected shape edits it, if its kind is edited in place and it can
         // be (a locked one is only selected: a click isn't a try), on its label if it has one
         // (tldraw's: a click on an arrow's body only selects it); a drag past the threshold moves it.

@@ -1,7 +1,9 @@
 import AppKit
 import Canvas
+import Draw
 import Geometry
 import Grouping
+import LineRows
 import Selection
 
 /// Per editor: the copyability rules, gathered once (the registry is frozen), and what copying,
@@ -36,13 +38,17 @@ final class ClipboardState {
     static let cutType = NSPasteboard.PasteboardType("com.example.InfiniteCanvas.cut")
 
     private unowned let editor: CanvasEditor
-    private let pasteboard: NSPasteboard
+    let pasteboard: NSPasteboard
     /// Each kind's rule (`ShapeCopyability`), found once.
     private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
     private let codec: BoardCodec
-    /// What would paste, and where it came from, as of the pasteboard's change count and the kits the
-    /// file had on (whose readers read text) when it was last read.
-    private var content: (changeCount: Int, kits: Set<KitID>, file: CanvasFile, source: PasteSource)?
+    /// This app's shapes on the pasteboard, and where they came from, as of its change count when it was last read: an empty file
+    /// for none this app can read, and whether the pasteboard holds this app's data at all (then nothing else is read).
+    private var content: (changeCount: Int, file: CanvasFile, source: PasteSource, isApps: Bool)?
+    /// What the readers (`PasteReaders`) have read of the pasteboard, as of its change count and the kits the file had on (whose readers
+    /// are asked) when it was first asked: each reader's reading once, by its place among them, with what it read of the file
+    /// (`PasteReader.readsOfFile`), read again once that changed.
+    private var readings: (changeCount: Int, kits: Set<KitID>, content: PasteContent, results: [Int: (file: AnyHashable?, result: PasteResult?)])?
 
     /// Where what a paste puts down came from.
     enum PasteSource {
@@ -50,7 +56,7 @@ final class ClipboardState {
         case copied
         /// This app's shapes, cut: pasted as the shapes themselves, under the ids nothing in the file goes by.
         case cut
-        /// Text another app put there, read by a plugin's reader (`PasteReaders`): new shapes, no copies.
+        /// What another app put there, read by a plugin's reader (`PasteReaders`) into shapes: new shapes, no copies.
         case read
     }
 
@@ -156,8 +162,17 @@ final class ClipboardState {
     /// The copyable shapes of `ids` as a small file, with what those that own boards hold and what the
     /// containers among them hold, and those of them copied whole (with everything under them: a
     /// container is whole without what it holds, which a deletion leaves); nil with none.
-    private func gather(_ ids: [ShapeID]) -> (file: CanvasFile, copied: [ShapeID], whole: Set<ShapeID>)? {
-        let copied = keepingContainers(carry(copyable(ids), renaming: { $0 }, in: editor.shapeContext), of: editor.document)
+    /// The shapes of a kind that takes bound shapes (`TakesBoundShapes`) among them take along what is bound only to
+    /// shapes copied (`ShapeContext.takenAlong(by:)`: an arrow from one copied table to another, selected or not),
+    /// which is `along`, those that can be copied; a cut does not ask for them: the core's deletion takes the ones bound to a shape that really goes.
+    private func gather(_ ids: [ShapeID]) -> (file: CanvasFile, copied: [ShapeID], whole: Set<ShapeID>, along: Set<ShapeID>)? {
+        var records = copyable(ids)
+        let document = editor.document
+        let along = Set(editor.shapeContext.takenAlong(by: Set(records.map(\.id))).compactMap { id in document[id].flatMap { isCopyable($0) ? id : nil } })
+        if !along.isEmpty {
+            records = (records + along.compactMap { document[$0] }).sorted { (document.index(of: $0.id) ?? 0) < (document.index(of: $1.id) ?? 0) }
+        }
+        let copied = keepingContainers(carry(records, renaming: { $0 }, in: editor.shapeContext), of: editor.document)
         guard !copied.isEmpty else { return nil }
         var children: [ShapeID: CanvasDocument] = [:], whole: Set<ShapeID> = []
         for record in copied {
@@ -165,28 +180,28 @@ final class ClipboardState {
             children.merge(under.boards) { old, _ in old }
             if under.isWhole { whole.insert(record.id) }
         }
-        return (CanvasFile(root: CanvasDocument(shapes: copied), children: children), copied.map(\.id), whole)
+        return (CanvasFile(root: CanvasDocument(shapes: copied), children: children), copied.map(\.id), whole, along)
     }
 
     /// Puts copies of the copyable shapes of `ids` on the pasteboard, in place of what was there,
     /// with what those that own boards hold, and what the containers among them hold, marked as a
     /// cut's if `cut`. Returns the shapes copied, back to front, and those of them copied whole; with
     /// none, the pasteboard is left as it was.
-    private func copyReportingWhole(_ ids: [ShapeID], cut: Bool) -> (copied: [ShapeID], whole: Set<ShapeID>) {
-        guard let gathered = gather(ids) else { return ([], []) }
+    private func copyReportingWhole(_ ids: [ShapeID], cut: Bool) -> (copied: [ShapeID], whole: Set<ShapeID>, along: Set<ShapeID>) {
+        guard let gathered = gather(ids) else { return ([], [], []) }
         let file = gathered.file
         let data: Data
         do {
             data = try codec.encode(file)
         } catch {
             assertionFailure("copied shapes don't encode: \(error)")
-            return ([], [])
+            return ([], [], [])
         }
         pasteboard.clearContents()
         pasteboard.setData(data, forType: Self.shapesType)
         if cut { pasteboard.setString(UUID().uuidString, forType: Self.cutType) }
-        content = (pasteboard.changeCount, editor.kits, file, cut ? .cut : .copied)
-        return (gathered.copied, gathered.whole)
+        content = (pasteboard.changeCount, file, cut ? .cut : .copied, true)
+        return (gathered.copied, gathered.whole, gathered.along)
     }
 
     /// Puts copies of the copyable shapes of `ids` on the board as a paste puts them, without the
@@ -213,21 +228,36 @@ final class ClipboardState {
     /// are in use, so a paste copies them). A container goes with what it holds that was copied;
     /// what it holds that couldn't be stays, let go of (the core's deletion).
     func cut(_ ids: [ShapeID]) {
-        let whole = copyReportingWhole(ids, cut: true).whole
+        let copied = copyReportingWhole(ids, cut: true), whole = copied.whole
         guard !whole.isEmpty else { return }
-        editor.transact("Cut") { $0.delete(whole) }
+        // What went with what was cut, so the step says it ("Cut Table and 3 Arrows"): what the delete took besides (an arrow to
+        // a table not cut, one between tables cut) and what a container held that left with it. The shapes the copy took along
+        // are not asked for: the core's deletion takes the ones bound to a shape that really goes (a read-only shape refused, or
+        // one that owns a board holding one, stays, and its arrows with it).
+        let document = editor.document
+        let asked = Set(ids).intersection(whole)
+        let along = copied.along.subtracting(ids)
+        editor.transact("Cut") { tx in
+            tx.delete(whole.subtracting(along))
+            var counts = tx.deletedAlong
+            for id in whole.subtracting(asked).subtracting(along) where tx.document[id] == nil {
+                guard let kind = document[id]?.kind else { continue }
+                if let at = counts.firstIndex(where: { $0.kind == kind }) { counts[at].count += 1 } else { counts.append(KindCount(kind: kind, count: 1)) }
+            }
+            tx.stepName = DeleteSteps.name("Cut", asked: asked.filter { tx.document[$0] == nil }.compactMap { document[$0]?.kind }, along: counts, in: editor.registry)
+        }
         editor.hovered = nil
     }
 
-    /// What a paste would put down, as it's on the pasteboard: this app's shapes, less those this app
-    /// can't read (a kind it doesn't install, a newer version of one, a board format it doesn't know) and
-    /// those that can't do without them; and under each that owns a board here, what it holds, read the
-    /// same way; and whether a cut put it there. With none of this app's shapes there, text another app put
-    /// there, as the first reader on in the file reads it (`PasteReaders`); anything else is left alone.
-    /// Read again only when the pasteboard, or the kits the file has on, have changed.
-    private func pasteable() -> (file: CanvasFile, source: PasteSource) {
+    /// This app's shapes as they're on the pasteboard: less those this app can't read (a kind it doesn't install, a newer version of
+    /// one, a board format it doesn't know) and those that can't do without them; and under each that owns a board here, what it
+    /// holds, read the same way; and whether a cut put it there. Nil when the pasteboard holds none of this app's data at all.
+    /// Read again only when the pasteboard has changed.
+    private func appShapes() -> (file: CanvasFile, source: PasteSource)? {
         let changeCount = pasteboard.changeCount
-        if let content, content.changeCount == changeCount, content.kits == editor.kits { return (content.file, content.source) }
+        if let content, content.changeCount == changeCount {
+            return content.isApps ? (content.file, content.source) : nil
+        }
         var file = CanvasFile(), source = PasteSource.copied
         let data = pasteboard.data(forType: Self.shapesType)
         if let data, let board = try? codec.decode(data) {
@@ -240,27 +270,65 @@ final class ClipboardState {
             }
             file = CanvasFile(root: CanvasDocument(shapes: root), children: children)
             source = pasteboard.string(forType: Self.cutType) != nil ? .cut : .copied
-        } else if data == nil, let read = read() {
-            file = read
-            source = .read
         }
-        content = (changeCount, editor.kits, file, source)
-        return (file, source)
+        content = (changeCount, file, source, data != nil)
+        return data == nil ? nil : (file, source)
     }
 
-    /// The text another app put on the pasteboard, as the first reader on in the file reads it into shapes
-    /// (`PasteReaders`, in plugin order, a reader whose plugin's kit is off never asked); nil for no text, or
-    /// text no reader reads.
-    private func read() -> CanvasFile? {
-        guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return nil }
-        for reader in editor.contributions(to: PasteReaders.self) {
-            if let file = reader.value.read(text, editor), !file.root.shapes.isEmpty { return file }
+    /// What the pasteboard holds besides this app's shapes, read once a change of it (or of the kits on, which pick the readers).
+    private func pasteContent() -> PasteContent {
+        let changeCount = pasteboard.changeCount, kits = editor.kits
+        if let readings, readings.changeCount == changeCount, readings.kits == kits { return readings.content }
+        let content = PasteContent.reading(pasteboard)
+        readings = (changeCount, kits, content, [:])
+        return content
+    }
+
+    /// What a reader of `role` reads of the pasteboard: the first in plugin order (`PasteReaders`, a reader whose plugin's kit is
+    /// off never asked) that reads something, and what it read. Each reader reads once a change of the pasteboard.
+    private func reading(_ role: PasteReader.Role) -> (name: String, result: PasteResult)? {
+        let content = pasteContent()
+        for (place, entry) in editor.contributions(to: PasteReaders.self).enumerated() where entry.value.role == role {
+            let reader = entry.value
+            if let sniff = reader.sniff, !sniff(content) { continue }
+            let result: PasteResult?
+            let file = reader.readsOfFile?(editor)
+            if let known = readings?.results[place], known.file == file {
+                result = known.result
+            } else {
+                result = reader.read(content, editor)
+                readings?.results[place] = (file, result)
+            }
+            if let result, !result.isEmpty { return (reader.name, result) }
         }
         return nil
     }
 
-    /// Whether a paste would put anything down.
-    var hasShapes: Bool { !pasteable().file.root.shapes.isEmpty }
+    /// What a paste would put down: this app's shapes if the pasteboard holds any (and nothing else, when it holds some this app
+    /// can't read), else what the first recognizing reader on in the file reads of it.
+    private func pasteable() -> (name: String?, result: PasteResult, source: PasteSource)? {
+        if let app = appShapes() {
+            return app.file.root.shapes.isEmpty ? nil : (nil, .shapes(app.file), app.source)
+        }
+        return reading(.recognizing).map { ($0.name, $0.result, .read) }
+    }
+
+    /// Whether a paste would put anything down: rows, this app's shapes, or a recognizing reader that sniffs what is there.
+    var hasShapes: Bool {
+        if RowsPasteboard.holdsRows(pasteboard) { return true }
+        if let app = appShapes() { return !app.file.root.shapes.isEmpty }
+        let readers = editor.contributions(to: PasteReaders.self).filter { $0.value.role == .recognizing }
+        guard !readers.isEmpty else { return false }
+        let content = pasteContent()
+        for entry in readers {
+            guard let sniff = entry.value.sniff else { return reading(.recognizing) != nil }
+            if sniff(content) { return true }
+        }
+        return false
+    }
+
+    /// Whether a plain reader reads something of the pasteboard (Paste as Note).
+    var hasPlainReading: Bool { reading(.plain) != nil }
 
     /// The shapes on the pasteboard, on top of the board, then selected (tldraw's paste). They land
     /// centered on `point` (world units) when there is one (the context menu's Paste, at its
@@ -284,9 +352,153 @@ final class ClipboardState {
     ///
     /// What a reader read from text lands centered on `point`, else in the middle of the view: it was
     /// copied from nowhere on the board.
+    ///
+    /// What a reader gave as a draw program (`DrawPut`) is put down by Draw instead: the shapes the file has by kind and title
+    /// are restated, the nearest first, the rest made, landing beside the selection (centered on `point` for a click or the
+    /// pointer), selected, in one step, "Paste" and the reader's name.
     func paste(centeredAt point: CGPoint? = nil) {
-        let (file, source) = pasteable()
-        place(file, source: source, named: "Paste", at: point ?? (source == .read ? viewMiddle : nil), offsetBy: nil)
+        if RowsPasteboard.holdsRows(pasteboard) {
+            pasteRows(at: point)
+            return
+        }
+        guard let (name, result, source) = pasteable() else {
+            // Paste was lit by a reader's sniff (cheap, so it can say yes to text that reads as nothing): a key that does nothing says so.
+            if hasShapes { editor.announce("Nothing to paste", priority: .low) }
+            return
+        }
+        switch result {
+        case .shapes(let file):
+            place(file, source: source, named: "Paste", at: point ?? (source == .read ? viewMiddle : nil), offsetBy: nil)
+        case .put(let program):
+            putDown(program, at: point.map(PutSite.centered) ?? .beside(editor.selectedShapeIDs), named: "Paste \(name ?? "")")
+        }
+    }
+
+    /// Rows on the pasteboard, put down: after the last row selected inside a shape that takes them (Selection's items), else
+    /// out on their own, the kind's take-out, at a click's point or beside the selection (in view with none), selected,
+    /// its name typed. A cut's rows move (`pasteRows`). Nothing for rows this app can't read.
+    private func pasteRows(at point: CGPoint?) {
+        guard let payload = RowsPasteboard.read(from: pasteboard, registry: editor.registry) else {
+            editor.announce("Nothing to paste", priority: .low)
+            return
+        }
+        editor.endEditing()
+        if point == nil, let selection = editor.selectedItems, let record = editor.document[selection.shape],
+           record.kind == payload.carrier.kind, let moving = editor.registry.rowMoving(of: record.kind) {
+            // After the last row selected: before the row that follows it.
+            let order = moving.rowIDs(of: record) ?? [], selected = Set(selection.acting.compactMap { $0.base as? PartID })
+            let last = order.lastIndex { selected.contains($0) }
+            let before = last.flatMap { $0 + 1 < order.count ? order[$0 + 1] : nil }
+            if last != nil {
+                editor.pasteRows(payload, to: .into(selection.shape, before: before))
+                return
+            }
+        }
+        editor.pasteRows(payload, to: point.map { .board(origin: $0) } ?? .beside(editor.selectedShapeIDs))
+    }
+
+    /// Paste as Note (⌥⇧⌘V): what the first plain reader on in the file reads of the pasteboard, put down beside the selection,
+    /// selected, in one step, "Paste as Note". Nothing for a pasteboard no plain reader reads.
+    func pasteAsNote() {
+        guard let (_, result) = reading(.plain) else { return }
+        switch result {
+        case .shapes(let file): place(file, source: .read, named: "Paste as Note", at: viewMiddle, offsetBy: nil)
+        case .put(let program): putDown(program, at: .beside(editor.selectedShapeIDs), named: "Paste as Note")
+        }
+    }
+
+    /// Draw puts `program` down at `site` in one step, `name`, not an agent's; what lands is selected (what isn't in another shape
+    /// landed with it) and announced. A put that is refused (a board or container that takes nothing, a value that can't be
+    /// written) leaves no step and changes nothing.
+    private func putDown(_ program: DrawPut, at site: PutSite, named name: String) {
+        editor.endEditing()
+        let landed: [ShapeID]
+        let before = editor.revision, existing = editor.document
+        do {
+            landed = try editor.undoHistory.group(name) { try Draw.put(program, at: site, in: editor, step: name) }
+        } catch {
+            // Refused as a shape paste is: said, and the shapes it was beside shake (a locked frame that would take it).
+            if case .beside(let ids) = site, !ids.isEmpty { editor.refuseChanges(to: Set(ids)) }
+            editor.announce((error as? DrawError)?.message ?? "Nothing was pasted")
+            return
+        }
+        guard !landed.isEmpty else {
+            // Restated only shapes of other boards: it did something, and says so.
+            if editor.revision != before { editor.announce("Pasted into shapes on other boards", priority: .low) }
+            return
+        }
+        let kinds = editor.registry.containingKinds, document = editor.document
+        // What it made and what it changed are selected, and said; a paste that changed nothing selects all it found, and says so.
+        // A shape counts as changed where its record did, or where a shape the put changed or made is bound to it (a key re-aimed or
+        // added lives on its arrow, never on the table's record).
+        let bound = shapes(of: landed, boundByChangesFrom: existing)
+        let made = landed.filter { existing[$0] == nil }
+        let changed = landed.filter { id in existing[id].map { differs($0, from: document[id]) || bound.contains(id) } ?? false }
+        let touched = made + changed, shown = touched.isEmpty ? landed : touched
+        let inside = Set(shown)
+        editor.selectedShapeIDs = shown.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
+        // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone, unless the
+        // view is so far out it lands as a sketch: then the view zooms in to fit it, no closer than 100%.
+        if case .beside(let ids) = site { editor.revealIfOffscreen(shown, keeping: ids, zoomingIn: true) } else { editor.revealIfOffscreen(shown, zoomingIn: true) }
+        guard !touched.isEmpty || editor.revision != before else {
+            editor.announce(ClipboardStyle.nothingChanged, priority: .low)
+            return
+        }
+        // Changes none of the shapes it found says (a pill on another board): said without counting what didn't change.
+        guard !touched.isEmpty else { return editor.announce(ClipboardStyle.updated, priority: .low) }
+        editor.announce(pastedSummary(made: made, changed: changed, labels: program.labels), priority: .low)
+    }
+
+    /// Whether `now` is not `old`, a move of its box aside: a shape only the push moved (one that grew above it in the same paste,
+    /// `makeRoom`) is not one the paste changed.
+    private func differs(_ old: AnyShapeRecord, from now: AnyShapeRecord?) -> Bool {
+        var old = old
+        if let origin = now?.box?.origin, old.box != nil { old.box?.origin = origin }
+        return old != now
+    }
+
+    /// Which of `shapes` a shape that changed since `old`, was made or was taken away is bound to first (an arrow of a key added,
+    /// re-aimed or let go: the shape it starts from, which its kind lists first; the shape it points to is not what changed),
+    /// by what its kind says (`remappingReferences`), the shape before and after.
+    private func shapes(of shapes: [ShapeID], boundByChangesFrom old: CanvasDocument) -> Set<ShapeID> {
+        let wanted = Set(shapes), document = editor.document, context = editor.shapeContext
+        var found: Set<ShapeID> = []
+        func visit(_ record: AnyShapeRecord) {
+            var first: ShapeID?
+            _ = record.remappingReferences({ id in
+                first = first ?? id
+                return id
+            }, in: context)
+            if let first, wanted.contains(first) { found.insert(first) }
+        }
+        for record in document.shapes where !wanted.contains(record.id) && old[record.id].map({ differs($0, from: record) }) ?? true {
+            visit(record)
+            if let was = old[record.id] { visit(was) }
+        }
+        for was in old.shapes where document[was.id] == nil { visit(was) }
+        return found
+    }
+
+    /// What a put did, for VoiceOver: the kinds it made and the kinds whose shapes it changed, by their labels ("Pasted 2 Tables and
+    /// Enum, updated Table"), a kind the put names itself (`DrawPut.labels`) by that. A shape it restated as it was isn't counted.
+    private func pastedSummary(made: [ShapeID], changed: [ShapeID], labels: [String: String]) -> String {
+        let registry = editor.registry
+        func counts(_ ids: [ShapeID]) -> String {
+            var order: [ShapeKind] = [], counts: [ShapeKind: Int] = [:]
+            for kind in ids.compactMap({ editor.document[$0]?.kind }) {
+                if counts[kind] == nil { order.append(kind) }
+                counts[kind, default: 0] += 1
+            }
+            return DeleteSteps.list(order.map { kind in
+                let label = labels[kind.rawValue] ?? registry.label(of: kind).name
+                return counts[kind] == 1 ? label : "\(counts[kind]!) \(DeleteSteps.plural(label))"
+            })
+        }
+        switch (made.isEmpty, changed.isEmpty) {
+        case (false, true): return "Pasted \(counts(made))"
+        case (true, false): return "Updated \(counts(changed))"
+        default: return "Pasted \(counts(made)), updated \(counts(changed))"
+        }
     }
 
     /// The middle of what the view shows of the board, clear of what the window covers, in world units; nil
@@ -399,6 +611,29 @@ extension ClipboardState: EditorService {}
 extension CanvasEditor {
     var clipboard: ClipboardState? { service(ClipboardState.self) }
 
+    /// The rows selected inside the shape a key, the menu bar or a right-click copies (Selection's items): their ids, and the
+    /// shape.
+    private func selectedRows(for subject: CommandSubject) -> (rows: [PartID], shape: ShapeID)? {
+        guard let selection = selectedItems, subject.shapes == [selection.shape] else { return nil }
+        let rows = selection.acting.compactMap { $0.base as? PartID }
+        return rows.isEmpty ? nil : (rows, selection.shape)
+    }
+
+    /// ⌘C with rows selected inside the shape: the rows on the pasteboard, with the arrows they start. Whether it took the key.
+    func copySelectedRows(for subject: CommandSubject) -> Bool {
+        guard let (rows, shape) = selectedRows(for: subject) else { return false }
+        copyRows(rows, of: shape)
+        return true
+    }
+
+    /// ⌘X with rows selected inside the shape: the rows on the pasteboard as a cut's, taken out with every arrow bound to them,
+    /// one step that counts them ("Cut Columns and 2 Arrows"). Whether it took the key.
+    func cutSelectedRows(for subject: CommandSubject) -> Bool {
+        guard session == nil, let (rows, shape) = selectedRows(for: subject) else { return false }
+        cutRows(rows, of: shape)
+        return true
+    }
+
     /// Whether the shape is there and its kind's rule (`ShapeCopyability`) lets it be copied.
     /// Without the Clipboard plugin, false.
     public func isCopyable(_ id: ShapeID) -> Bool {
@@ -410,7 +645,7 @@ extension CanvasEditor {
     public func canCopy(_ ids: [ShapeID]) -> Bool { clipboard?.canCopy(ids) ?? false }
 
     /// Whether ⌘V would paste anything: the pasteboard holds this app's shapes, some of which it
-    /// can read, or text a reader on in the file reads (`PasteReaders`), nothing is under way, and the
+    /// can read, or something a recognizing reader on in the file sniffs (`PasteReaders`), nothing is under way, and the
     /// board shown takes shapes (not a locked subboard's, `isBoardReadOnly`).
     public var canPaste: Bool { session == nil && !isBoardReadOnly && clipboard?.hasShapes == true }
 
@@ -475,6 +710,18 @@ extension CanvasEditor {
     public func paste(centeredAt point: CGPoint) {
         guard canPaste else { return }
         clipboard?.paste(centeredAt: point)
+    }
+
+    /// Whether Paste as Note would put anything down: a plain reader on in the file reads the pasteboard, nothing is under way,
+    /// and the board shown takes shapes.
+    public var canPasteAsNote: Bool { session == nil && !isBoardReadOnly && clipboard?.hasPlainReading == true }
+
+    /// ⌥⇧⌘V: what a plain reader reads of the pasteboard (StickyNotes': any text, or a text file's, one note), put down beside the
+    /// selection, selected, in one step, "Paste as Note". Ends editing; nothing mid-gesture, on a board that takes no shapes, or
+    /// with nothing a plain reader reads.
+    public func pasteAsNote() {
+        guard canPasteAsNote else { return }
+        clipboard?.pasteAsNote()
     }
 
     /// ⇧⌘V: as ⌘V, but what's put down lands centered on the pointer (`pointerWorldLocation`) while it's

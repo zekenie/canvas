@@ -18,7 +18,10 @@ final class OutlineMembers {
     /// The shapes in `ids`.
     func members(of ids: [ShapeID]) -> Set<ShapeID> {
         if let found = lists.firstIndex(where: { $0.ids == ids }) {
+            // Kept as the storage asked with, so the next ask with it (a frame asks for each shape in view) is a comparison of
+            // storage, never of every id again: a list made afresh each frame costs one comparison a frame.
             if found != 0 { lists.insert(lists.remove(at: found), at: 0) }
+            lists[0].ids = ids
             return lists[0].members
         }
         let members = Set(ids)

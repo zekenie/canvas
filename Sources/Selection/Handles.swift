@@ -52,16 +52,17 @@ extension CanvasEditor {
     /// (`HandleProviding`), then, for a shape that resizes (`resizeFrame(of:)`), those of its frame's
     /// corners and sides that show there (`ResizeHandle`). A read-only shape (`registrar.readOnlyShapes`)
     /// has none: a press there is a press on the shape. Nor does the shape being edited (an arrow's
-    /// label), as in tldraw: its editing view is over them.
+    /// label), as in tldraw: its editing view is over them; nor one whose items are selected (its rows),
+    /// which are what the selection is then (E6 panel 1's row, the API drawn bare around it); items held that the shape no longer lists (a row another writer deleted) are no selection, and the handles come back.
     func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
-        guard let id = selection, id != editingShapeID, id != editingStandIn, let record = document[id], !isReadOnly(id) else { return [] }
+        guard let id = selection, id != editingShapeID, id != editingStandIn, selectedItems == nil, let record = document[id], !isReadOnly(id) else { return [] }
         var handles: [(handle: AnyHashable, point: CGPoint)] = []
         if let definition = registry.definition(for: record.kind) as? any HandleProviding {
             handles = definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
         }
         if let box = resizeFrame(of: record) {
             let view = camera.toView(box)
-            handles += ResizeHandle.shown(on: view).map { (AnyHashable($0), $0.point(on: view)) }
+            handles += ResizeHandle.shown(on: view, axes: registry.resizedAxes(of: record)).map { (AnyHashable($0), $0.point(on: view)) }
         }
         return handles
     }
@@ -109,7 +110,10 @@ final class PointingHandleSession {
 
 extension PointingHandleSession: Session {
     /// A resize handle's resize cursor, else the closed hand.
-    func cursor(in editor: CanvasEditor) -> CanvasCursor? { (handle.base as? ResizeHandle)?.cursor ?? .closedHand }
+    func cursor(in editor: CanvasEditor) -> CanvasCursor? {
+        guard let resize = handle.base as? ResizeHandle else { return .closedHand }
+        return resize.cursor(axes: editor.document[shapeID].map { editor.registry.resizedAxes(of: $0) } ?? .both)
+    }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         guard pointer.view.distance(to: origin) > Style.dragThreshold, let next = dragSession(in: editor) else { return }

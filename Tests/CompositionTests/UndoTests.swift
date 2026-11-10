@@ -323,6 +323,35 @@ let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 
         b.window.redo(nil)
         expect(b.editor.document[note] != nil)
     },
+    test("Edit › Undo names a delete for what went along: a relationship type takes its two arrows, Undo Delete Note and 2 Arrows; a note alone is Undo Delete") {
+        let b = try UndoBoard()
+        defer { b.close() }
+        _ = try drawnInProcess(#"""
+            sticky-note "Person" schema: "{\"type\": \"object\"}"
+            sticky-note "Company" right of "Person" schema: "{\"type\": \"object\"}"
+            sticky-note "Employment" below "Person" schema: "{\"type\": \"object\"}" relationship: true
+            edge "Person" -> "Employment"
+            edge "Employment" -> "Company"
+            """#, on: b.editor)
+        b.editor.undoHistory.seal()
+        let employment = try require(b.editor.document.shapes.first { $0[TitleProperty.self] == "Employment" }).id
+        let arrows = b.editor.document.shapes.filter { $0.typed(as: Arrow.self) != nil }.count
+        expect(arrows >= 2)
+        b.window.makeFirstResponder(b.canvas)
+        b.editor.selectedShapeIDs = [employment]
+        b.window.pressDelete()
+        expect(b.editor.document[employment] == nil)
+        expectEqual(b.editor.document.shapes.filter { $0.typed(as: Arrow.self) != nil }.count, arrows - 2, "its two end arrows went with it")
+        expectEqual(b.menuItem("undo:"), "Undo Delete Note and 2 Arrows")
+        b.window.undo(nil)
+        expect(b.editor.document[employment] != nil)
+        expectEqual(b.editor.document.shapes.filter { $0.typed(as: Arrow.self) != nil }.count, arrows, "one Undo brings them back")
+        expectEqual(b.menuItem("redo:"), "Redo Delete Note and 2 Arrows")
+        let person = try require(b.editor.document.shapes.first { $0[TitleProperty.self] == "Person" }).id
+        b.editor.selectedShapeIDs = [person]
+        b.window.pressDelete()
+        expectEqual(b.menuItem("undo:"), "Undo Delete", "a plain note's arrows let go, as tldraw's do: nothing went along")
+    },
     test("while a note is being edited, Undo is the text's own; once editing is over, one Undo takes the note away, typing and all") {
         let b = try UndoBoard()
         defer { b.close() }

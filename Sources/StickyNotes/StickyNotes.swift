@@ -1,7 +1,9 @@
 import AppKit
 import Canvas
+import Clipboard
 import Colors
 import Connections
+import Draw
 import Keyboard
 import LanguageRules
 import Mentions
@@ -84,9 +86,11 @@ public struct StickyNotesPlugin: ListedPlugin {
         registrar.keyHint("⇧↩ in a Note", "New Note Beside It", while: .text)
         registrar.keyHint("⇥ or ⇧⇥ in a Note", "Next or Previous Note", while: .text)
         registrar.service { NoteHops(editor: $0) }
-        // ⇧↩ on the canvas is Insert › Note: a new note beside the selection (any shape's side, the right first), or with
-        // none somewhere clear in the middle of the view, edited, as ⇧↩ in a note's words puts one beside that note.
-        registrar.shortcut(KeyChord(KeyChord.return.key, .shift), forCommand: .insert(ToolID(placing: StickyNote.kind)))
+        // ⇧↩ on the canvas (the core's Insert › New (kind) Beside, Keyboard's key) makes a shape of the selection's kind
+        // beside it; for a selection that is no one kind a tool places (nothing, an arrow, several kinds) it makes a
+        // note, beside the selection (any shape's side, the right first), or with none somewhere clear in the middle of
+        // the view, edited, as ⇧↩ in a note's words puts one beside that note.
+        registrar.insertsBesideByDefault(ToolID(placing: StickyNote.kind))
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
@@ -123,11 +127,25 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.noteAccessibility()                           // VoiceOver reads its words as its value
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
+        // Paste as Note (⌥⇧⌘V, Clipboard's): any text on the pasteboard, or a small text file's, one note with those words and
+        // no title, put down beside the selection by Draw. `@[` is escaped, so nothing in it turns into a mention. ⌘V of plain
+        // text is no note: this reader is a plain one, which only Paste as Note asks.
+        // Not more than a note can sensibly hold (`NoteStyle.pastedNoteLimit`): a log or a dump is no note, and Paste as Note is dim.
+        registrar.pasteReader(NoteStyle.pastedNote, role: .plain, sniff: { $0.plainText?.fitsNote == true }) { content, _ in
+            content.plainText.flatMap { $0.fitsNote ? $0 : nil }.map { text in
+                DrawPut(rows: [[DrawPut.Shape(kind: StickyNote.kind.rawValue, values: [(key: "text", text: MentionText(plain: text).stored)])]])
+            }
+        }
         // `/bulk-create A, B, C` in the command bar with nothing selected: a note titled with each, waiting on the
         // pointer to be put down together, in a column, or in a row while ⌥ is held (a click, or Selection's ⌥↩).
         registrar.selectionSlashCommand(BulkCreate.command)
         registrar.keyHint("⌥ Click or ⌥↩", BulkCreateStyle.inRow, while: .pointer)
     }
+}
+
+extension String {
+    /// Whether Paste as Note makes a note of it.
+    @MainActor var fitsNote: Bool { utf8.count <= NoteStyle.pastedNoteLimit }
 }
 
 struct StickyNoteDefinition {}
@@ -226,6 +244,10 @@ extension StickyNoteDefinition: Editable {
 @MainActor
 enum NoteStyle {
     static let size = StickyNote.defaultSize
+    /// What the plain reader is called, and so its report line.
+    static let pastedNote = "Note"
+    /// The most text Paste as Note makes a note of, in bytes: its height is measured over all of it.
+    static let pastedNoteLimit = 50_000
     static let cornerRadius: CGFloat = 4
     static let padding: CGFloat = 16
     /// Between a note's words and the rows under them, when it has words.

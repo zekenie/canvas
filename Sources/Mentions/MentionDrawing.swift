@@ -150,13 +150,13 @@ extension RenderContext {
 }
 
 /// A pill's place on the canvas, in world units, where the shape is (not where a shake draws it):
-/// live, or naming a shape that isn't there or can't be mentioned.
+/// live, or naming a shape that isn't there or can't be mentioned. `target` is what it names: a shape, or one of its rows.
 public struct MentionPillFrame: Hashable, Sendable {
-    public let target: ShapeID
+    public let target: PartAddress
     public let frame: CGRect
     public let isLive: Bool
 
-    public init(target: ShapeID, frame: CGRect, isLive: Bool) {
+    public init(target: PartAddress, frame: CGRect, isLive: Bool) {
         self.target = target
         self.frame = frame
         self.isLive = isLive
@@ -205,15 +205,16 @@ struct MentionResolver {
     let registry: Registry
     let lookup: (ShapeID) -> AnyShapeRecord?
     private var defaults: [ShapeKind: MentionKindDefaults] = [:]
+    private let partNames = PartNameCache.shared
 
     init(registry: Registry, lookup: @escaping (ShapeID) -> AnyShapeRecord?) {
         self.registry = registry
         self.lookup = lookup
     }
 
-    /// As `registry.mentionResolution(of:lookup:)` has it.
-    mutating func resolve(_ target: ShapeID) -> MentionResolution {
-        guard let record = lookup(target) else { return .missing }
+    /// As `registry.mentionResolution(of:lookup:)` has it: a row's (`MentionResolution.row`), or a shape's as a whole.
+    mutating func resolve(_ target: PartAddress) -> MentionResolution {
+        guard let record = lookup(target.shape) else { return .missing }
         guard !record.isOpaque else { return .unavailable }
         let kindDefaults: MentionKindDefaults
         if let found = defaults[record.kind] {
@@ -222,7 +223,39 @@ struct MentionResolver {
             kindDefaults = MentionKindDefaults(record.kind, in: registry)
             defaults[record.kind] = kindDefaults
         }
-        return registry.mentionAppearance(of: record, defaults: kindDefaults).map { .live($0) } ?? .unavailable
+        let shape = registry.mentionAppearance(of: record, defaults: kindDefaults)
+        // A shape that is all its one row shows as that row (`MentionResolution.whole`): its parts read only for a kind whose shapes all are one (`isAllItsOneRow`).
+        guard let part = target.part else {
+            guard shape != nil, registry.isAllItsOneRow(record.kind) else { return shape.map { .live($0) } ?? .unavailable }
+            let names = partNames.names(of: record, in: registry)
+            return MentionResolution.whole(shape: shape, parts: names.count == 1 ? Array(names.values) : nil)
+        }
+        guard let shape else { return .unavailable }
+        // A row is found among its shape's parts, which are read once while the shape is as they were read, not once for each pill.
+        guard let row = partNames.names(of: record, in: registry)[part] else { return .missing }
+        return .live(MentionAppearance.row(row, of: shape))
+    }
+}
+
+/// The parts of the shapes whose rows are mentioned, by id, as the canvas draws them: a frame resolves every row pill in view,
+/// and a shape's parts (an API's every endpoint, with its full path) cost its size to read. Each is kept with the record it was
+/// read from and used while the shape is that record still (`AnyShapeRecord`'s equality is a glance at unchanged storage), so
+/// a pill costs a look-up and a shape that changed is read again, whoever's frame it is. It holds the last few dozen shapes.
+@MainActor
+final class PartNameCache {
+    static let shared = PartNameCache()
+    private var kept: [ShapeID: (record: AnyShapeRecord, names: [PartID: PartName])] = [:]
+
+    func names(of record: AnyShapeRecord, in registry: Registry) -> [PartID: PartName] {
+        if let found = kept[record.id], found.record == record { return found.names }
+        #if DEBUG
+        MentionDrawingCounts.partsRead += 1
+        #endif
+        var names: [PartID: PartName] = [:]
+        for part in registry.parts(of: record) ?? [] where names[part.id] == nil { names[part.id] = part }
+        if kept.count >= MentionStyle.partNamesKept { kept.removeAll(keepingCapacity: true) }
+        kept[record.id] = (record, names)
+        return names
     }
 }
 
@@ -434,6 +467,8 @@ extension MentionStyle {
     /// this many times as many.
     static let memoCapacity = 2048
     static let memoCeilingFactor = 16
+    /// How many shapes' parts the row pills keep read (`PartNameCache`).
+    static let partNamesKept = 64
 }
 
 /// Where each frame of an editor's canvas ends, for the memo: an overlay that draws nothing, run
@@ -455,6 +490,8 @@ public enum MentionDrawingCounts {
     public static var layoutsBuilt = 0
     public static var layoutsKept = 0
     public static var pillsDrawnStraight = 0
+    /// How many times a shape's parts were read for a row's pill (`PartNameCache`).
+    public static var partsRead = 0
     public static var kept: Int { MentionTextMemo.shared.count }
     public static var capacity: Int { MentionTextMemo.shared.capacity }
 }
@@ -473,7 +510,7 @@ public enum MentionDrawingCounts {
 @MainActor
 enum MentionTextLayout {
     struct Pill: Hashable {
-        let target: ShapeID
+        let target: PartAddress
         /// From the box's top-left, flipped (down is +y), as the canvas is.
         let frame: CGRect
         let isLive: Bool

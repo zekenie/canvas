@@ -32,6 +32,8 @@ public enum AdjacentDirection: Hashable, Sendable {
 struct StepTrail {
     struct Step {
         let before: [ShapeID]
+        /// The items selected inside the shape stepped from (a table's row): its opposite selects them again.
+        let beforeItems: HeldItems?
         let after: [ShapeID]
         let direction: AdjacentDirection
         let adding: Bool
@@ -329,15 +331,18 @@ extension SelectionState {
         if let undone = trail.undo(direction, adding: adding, from: selectedIDs) {
             if undone.before.allSatisfy(isSelectable(id:)) {
                 select(undone.before)
+                if let held = undone.beforeItems, selectedIDs == [held.shape] { setItems(held.ids, of: held.shape, anchor: held.anchor) }
                 self.trail = trail
                 return undone.before
             }
             trail = StepTrail()
         }
         guard let stop = adjacentStop(direction, adding: adding) else { return nil }
-        let before = selectedIDs
+        let before = selectedIDs, beforeItems = items
         select(adding ? before + stop.shapes : stop.shapes)
-        if selectedIDs != before { trail.push(StepTrail.Step(before: before, after: selectedIDs, direction: direction, adding: adding)) }
+        if selectedIDs != before {
+            trail.push(StepTrail.Step(before: before, beforeItems: beforeItems, after: selectedIDs, direction: direction, adding: adding))
+        }
         self.trail = trail
         return stop.shapes
     }
@@ -409,12 +414,12 @@ extension CanvasEditor {
     /// in neither.
     public var selectionEnclosure: SelectionEnclosure? { selectionState?.enclosure }
 
-    /// Steps out of the group or container the selection is in, selecting it, and brings it into view
-    /// if it is not (tldraw's `selectParentShape`); false if the selection is in neither.
+    /// Steps out of the group or container the selection is in, selecting it, and pans to it if none of it
+    /// is in view (tldraw's `selectParentShape`, never zooming out: `revealEnclosure`); false if the selection is in neither.
     @discardableResult
     public func selectEnclosure() -> Bool {
         guard let state = selectionState, state.selectEnclosure() else { return false }
-        revealIfOffscreen(selectedShapeIDs)
+        revealEnclosure(selectedShapeIDs)
         return true
     }
 }

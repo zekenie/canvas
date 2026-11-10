@@ -26,10 +26,13 @@ extension ReferenceDefinition: ShapeDefinition {
         draw(look, in: shape.frame, editing: context.isEditing, context)
     }
 
-    /// A pill's frame is its box; a mirror's, the pill and the mat it's laid out in (`LaidOutBox`).
+    /// A pill's frame is its box; a mirror's, the pill and the mat it's laid out in (`LaidOutBox`). A mirror of a shape with parts
+    /// (a table's columns) lends them where it draws them (`shownParts`), so an end bound to one of them (a key through the
+    /// pill for the table) meets the row drawn in the body, a pill listing none meets the pill whole.
     func geometry(of shape: ShapeRecord<Reference>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape)
-        return ShapeGeometry(outline: frame.polygon, bounds: frame)
+        let shown = Self.shownParts(of: shape, in: context)
+        return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: shown.parts, entries: shown.entries)
     }
 
     /// A pill's capsule; a mirror's laid-out frame, its corners the mat's.
@@ -80,6 +83,11 @@ extension ReferenceDefinition: CustomSkeleton {
         cg.fill(shape.frame)
     }
 }
+
+/// A mirror grows when it's expanded: what is below it in its container or on its board is pushed down by as much, in the
+/// step, as a table gaining a row does (`Transaction.makeRoom()`). Only a write pushes: an original that grows lays the mirror
+/// out larger with no commit of its own, which leaves the neighbors where they are.
+extension ReferenceDefinition: MakesRoomAsItGrows {}
 
 /// Never public: nothing could stand for one, and a reference stands for others.
 extension ReferenceDefinition: NeverPublic {}

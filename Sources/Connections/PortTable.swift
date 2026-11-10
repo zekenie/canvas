@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import Topology
 
@@ -26,12 +27,16 @@ struct KindPorts {
         let channel: ChannelID
         let role: PortRole
         let sides: [PortSide]
+        /// On its parts (its rows), not its sides: a connection on it starts at a row's dot, and ends on a row.
+        var onParts = false
     }
 
     /// Each channel it has ports on, once, in plugin order.
     private(set) var entries: [Entry] = []
     /// The channels each side's dot starts connections on, in plugin order. A side with none has no dot.
     private(set) var dots: [PortSide: [ChannelID]] = [:]
+    /// The channels a part's dots start connections on, in plugin order: none, no dots on its rows.
+    private(set) var partDots: [ChannelID] = []
     /// Each channel it has ports on, and what they let it be.
     private(set) var roles: [ChannelID: PortRole] = [:]
 
@@ -46,16 +51,30 @@ struct KindPorts {
             if let channel = contribution.value.channel {
                 add(channel, contribution.value)
             } else {
-                let every = declared ?? registry.contributions(to: Channels.self).map(\.value.id)
+                // Every channel any shape may be at an end of; and, for a stand-in, whose ports follow what it stands for,
+                // every channel there is (`Channel.isOnEveryChannel`).
+                let every = declared ?? {
+                    let channels = registry.contributions(to: Channels.self).map(\.value)
+                    let standsIn = channels.contains { !$0.isOnEveryChannel } && registry.standIns.kinds.contains(kind)
+                    return channels.filter { standsIn || $0.isOnEveryChannel }.map(\.id)
+                }()
                 declared = every
                 for channel in every { add(channel, contribution.value) }
+            }
+        }
+        // A channel any kind may start (`Channel.anyKindMayStart`: the kit's `calls`) is started from every kind's dots, after the
+        // channels it has ports on, on the sides its dots are on.
+        if !dots.isEmpty {
+            let sides = PortSide.allCases.filter { dots[$0] != nil }
+            for channel in registry.contributions(to: Channels.self).map(\.value) where channel.anyKindMayStart && roles[channel.id] == nil {
+                add(channel.id, .source, sides, onParts: false)
             }
         }
         guard !entries.isEmpty else { return nil }
     }
 
     private init(entries: [Entry]) {
-        for entry in entries { add(entry.channel, entry.role, entry.sides) }
+        for entry in entries { add(entry.channel, entry.role, entry.sides, onParts: entry.onParts) }
     }
 
     /// What a shape of this kind has ports on while it stands for shapes of `targets`' kinds (nil:
@@ -67,10 +86,17 @@ struct KindPorts {
     /// connections only start and one whose connections only end share none); nil if there is none,
     /// or no target, or the first has no ports. With one target, that kind's channels and roles; with
     /// several, the channels they all take.
-    func standing(for targets: [KindPorts?]) -> KindPorts? {
+    ///
+    /// A channel the shapes take on their rows (a table's keys) the stand-in takes on its parts too, as they do: it has no rows,
+    /// so no dot of it shows and no drag ends on it, and a connection made by name that names a row through it (a key to a
+    /// column of a table on another board: the pill, with the column on the binding) is taken. A stand-in for one row
+    /// (`asRow`: a pill for an endpoint) is that row: what the row takes on its rows it takes on its own sides, as a whole.
+    func standing(for targets: [KindPorts?], asRow: Bool = false) -> KindPorts? {
         guard let head = targets.first, let first = head else { return nil }
         var shared: [Entry] = []
         for lead in first.entries {
+            // A pill for a row takes what rows take, and nothing a shape takes as a whole.
+            if asRow, !lead.onParts { continue }
             guard let own = entry(on: lead.channel) else { continue }
             var role: PortRole? = own.role
             for target in targets {
@@ -81,9 +107,14 @@ struct KindPorts {
                 role = role?.shared(with: theirs.role)
                 if role == nil { break }
             }
-            if let role { shared.append(Entry(channel: lead.channel, role: role, sides: own.sides)) }
+            if let role { shared.append(Entry(channel: lead.channel, role: role, sides: own.sides, onParts: lead.onParts && !asRow)) }
         }
-        return shared.isEmpty ? nil : KindPorts(entries: shared)
+        guard !shared.isEmpty else { return nil }
+        var ports = KindPorts(entries: shared)
+        // A stand-in has no rows for a drag to be let go on to name one: what its shapes take on their rows is taken by name only
+        // (Connect, `canvas draw`, a typed key), never by a drop on the pill, which would end a key at no row.
+        for entry in shared where entry.onParts { ports.roles[entry.channel] = nil }
+        return ports
     }
 
     /// Every installed kind's ports, by kind: what an editor keeps (the registry never changes).
@@ -93,17 +124,21 @@ struct KindPorts {
 
     /// Ports on a channel, unless an earlier contribution gave the kind ports on it.
     private mutating func add(_ channel: ChannelID, _ ports: PortContribution) {
-        add(channel, ports.role, ports.sides)
+        add(channel, ports.role, ports.sides, onParts: ports.onParts)
     }
 
-    private mutating func add(_ channel: ChannelID, _ role: PortRole, _ sides: [PortSide]) {
+    private mutating func add(_ channel: ChannelID, _ role: PortRole, _ sides: [PortSide], onParts: Bool) {
         guard roles[channel] == nil else { return }
-        let sides = sides.reduce(into: [PortSide]()) { sides, side in if !sides.contains(side) { sides.append(side) } }
-        entries.append(Entry(channel: channel, role: role, sides: sides))
+        let sides = onParts ? [] : sides.reduce(into: [PortSide]()) { sides, side in if !sides.contains(side) { sides.append(side) } }
+        entries.append(Entry(channel: channel, role: role, sides: sides, onParts: onParts))
         roles[channel] = role
         guard role != .target else { return }
+        if onParts { partDots.append(channel) }
         for side in sides { dots[side, default: []].append(channel) }
     }
+
+    /// Whether it has any dot: on a side, or on its rows.
+    var hasDots: Bool { !dots.isEmpty || !partDots.isEmpty }
 
     /// Its ports on `channel`, if it has some.
     func entry(on channel: ChannelID) -> Entry? { entries.first { $0.channel == channel } }
@@ -193,6 +228,28 @@ extension Registry {
         }
     }
 
+    /// Whether `kind` has ports on `channel` on its parts (its rows: `partPorts`) that let it be `role`: a connection on it
+    /// that starts or ends on one of its shapes is at a row, not the shape as a whole.
+    public func takesOnParts(_ kind: ShapeKind, standingFor targets: [ShapeKind] = [], _ channel: ChannelID, as role: PortRole) -> Bool {
+        guard let entry = kindPorts(kind, standingFor: targets)?.entry(on: channel) else { return false }
+        return entry.onParts && entry.role.allows(role)
+    }
+
+    /// Whether `kind` has ports on its parts (`onParts`) or on its sides (or, for a stand-in, on what it stands for).
+    public func hasPorts(_ kind: ShapeKind, standingFor targets: [ShapeKind] = [], onParts: Bool) -> Bool {
+        kindPorts(kind, standingFor: targets)?.entries.contains { $0.onParts == onParts } ?? false
+    }
+
+    /// The channels `kind` has ports on on its parts (its rows), whatever their role, in the port table's order.
+    public func partChannels(of kind: ShapeKind) -> [ChannelID] {
+        kindPorts(kind, standingFor: [])?.entries.filter(\.onParts).map(\.channel) ?? []
+    }
+
+    /// The channels a drag from a dot on one of `kind`'s parts starts connections on, in the port table's order.
+    public func partDotChannels(of kind: ShapeKind, standingFor targets: [ShapeKind] = []) -> [ChannelID] {
+        kindPorts(kind, standingFor: targets)?.partDots ?? []
+    }
+
     /// Whether `shape`'s kind has ports on `channel` that let it be `role`: where a connection starts
     /// (`.source`), or where it ends (`.target`). What rules for connections already drawn go by. A
     /// shape kept aside takes nothing.
@@ -203,6 +260,29 @@ extension Registry {
     /// Whether some installed plugin declares `channel`.
     public func declares(_ channel: ChannelID) -> Bool {
         contributions(to: Channels.self).contains { $0.value.id == channel }
+    }
+
+    /// What a connection on `channel` is called (`Channel.title`: its pill on the line, its row in a release's list); nil for an
+    /// untitled channel, or one no plugin declares.
+    public func channelTitle(_ channel: ChannelID) -> String? {
+        contributions(to: Channels.self).first { $0.value.id == channel }?.value.title
+    }
+
+    /// The capsule of a titled channel's pill (`Channel.tint`, else its dots' color); nil for an untitled one.
+    public func channelTint(_ channel: ChannelID) -> NSColor? {
+        contributions(to: Channels.self).first { $0.value.id == channel }?.value.tint
+    }
+
+    /// The color of a channel's dots (`Channel.color`); nil for one no plugin declares.
+    public func channelColor(_ channel: ChannelID) -> NSColor? {
+        contributions(to: Channels.self).first { $0.value.id == channel }?.value.color
+    }
+
+    /// The parts (rows) a connection's start and end are bound to, by the connector's `parts`: nil each for an end bound to a
+    /// shape as a whole, a free end, or a shape that isn't a connection.
+    public func connectionParts(of record: AnyShapeRecord) -> (from: PartID?, to: PartID?) {
+        guard let connector, record.kind == connector.kind, !record.isOpaque, let parts = connector.parts else { return (nil, nil) }
+        return parts(record)
     }
 
     /// Whether the connector can start a connection from the shape `id` in `shapes` or end one there
@@ -225,6 +305,10 @@ extension Registry {
     public func connection(_ request: ConnectionRequest, existing: AnyShapeRecord? = nil, in shapes: ShapeContext) -> AnyShapeRecord? {
         guard let connector, let make = connector.make else { return nil }
         if let existing, existing.kind != connector.kind || existing.isOpaque { return nil }
+        // A part that only heads rows (an API's path prefix) is no end, whatever names it.
+        for (shape, part) in [(request.from, request.fromPart), (request.to, request.toPart)] {
+            if let part, let record = shapes.shape(shape), !isConnectable(part: part, of: record) { return nil }
+        }
         guard let made = make(request, existing, shapes) else { return nil }
         if let existing, made == existing.copy(as: existing.id) { return existing }
         return made

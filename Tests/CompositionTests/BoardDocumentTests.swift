@@ -5,17 +5,18 @@ import CanvasTesting
 import CanvasUI
 import Clipboard
 import DetailPanel
+import Engineering
 import Find
 import Foundation
 import Geometry
 import Grouping
 import JumpTo
+import LineRows
 import LanguageModels
 import Mentions
 import Reordering
 import Selection
 import ShippedTesting
-import Stickers
 import StickyNotes
 import SwiftUI
 import TestKit
@@ -367,6 +368,28 @@ let boardType = "com.example.InfiniteCanvas.board"
         board.close()
         expectEqual(memory.recall(for: a), .init(x: 7, y: 8, zoom: 2, showsDetails: false, showsMinimap: true), "closing remembers it")
     },
+    test("the view values plugins keep are saved with the file's view as its window closes, and handed back before the next window's canvas is made") {
+        try configureBoards()
+        let suite = "BoardDocumentTests-\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let memory = BoardViewMemory(defaults: defaults)
+        let url = URL(fileURLWithPath: "/tmp/values.canvasboard")
+        let key = ViewValueKey<[String]>("test.values")
+        let first = BoardDocument()
+        first.viewMemory = memory
+        first.fileURL = url
+        first.makeWindowControllers()
+        first.editor.setViewValue(key, ["kept"])
+        first.close()
+        expectEqual(memory.recall(for: url)?.values?.keys.sorted(), ["test.values"])
+        let second = BoardDocument()
+        second.viewMemory = memory
+        second.fileURL = url
+        second.makeWindowControllers()
+        expectEqual(second.editor.viewValue(key), ["kept"], "handed back")
+        second.close()
+    },
     test("a view remembered before boards had a minimap or a sidebar still reads, with both showing") {
         let suite = "BoardDocumentTests-\(UUID().uuidString)"
         let defaults = try require(UserDefaults(suiteName: suite))
@@ -407,11 +430,11 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(recent.items.map { $0.action.map(NSStringFromSelector) }, ["clearRecentDocuments:"])
         let file = try require(menus.main.item(withTitle: "File")?.submenu)
         expectEqual(file.items.map(\.title), ["New", "Open…", "Open Recent", "", "Close", "Save…", "Save As…", "Revert to Saved", "", "Kits"])
-        // File ▸ Kits: the core's item for each kit, the example's Stickers, which turns it on or off.
+        // File ▸ Kits: the core's item for each kit, Engineering, which turns it on or off.
         let kits = try require(file.item(withTitle: "Kits")?.submenu)
-        expectEqual(kits.items.map(\.title), ["Stickers"])
+        expectEqual(kits.items.map(\.title), ["Engineering"])
         expectEqual(kits.items.map { $0.action.map(NSStringFromSelector) }, ["runCommand:"])
-        expectEqual(kits.items.compactMap(BoardMenus.command(of:)), [.kit(StickersKit.id)])
+        expectEqual(kits.items.compactMap(BoardMenus.command(of:)), [.kit(EngineeringKit.id)])
         // AppKit's own items, which text answers first, carrying the command that answers each on the board.
         try check("Edit", "Undo", "undo:", "z", runs: .undo)
         try check("Edit", "Redo", "redo:", "z", [.command, .shift], runs: .redo)
@@ -422,15 +445,17 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("Edit", "Select All", "selectAll:", "a", runs: .selectAll)
         try check("Edit", "Copy as Image", "copyAsImage:", "c", [.command, .shift])
         try command("Edit", "Paste at Pointer", .pasteAtPointer, "v", [.command, .shift])
+        try command("Edit", "Paste as Note", .pasteAsNote, "v", [.command, .option, .shift])
         try command("Edit", "Duplicate", .duplicate, "d")
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
-        expectEqual(edit.items.map(\.title), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Paste at Pointer", "Duplicate", "Delete",
+        expectEqual(edit.items.map(\.title), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Paste at Pointer", "Paste as Note", "Duplicate", "Delete",
                                               "Select All", "Remove Mention", "", "Find", "Spelling and Grammar"], "the window's own items and Clipboard's and Find's, each at its order")
-        // Insert: an item for each tool that places a shape, in the toolbar's order, Note with ⇧Return.
-        try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)), "\r", .shift)
+        // Insert: New Shape Beside first, with ⇧Return, then an item for each tool that places a shape, in the toolbar's order.
+        try command("Insert", "New Shape Beside", .insertBeside, "\r", .shift)
+        try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)))
         let insert = try require(menus.main.item(withTitle: "Insert")?.submenu)
-        expectEqual(insert.items.map(\.title), ["Note", "Subboard", "Frame", "Reference", "Stickers"], "and the example kit's tools in a submenu named for it")
-        expectEqual(try require(insert.item(withTitle: "Stickers")?.submenu).items.map(\.title), ["Thumbs Up", "Heart", "Star", "Party"])
+        expectEqual(insert.items.map(\.title), ["New Shape Beside", "Note", "Subboard", "Frame", "Reference", "Engineering", "", "Connect"], "and the engineering kit's tools in a submenu named for it, then Connect (⌘L) in a section of its own")
+        expectEqual(try require(insert.item(withTitle: "Engineering")?.submenu).items.map(\.title), ["Table", "Enum", "API", "Database"])
         let find = try require(edit.item(withTitle: "Find")?.submenu)
         expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])
         expectEqual(find.items.compactMap(BoardMenus.command(of:)), [.find, .findNext, .findPrevious], "never an AppKit find action, which a text view answers")
@@ -462,9 +487,11 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("View", "Actual Size", .zoomToActualSize, "0")
         try command("View", "Zoom to Fit", .zoomToFit, "1", .shift)
         try command("View", "Zoom to Selection", .zoomToSelection, "2", .shift)
+        try command("View", "Fold Rows", .foldRows, "\u{F700}", [.command, .control])
+        try command("View", "Unfold Rows", .unfoldRows, "\u{F701}", [.command, .control])
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
         expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out", "Actual Size",
-                                              "Zoom to Fit", "Zoom to Selection", "", "Enter Full Screen"])
+                                              "Zoom to Fit", "Zoom to Selection", "", "Fold Rows", "Unfold Rows", "", "Enter Full Screen"])
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Insert", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         expect(try require(menus.main.item(withTitle: "Shape")?.submenu).items.isEmpty, "Shape fills itself as it opens")
         try command("Arrange", "Group", .group, "g", [.command, .option])

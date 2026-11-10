@@ -732,12 +732,13 @@ audit_sources() {
     # hand in a test, and `canvas kinds --schema`'s answer, say. And one that is an English word every
     # message uses, as Types' `is` is ("a note is a", and the query engine's own "is" in its messages).
     # And one that is a word of the data any test or message may hold, as Colors' `color` is (a field
-    # called color, the text "color" searched for).
+    # called color, the text "color" searched for). And one that is an English word a label says, as
+    # References' plugin is spelled (a column's card's line, "references").
     #
     # The forms a module declares an id in are written once, here: the regex below takes the id's types
     # (`id_declaration`), and the product check, after, reads the same form for ShapeKind, through
     # `declarations`.
-    ORDINARY_IDS=(color frame is schema)
+    ORDINARY_IDS=(color frame is references schema)
     # The tests of what agents run outside the app, the skills' tools, and their support, speak those
     # tools' formats: a digest's kinds and keys and a scan's visibility, whose words are the shipped
     # kinds' and properties' ids as a file writes them. They link no plugin, so that no edit to one

@@ -966,6 +966,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var scanned = names.scan(io.readText);
     eq(scanned.bad.map(names.say), [], 'string literals naming the app');
     ['frame', 'sticky-note', 'subboard', 'reference', 'text', 'description', 'private', 'fieldValues', 'frame-link', 'note-link', 'subboard-link'].forEach(function (n) { assert(scanned.names[n], n + ' is collected from the kinds'); });
+    eq(names.OWN_WORDS.filter(function (w) { return scanned.names[w]; }), [], 'the tool\'s own words (how ranks run) are its own, though a table\'s columns are spelled so');
     var found = function (src) { return names.offences('x.mjs', src, scanned.names).map(function (o) { return o.line + ':' + o.text; }); };
     eq(found("var a = 'frame';\nvar b = \"text\";\nvar c = `private`;"), ['1:frame', '2:text', '3:private'], 'single, double and backtick');
     eq(found("// 'frame' in a comment\n/* \"text\" too */\nvar a = 'a frame in words'; var b = x.private; var r = /frame/;"), [], 'comments, longer strings, property names and regular expressions are not literals');
@@ -1336,7 +1337,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     await clim.run(['applied', '/ap2.json', '/dr.json'], mem.io);
     eq(mem.printed.pop(), 'dry run x: shapes none; edges none; 0 deleted\nwarning: edge from "c" to "d": odd');
     await clim.run(['extract', 'kinds', KINDS_PATH], mem.io);
-    eq(JSON.parse(mem.printed.pop()).map(function (k) { return k.kind; }), ['arrow', 'emoji-sticker', 'frame', 'reference', 'sticky-note', 'subboard']);
+    eq(JSON.parse(mem.printed.pop()).map(function (k) { return k.kind; }), ['api', 'arrow', 'database', 'endpoint', 'enum-type', 'frame', 'reference', 'sticky-note', 'subboard', 'table']);
     threw = ''; try { await clim.run(['nonsense'], mem.io); } catch (e) { threw = e.message; }
     assert(/THE MESS DIAL/.test(threw), 'the usage');
   });

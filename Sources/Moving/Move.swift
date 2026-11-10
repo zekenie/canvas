@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Draw
+import Mentions
 import Selection
 
 /// The shapes a command moves, as one block: on the board shown, with a box, kept where they are to each
@@ -100,12 +101,24 @@ struct Block {
         let order = shapes.map(\.id)
         // Where the person is and what they have selected before the move: what going after the shapes is a step back to.
         let start = editor.navigationStart, selected = editor.selectedShapeIDs, revision = editor.revision
+        // The arrows that would cross the edge, kept through reference pills: an arrow goes where its start goes (planned from
+        // the board as it is, written in the transaction below).
+        let rebinding = target == source ? nil : CrossingArrows(moving: ids.union(carried), from: source, to: target, by: delta,
+                                                                  label: { [registry = editor.registry] in registry.mentionAppearance(of: $0)?.label ?? "" }, in: editor)
         let committed = editor.transactWhole(MovingStyle.stepName) { transaction -> [ShapeID: CGPoint] in
+            var placed: Set<ShapeID> = []
             if target != source {
+                // The ends of the arrows that cross are pointed at pills first (new pills in, on the origin), so an arrow that goes
+                // with its start is bound only to shapes that move and rides along, and one that stays is bound to what stays.
+                let rebound = rebinding?.rebind(in: &transaction)
                 // Onto the board first, so what's bound to them across the edge lets go where it's drawn (an
                 // arrow's end stays where the shape was, as after a cut), then where they go there.
-                let moved = source == shown ? transaction.move(ids, to: target) : transaction.move(ids, from: source, to: target)
+                let asked = ids.union(rebound?.along ?? [])
+                let moved = source == shown ? transaction.move(asked, to: target) : transaction.move(asked, from: source, to: target)
                 guard moved else { throw Transaction.Refused() }
+                // An arrow that rode on a stand-in is bound to what the destination had, and the stand-in goes.
+                rebound?.finish(in: &transaction)
+                placed = rebound?.placed ?? []
             }
             // What the move took along (an arrow bound only to them) goes as far as they do.
             transaction.translate(ids.union(transaction.rodeAlong), by: delta, on: target)
@@ -122,13 +135,15 @@ struct Block {
                     }
                 }
             }
-            switch transaction.settle(ids, on: target) {
-            case .settled(let nudges):
-                try finish(&transaction)
-                return target == shown ? nudges : [:]
-            case .refused:
-                throw Transaction.Refused()
+            // The shapes are put down alone, so the pills they bring do not weigh in the verdict on where they belong; the new pills
+            // are where they land, put down after them, not moved with them.
+            guard case .settled(var nudges) = transaction.settle(ids, on: target) else { throw Transaction.Refused() }
+            if !placed.isEmpty {
+                guard case .settled(let pillNudges) = transaction.settle(placed, on: target) else { throw Transaction.Refused() }
+                nudges.merge(pillNudges) { first, _ in first }
             }
+            try finish(&transaction)
+            return target == shown ? nudges : [:]
         }
         // A move that lands where the shapes are commits nothing: nowhere to go, and editing goes on.
         guard let nudges = committed, editor.revision != revision else { return }

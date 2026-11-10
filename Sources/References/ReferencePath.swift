@@ -50,12 +50,14 @@ extension ReferenceState {
     /// that leads when the shape is on another and none of them opens one (`placeOfTarget`); nil for none. A seat in the
     /// file is read through the state's paths (each container called as every path calls one); a written one (a measure's)
     /// is the names it gives, what they share from the top left out, those it says open a board in their own weight, and the board that leads as in the file.
-    static func place(of target: ShapeID, at seat: StandInSeat, in context: ShapeContext) -> [PlaceStep]? {
+    static func place(of reference: ReferenceTarget, at seat: StandInSeat, in context: ShapeContext) -> [PlaceStep]? {
+        let target = reference.id
         let steps: [PlaceStep]
         switch seat {
         case .file(let container, let board):
             guard let state = context.service(ReferenceState.self) else { return nil }
-            steps = state.placeSteps(of: target, seatedIn: container, on: board)
+            // A pill for a row says the shape it's in last.
+            steps = state.placeSteps(of: target, seatedIn: container, on: board) + state.rowStep(of: reference)
         case .written(let shape, let seat, let opening, let root):
             guard let state = context.service(ReferenceState.self) else { return nil }
             var names = Array(pathBeyond(seat, shape))

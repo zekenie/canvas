@@ -49,6 +49,19 @@ extension Editable {
     }
 }
 
+extension PartedShape {
+    func erasedParts(of record: AnyShapeRecord) -> [PartName]? {
+        record.typed(as: Props.self).map { parts(of: $0) }
+    }
+    func erasedRemoving(_ parts: Set<PartID>, from record: AnyShapeRecord) -> AnyShapeRecord? {
+        guard var typed = record.typed(as: Props.self), let props = removing(parts, from: typed) else { return nil }
+        typed.props = props
+        var removed = AnyShapeRecord(typed)
+        removed.meta = record.meta
+        return removed
+    }
+}
+
 extension ShowingShapes {
     func erasedShownShape(of record: AnyShapeRecord, in context: ShapeContext) -> ShapeID? {
         record.typed(as: Props.self).flatMap { shownShape(of: $0, in: context) }
@@ -112,18 +125,38 @@ extension CustomSizing {
     func erasedIsResizable(_ record: AnyShapeRecord, in context: ShapeContext) -> Bool {
         record.typed(as: Props.self).map { isResizable($0, in: context) } ?? false
     }
+    func erasedResizedAxes(of record: AnyShapeRecord) -> SizeAxes {
+        record.typed(as: Props.self).map { resizedAxes(of: $0) } ?? .both
+    }
 }
 
 extension PaintOrderAnchored {
-    func erasedPaintAnchor(of record: AnyShapeRecord, in document: CanvasDocument) -> ShapeID? {
-        record.typed(as: Props.self).flatMap { paintAnchor(of: $0, in: document) }
+    func erasedPaintAnchor(of record: AnyShapeRecord, in document: CanvasDocument) -> PaintAnchor? {
+        record.typed(as: Props.self).flatMap { shape in
+            paintAnchor(of: shape, in: document).map { PaintAnchor(shape: $0, below: paintsBelowAnchor(shape, in: document)) }
+        }
     }
+    func erasedPaintAnchorFollowsContainment(of record: AnyShapeRecord) -> [ShapeID] {
+        record.typed(as: Props.self).map { paintAnchorFollowsContainment(of: $0) } ?? []
+    }
+}
+
+/// Where a shape painted by anchor goes (`PaintOrderAnchored`): just above its anchor, or just below it.
+struct PaintAnchor: Hashable {
+    let shape: ShapeID
+    let below: Bool
 }
 
 extension ShapeReferencing {
     /// Nil if the kind can't let go of a shape it names; the record's own props, typed, otherwise.
     func erasedRemappingReferences(of record: AnyShapeRecord, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> (any ShapeProps)?? {
         record.typed(as: Props.self).map { remappingReferences(of: $0, map, in: context) }
+    }
+    func erasedBoundParts(of record: AnyShapeRecord) -> [PartAddress] {
+        record.typed(as: Props.self).map { boundParts(of: $0) } ?? []
+    }
+    func erasedMovingParts(of record: AnyShapeRecord, _ move: (PartAddress) -> PartAddress) -> (any ShapeProps)? {
+        record.typed(as: Props.self).flatMap { movingParts(of: $0, move) }
     }
 }
 
@@ -172,11 +205,54 @@ extension AnyShapeRecord {
         return bound
     }
 
+    /// The parts of shapes it's bound to (`ShapeReferencing.boundParts`): an arrow's end at a row. None for a kind that
+    /// binds no part, or a shape kept aside.
+    @MainActor
+    public func boundParts(in registry: Registry) -> [PartAddress] {
+        guard !isOpaque, let definition = registry.definition(for: kind) as? any ShapeReferencing else { return [] }
+        return definition.erasedBoundParts(of: self)
+    }
+
+    /// It, with every part it's bound to passed through `move` (`ShapeReferencing.movingParts`); nil when nothing changed.
+    @MainActor
+    public func movingParts(in registry: Registry, _ move: (PartAddress) -> PartAddress) -> AnyShapeRecord? {
+        guard !isOpaque, let definition = registry.definition(for: kind) as? any ShapeReferencing,
+              let props = definition.erasedMovingParts(of: self, move) else { return nil }
+        var record = self
+        record.props = props
+        return record
+    }
+
     /// Whether it's bound to some of `shapes` and to nothing else (`boundShapes(in:)`): what goes with
     /// them, as an arrow between two of a container's shapes does. False for a shape bound to nothing.
     @MainActor
     public func isBound(onlyTo shapes: Set<ShapeID>, in context: ShapeContext) -> Bool {
         let bound = boundShapes(in: context)
         return !bound.isEmpty && bound.allSatisfy(shapes.contains)
+    }
+}
+
+extension ShapeContext {
+    /// The shapes a copy of `shapes` takes along: each one bound only to shapes among them, when at least one of
+    /// those is of a kind that takes bound shapes (`TakesBoundShapes`), so two copied shapes of such a kind keep what
+    /// is bound between them (an arrow from one to the other) whether it was selected or not. It is the rule a move
+    /// across boards has for what rides along (`isBound(onlyTo:)`), offered to whoever copies; in document order,
+    /// none already among `shapes`, and none for a list with no such kind, which costs a set lookup a shape. A copy
+    /// departs from tldraw here, whose copy keeps a binding only for a shape among those given; it is scoped to
+    /// taking kinds, so every other kind copies as it did.
+    @MainActor
+    public func takenAlong(by shapes: Set<ShapeID>) -> [ShapeID] {
+        let taking = registry.takingBoundKinds, kinds = registry.referencingKinds
+        guard !taking.isEmpty, !kinds.isEmpty, shapes.contains(where: { id in document[id].map { taking.contains($0.kind) } ?? false })
+        else { return [] }
+        var along: [ShapeID] = []
+        document.shapes.forEach { record in
+            guard kinds.contains(record.kind), !shapes.contains(record.id), !record.isOpaque else { return }
+            let bound = record.boundShapes(in: self)
+            guard !bound.isEmpty, bound.allSatisfy(shapes.contains), bound.contains(where: { id in document[id].map { taking.contains($0.kind) } ?? false })
+            else { return }
+            along.append(record.id)
+        }
+        return along
     }
 }

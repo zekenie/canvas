@@ -304,8 +304,12 @@ public final class SlashBar {
         // Heard once it has run, and only if it changed something: a move refused, or a row that only opens
         // a list (Edit Colors…), commits nothing and says nothing.
         let before = editor.revision
+        // The editor leaves a placement's words to this, so a shape a command puts down is not heard twice.
+        editor.isSayingStep = true
         _ = editor.scheduler.schedule(after: .zero) { [weak editor] in
-            guard let editor, editor.revision != before else { return }
+            guard let editor else { return }
+            editor.isSayingStep = false
+            guard editor.revision != before else { return }
             editor.announce(spoken)
         }
     }

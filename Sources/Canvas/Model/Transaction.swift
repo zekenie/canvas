@@ -64,6 +64,14 @@ public struct Transaction {
     /// shown from there is dropped whole (`CanvasEditor.transact(on:)`). A `willDelete` handler that would write
     /// there must leave that part out when this is false (the core does not do it for the handler), or the whole step is lost.
     public internal(set) var mayReachBoardShown = true
+    /// The board the editor shows, in a step on another board (`transact(on:)`): nil in a step on the board shown.
+    /// `mayWrite(on:)` asks it.
+    public internal(set) var boardShown: BoardID?
+    /// Whether this transaction may write on `other`: false for the board the editor shows, from a step on another board
+    /// (`mayReachBoardShown`), where a write would drop the whole commit. A writer that reaches shapes on boards it was not
+    /// given (`removeParts` and `moveParts` through pills, a `partsMoved` handler) leaves that board's shapes as they are
+    /// when this is false.
+    public func mayWrite(on other: BoardID) -> Bool { mayReachBoardShown || other != boardShown }
     let registry: Registry
     let camera: Camera
     let keys: StackingKeyGenerator
@@ -71,13 +79,41 @@ public struct Transaction {
     let file: FileAccess
     /// What the editor lays shapes out with, which `shapes` reads this transaction's file through;
     /// nil where there is no editor to ask (`discardKeptAside`).
-    private let layout: LayoutSource?
+    let layout: LayoutSource?
+    /// The board as it was when the transaction began: what `makeRoom()` measures a shape's growth from.
+    let startDocument: CanvasDocument
+    /// For each shape `makeRoom()` has measured, its frame at rest then and the box origin it had: what a later
+    /// `makeRoom()` in the same transaction measures growth from, so room is made once for each growth.
+    var roomBaselines: [ShapeID: (origin: CGPoint, frame: CGRect)] = [:]
+    /// What `makeRoom()` moved down so far, by how far (world units): the shapes it pushed, not what they carried.
+    public internal(set) var madeRoom: [ShapeID: CGPoint] = [:]
+    /// Whether `makeRoom()` makes room at all: off for a body that put every shape where it goes (a program's draw:
+    /// `canvas apply` and the digest, whose plan lays each shape out at the size it will have).
+    public var makesRoom = true
+    /// The shapes a transaction that made this one over another board moved or settled there, before: put where that step
+    /// meant, as the shapes this one moved are (`makeRoom()` grows nothing it placed).
+    var placedElsewhere: Set<ShapeID> = []
+    /// The shapes the body placed against what grew already, laid out as it will be (`canvas draw` places `below "orders"`
+    /// under the table's new bottom): `makeRoom()` moves one only by what pushed the shape above it, never again by that
+    /// shape's own growth, so the gap the body left is kept.
+    public var placedAgainstGrowth: Set<ShapeID> = []
+
+    /// States that `id` was `frame` tall when this step began, at rest, where the body also changes what it shows with no write (a
+    /// fold let go as rows are dropped in: a view the layout reads live, so the step's two readings would both see it unfolded):
+    /// `makeRoom()` then measures its growth from that frame, and pushes what's below for all it shows now (review R9).
+    public mutating func restedAs(_ frame: CGRect, for id: ShapeID) {
+        guard let origin = document[id]?.box?.origin else { return }
+        roomBaselines[id] = (origin, frame)
+    }
     /// Boards going in with the shapes inserted here that own them, and the boards under those: what
     /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
     /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
     /// there already: what the commit adds, or, if the file held shapes there
     /// (`changes.boardsChanged`; the root always), writes over.
     private(set) var stagedBoards: [BoardID: CanvasDocument] = [:]
+    /// Every shape this transaction put in, on whichever board, in order: what `standIns(naming:)` reads beside the editor's
+    /// index, which doesn't hold them yet.
+    private var inserted: [ShapeID] = []
     /// The shapes inserted or moved onto `stagedBoards` here, each with the board it's on.
     private var stagedIDs: [ShapeID: BoardID] = [:]
     /// The boards shapes were moved onto here, moved on or settled on. None of them goes with a shape
@@ -89,6 +125,17 @@ public struct Transaction {
     /// (`delete`): none is on a board any more (`board(containing:)`), and `transact(on:)` commits nothing
     /// that deleted an owner on the way to the board shown.
     private(set) var deleted: Set<ShapeID> = []
+    /// The kinds, and how many of each, this transaction deleted beyond what it was asked to: what a `willDelete`
+    /// handler deleted (a relationship type's end arrows) and what a taking kind's deletion took (`TakesBoundShapes`),
+    /// on whichever board, in the order each kind was first met. A shape counts once, as the deletion took it, and
+    /// not for what a board's owner takes with it (the shapes on a board under a deleted subboard); empty when
+    /// nothing went along. What a step's name is made from ("Delete Note and 2 Arrows": Selection's `DeleteSteps`).
+    public private(set) var deletedAlong: [KindCount] = []
+    /// The name of the step this transaction commits, once the body sees what it did ("Delete Table and 3 Arrows",
+    /// which a delete knows only when it has deleted): `transact` names the step by it in place of its own `name`.
+    /// A group the transaction is in still names the step before either (`undoHistory.group`). Nil leaves the name
+    /// `transact` was given.
+    public var stepName: String?
     /// The owner of the board of the transaction that made this one over another board, and of each board
     /// above it (`delete(_:on:)`): this one deletes none of them, whoever asks, a handler included, as it
     /// passes over one it's asked for.
@@ -116,7 +163,7 @@ public struct Transaction {
     /// moving it, staged or deleted: what `LayoutReading.isChanged` reads as a set, kept as a log so whoever keeps
     /// an answer over the changed shapes applies only the entries since it last asked (`LayoutReading.changes`).
     /// Append-only; a shape appears as often as it was written.
-    private var writes: [ShapeID] = []
+    private(set) var writes: [ShapeID] = []
     /// The shapes written on other boards (a transaction over another board's writes, taken in): changed as `isChanged` says.
     private var writtenElsewhere: Set<ShapeID> = []
     /// Which transaction's log this is: a number no other transaction has (`LayoutReading.runID`).
@@ -162,6 +209,7 @@ public struct Transaction {
          file: FileAccess, layout: LayoutSource?) {
         self.layout = layout
         self.document = document
+        startDocument = document
         self.board = board
         self.isBoardReadOnly = isBoardReadOnly
         self.registry = registry
@@ -292,6 +340,8 @@ public struct Transaction {
             for record in records {
                 stagedIDs[record.id] = owned
                 writes.append(record.id)
+                // Brought in by this step like any other: a pill among them is reached by `standIns(naming:)`.
+                inserted.append(record.id)
             }
             changes.boardsAdded.insert(owned)
         }
@@ -333,6 +383,7 @@ public struct Transaction {
         writes.append(record.id)
         changes.reordered = true
         didChange = true
+        inserted.append(record.id)
         return true
     }
 
@@ -405,6 +456,23 @@ public struct Transaction {
         else { return false }
         refused.insert(old.id)
         return true
+    }
+
+    /// The part a shape has at `address` as this step leaves the file, on whichever board the shape is; nil for a shape or a part
+    /// it hasn't.
+    public func part(at address: PartAddress) -> PartName? {
+        guard let part = address.part, let at = location(of: address.shape), let record = contents(of: at)[address.shape] else { return nil }
+        return registry.parts(of: record)?.first { $0.id == part }
+    }
+
+    /// Whether a shape on any board this step may write is read-only as the step leaves the file (it, a container it's in, or its
+    /// board), so a change that only follows another (a pill standing where a row went) leaves it as it was rather than refusing the
+    /// step. Another board's through a transaction over it, as `renameNamedParts` asks.
+    public func isReadOnly(_ id: ShapeID, on other: BoardID) -> Bool {
+        guard let record = contents(of: other)[id] else { return false }
+        if other == board { return isReadOnly(record) }
+        guard !climb(other).isTaken, let there = transaction(on: other) else { return true }
+        return there.isReadOnly(record)
     }
 
     /// Whether this transaction holds a shape as it is, as `refuses` would, noting nothing: it was in
@@ -1030,10 +1098,13 @@ public struct Transaction {
         precondition(movedOnto.allSatisfy { climb($0).ownerHere.map { !ids.contains($0) } ?? true },
                      "a shape can't be deleted in the transaction that moved shapes onto its board, or onto a board under it")
         let isOutermost = deleting.isEmpty
+        // Called from a handler or the cascade, it deletes what nobody asked for.
+        if isCascading { noteAlong(ids) }
         deleting.formUnion(ids)
         let wasCascading = isCascading
         isCascading = true
         for handler in registry.willDeleteHandlers { handler(ids, &self) }
+        takeBound(by: ids)
         letGo(of: ids)
         isCascading = wasCascading
         guard isOutermost else { return }
@@ -1151,6 +1222,7 @@ public struct Transaction {
         refused.formUnion(there.refused)
         takeInWrites(of: there)
         deleted.formUnion(there.deleted)
+        for count in there.deletedAlong { noteAlong(count.kind, count.count) }
         rode.formUnion(there.rode)
         for id in there.deleted { stagedIDs[id] = nil }
         changes.boardsRemoved.formUnion(there.changes.boardsRemoved)
@@ -1249,10 +1321,46 @@ public struct Transaction {
     /// Deletes these shapes as `delete` does, refusing none: what discarding shapes the app keeps
     /// aside does, on each board they're on.
     mutating func discard(_ ids: Set<ShapeID>) {
-        let wasCascading = isCascading
+        let wasCascading = isCascading, along = deletedAlong
         isCascading = true
         delete(ids)
         isCascading = wasCascading
+        deletedAlong = along                        // shapes put aside were asked for
+    }
+
+    /// Adds `count` shapes of `kind` to what this transaction deleted along.
+    private mutating func noteAlong(_ kind: ShapeKind, _ count: Int) {
+        if let at = deletedAlong.firstIndex(where: { $0.kind == kind }) {
+            deletedAlong[at].count += count
+        } else {
+            deletedAlong.append(KindCount(kind: kind, count: count))
+        }
+    }
+
+    /// Counts these shapes, still in the document, as deleted along.
+    private mutating func noteAlong(_ ids: Set<ShapeID>) {
+        for id in ids { if let kind = document[id]?.kind { noteAlong(kind, 1) } }
+    }
+
+    /// Every shape bound to a shape of `ids` whose kind takes bound shapes along (`TakesBoundShapes`) is deleted
+    /// with it, but a read-only one (a lock on it, on a container it is in, or on the board), which lets go where
+    /// it is drawn below, as a read-only shape does for any kind. Nested in this deletion, so its handlers run, what is
+    /// bound to it goes or lets go, and everything is removed together, read-only or not as a cascade has it. The
+    /// cheapest test first: a deletion of no such kind costs a set lookup an id. Bindings are on their shape's board,
+    /// so only this one's shapes are looked at.
+    private mutating func takeBound(by ids: Set<ShapeID>) {
+        let taking = registry.takingBoundKinds, kinds = registry.referencingKinds
+        guard !taking.isEmpty, !kinds.isEmpty else { return }
+        let takers = ids.filter { id in document[id].map { taking.contains($0.kind) } ?? false }
+        guard !takers.isEmpty else { return }
+        let context = shapes
+        var taken: Set<ShapeID> = []
+        document.shapes.forEach { record in
+            guard kinds.contains(record.kind), !deleting.contains(record.id), !isReadOnly(record),
+                  record.boundShapes(in: context).contains(where: takers.contains) else { return }
+            taken.insert(record.id)
+        }
+        delete(taken)
     }
 
     /// Every shape bound to one of `ids`, and isn't being deleted too, lets go of it, read-only or
@@ -1271,6 +1379,188 @@ public struct Transaction {
             released.append(letGo)
         }
         for record in released { update(record.id) { $0 = record } }
+    }
+
+    // MARK: Parts taken out and moved
+
+    /// The stand-ins whose record names `shape` (a reference pill for a table), with the board each is on as this transaction
+    /// leaves the file: the editor's stand-in lookup (`registrar.standInLookup`, Topology's), read as the file was before this
+    /// transaction, and the stand-ins this transaction put in earlier that name it (what the lookup says a record names), which the
+    /// index doesn't hold yet (a pill a ⌘L pick or a script put down, then a row taken out in the same step). None without a
+    /// lookup. In order of id, so the same call on the same file makes the same file (the lookup itself has no order).
+    public func standIns(naming shape: ShapeID) -> [(id: ShapeID, board: BoardID)] {
+        var found: [(id: ShapeID, board: BoardID)] = file.standIns(shape).compactMap { id in location(of: id).map { (id, $0) } }
+        if !inserted.isEmpty, let names = registry.standInNames {
+            var seen = Set(found.map(\.id))
+            for id in inserted where !seen.contains(id) {
+                guard let board = location(of: id), let record = contents(of: board)[id], names(record, registry) == shape else { continue }
+                seen.insert(id)
+                found.append((id, board))
+            }
+        }
+        return found.sorted { $0.id.description < $1.id.description }
+    }
+
+    /// The shapes whose records name `shape` as a value (a note whose text mentions one of its rows), with the board each is on
+    /// as this transaction leaves the file: the editor's lookup (`registrar.standInLookup(_:names:namers:)`, Topology's), read as
+    /// the file was before this transaction, so what this transaction wrote naming it isn't among them. None without a lookup. In
+    /// order of id. What `moveParts` renames a moved part's names in (a mention of a row).
+    public func shapesNaming(_ shape: ShapeID) -> [(id: ShapeID, board: BoardID)] {
+        file.namers(shape).compactMap { id in location(of: id).map { (id, $0) } }.sorted { $0.id.description < $1.id.description }
+    }
+
+    /// The bindings a part reaches through a pill: for each part of `parts`, each stand-in that names its shape, by the board it
+    /// is on, as the address a binding through it names (the pill and the part: a key to a column on another board) with the
+    /// part's own address.
+    private func throughStandIns(_ parts: some Sequence<PartAddress>) -> [BoardID: [PartAddress: PartAddress]] {
+        var through: [BoardID: [PartAddress: PartAddress]] = [:]
+        var asked: [ShapeID: [(id: ShapeID, board: BoardID)]] = [:]
+        for address in parts {
+            let pills = asked[address.shape] ?? standIns(naming: address.shape)
+            asked[address.shape] = pills
+            for pill in pills { through[pill.board, default: [:]][PartAddress(pill.id, part: address.part)] = address }
+        }
+        return through
+    }
+
+    /// The shapes on `board` that bind one of `addresses`, but read-only ones, each with the addresses it binds.
+    private func binding(_ addresses: [PartAddress: PartAddress], on board: BoardID) -> [(record: AnyShapeRecord, bound: [PartAddress])] {
+        let kinds = registry.referencingKinds, there = contents(of: board), boardIsReadOnly = board == self.board ? isBoardReadOnly : isReadOnly(board: board)
+        var found: [(record: AnyShapeRecord, bound: [PartAddress])] = []
+        there.shapes.forEach { record in
+            guard kinds.contains(record.kind), !deleting.contains(record.id), !boardIsReadOnly, !registry.isReadOnly(record, in: there) else { return }
+            let bound = record.boundParts(in: registry).filter { addresses[$0] != nil }
+            if !bound.isEmpty { found.append((record, bound)) }
+        }
+        return found
+    }
+
+    /// Parts just taken out of their shapes on this board (rows deleted by the writer that writes them): every shape
+    /// bound to one of them goes, counted in `deletedAlong`, when the part's shape is of a kind that takes bound shapes
+    /// (`TakesBoundShapes`); else it's bound to that shape as a whole. A read-only one stays as it is, still naming the
+    /// part, drawn where the part was. A binding that reaches a part through a pill for its shape (a key to a column on
+    /// another board: the pill, with the part on the binding) is reached the same way, on the pill's board, in this step
+    /// (`standIns(naming:)`): it goes, or is bound to the pill as a whole. One pass over each board's binding shapes; none
+    /// for a list of no parts. The writer of a kind's parts calls it whenever parts go, so nothing is left bound to a part
+    /// that's gone. Returns what it deleted, on whichever board.
+    @discardableResult
+    public mutating func removeParts(_ parts: Set<PartAddress>) -> Set<ShapeID> {
+        let parts = parts.filter { $0.part != nil }
+        let kinds = registry.referencingKinds
+        guard !parts.isEmpty, !kinds.isEmpty else { return [] }
+        let taking = registry.takingBoundKinds
+        var through = throughStandIns(parts)
+        var here = Dictionary(parts.map { ($0, $0) }) { first, _ in first }
+        here.merge(through.removeValue(forKey: board) ?? [:]) { first, _ in first }
+        // What a binding to `addresses` does: goes with a part of a taking shape, else binds the shape (or the pill) as a whole.
+        func plan(_ addresses: [PartAddress: PartAddress], on board: BoardID) -> (taken: Set<ShapeID>, rebound: [AnyShapeRecord]) {
+            var taken: Set<ShapeID> = [], rebound: [AnyShapeRecord] = []
+            for (record, bound) in binding(addresses, on: board) {
+                if bound.contains(where: { address in addresses[address].flatMap { document[$0.shape] }.map { taking.contains($0.kind) } ?? false }) {
+                    taken.insert(record.id)
+                } else if let whole = record.movingParts(in: registry, { addresses[$0] != nil ? PartAddress($0.shape) : $0 }) {
+                    rebound.append(whole)
+                }
+            }
+            return (taken, rebound)
+        }
+        let local = plan(here, on: board)
+        for record in local.rebound { update(record.id) { $0 = record } }
+        var gone: Set<ShapeID> = []
+        let wasCascading = isCascading
+        isCascading = true
+        if !local.taken.isEmpty {
+            delete(local.taken)
+            gone.formUnion(local.taken)
+        }
+        for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) where mayWrite(on: other) {
+            let far = plan(addresses, on: other)
+            for record in far.rebound { update(record.id, on: other) { $0 = record } }
+            if !far.taken.isEmpty {
+                delete(far.taken, on: other)
+                gone.formUnion(far.taken)
+            }
+        }
+        isCascading = wasCascading
+        return gone
+    }
+
+    /// Parts moved to other places on this board (a row into another table, out into a new one): every shape bound to one
+    /// is bound to where it went (`moves`: a part of another shape, or a shape as a whole, part nil), but a read-only one,
+    /// left as it was; every shape whose values name one (a note's mention of a row: `ShapeNaming.renamingParts`), found by the
+    /// editor's lookup (`shapesNaming`), names where it went, on any board it may write, but a read-only one; then every
+    /// `partsMoved` handler hears the moves, so what names a part as a value in a way of its own renames it. A part
+    /// that moves within its shape keeps its address and needs nothing. A binding that reaches a moved part through a pill
+    /// for its shape (`standIns(naming:)`) follows it on the pill's board in this step: to the part moved to, through the same
+    /// pill when it stays in that shape, else straight to the shape it went to when that is on the pill's board, else through
+    /// a pill there that stands for it; with none of those, it is bound to the pill as a whole (no pill is made here).
+    /// A key may be a shape as a whole (part nil): a shape that was all its one row, gone as the row went into another shape
+    /// (an endpoint taken out of its API, put back), so a value that names that shape as a whole (a mention of it) names the
+    /// row where it went, and the handlers hear it; a binding is to parts alone (`boundParts`), so none is to such a key.
+    public mutating func moveParts(_ moves: [PartAddress: PartAddress]) {
+        let moves = moves.filter { $0.key != $0.value }
+        guard !moves.isEmpty else { return }
+        let kinds = registry.referencingKinds
+        if !kinds.isEmpty {
+            var through = throughStandIns(moves.keys)
+            let local = through.removeValue(forKey: board) ?? [:]
+            var moved: [AnyShapeRecord] = []
+            document.shapes.forEach { record in
+                guard kinds.contains(record.kind), !deleting.contains(record.id), !isReadOnly(record),
+                      record.boundParts(in: registry).contains(where: { moves[$0] != nil || local[$0] != nil }),
+                      let rebound = record.movingParts(in: registry, { address in
+                          moves[address] ?? local[address].flatMap { reach(moves[$0], from: address, on: board) } ?? address
+                      }) else { return }
+                moved.append(rebound)
+            }
+            for record in moved { update(record.id) { $0 = record } }
+            for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) where mayWrite(on: other) {
+                for (record, _) in binding(addresses, on: other) {
+                    guard let rebound = record.movingParts(in: registry, { address in
+                        addresses[address].flatMap { reach(moves[$0], from: address, on: other) } ?? address
+                    }) else { continue }
+                    update(record.id, on: other) { $0 = rebound }
+                }
+            }
+        }
+        renameNamedParts(moves)
+        for handler in registry.partsMovedHandlers { handler(moves, &self) }
+    }
+
+    /// The names of moved parts in the values of shapes that name their shapes (`shapesNaming`: the editor's index, as the file
+    /// was before this step), renamed to where they went, and of a shape moved as a whole (a key with no part) where it went:
+    /// on any board this step may write, a read-only shape left as it was.
+    private mutating func renameNamedParts(_ moves: [PartAddress: PartAddress]) {
+        guard !registry.namingKinds.isEmpty else { return }
+        var asked: Set<ShapeID> = [], namers: [(id: ShapeID, board: BoardID)] = [], seen: Set<ShapeID> = []
+        for from in moves.keys where asked.insert(from.shape).inserted {
+            for namer in shapesNaming(from.shape) where seen.insert(namer.id).inserted { namers.append(namer) }
+        }
+        for namer in namers.sorted(by: { $0.id.description < $1.id.description }) where mayWrite(on: namer.board) && !deleting.contains(namer.id) {
+            guard !climb(namer.board).isTaken, let record = contents(of: namer.board)[namer.id] else { continue }
+            if namer.board == board {
+                guard !isReadOnly(record) else { continue }
+            } else {
+                guard let there = transaction(on: namer.board), !there.isReadOnly(record) else { continue }
+            }
+            guard let renamed = record.renamingNamedParts({ moves[$0] }, in: registry) else { continue }
+            update(namer.id, on: namer.board) { $0 = renamed }
+        }
+    }
+
+    /// Where a binding through the pill at `pill` (its address names the pill and the moved part) goes once the part went to
+    /// `moved`, on `board`, the pill's: see `moveParts`.
+    private func reach(_ moved: PartAddress?, from pill: PartAddress, on board: BoardID) -> PartAddress {
+        guard let moved else { return pill }
+        let pills = file.standIns(moved.shape)
+        // Still in the shape the pill stands for: through the pill.
+        if pills.contains(pill.shape) { return PartAddress(pill.shape, part: moved.part) }
+        if location(of: moved.shape) == board { return moved }
+        // Of several pills there, the same one every time.
+        if let other = pills.filter({ location(of: $0) == board }).min(by: { $0.description < $1.description }) {
+            return PartAddress(other, part: moved.part)
+        }
+        return PartAddress(pill.shape)
     }
 
     // MARK: Turning, and moving to another board
@@ -1519,6 +1809,7 @@ public struct Transaction {
         guard board != self.board else { return translate(ids, by: delta) }
         guard var there = transaction(on: board) else { return }
         there.translate(ids, by: delta)
+        placedElsewhere.formUnion(there.changes.changed)
         take(there)
     }
 
@@ -1566,6 +1857,29 @@ public struct Transaction {
         there.update(id, body)
         if there.didChange {
             take(there, reserving: false)
+        } else {
+            refused.formUnion(there.refused)
+            if wasStaged { stagedBoards[board] = there.document }
+        }
+    }
+
+    /// `insert(_:)` on another board of the file, over that board as this transaction leaves it: a shape put back where it was
+    /// (a key a cut took from a board that holds a pill for the table) is on top of what the board holds there, as an insert
+    /// here is, and nothing is held of it. Nothing for an id that is on some board already (unless this transaction deleted it),
+    /// for a board the editor couldn't show once this transaction commits, and for a read-only board, whose owner services hear
+    /// refused. On this transaction's own board it's `insert(_:)`.
+    public mutating func insert(_ record: AnyShapeRecord, on board: BoardID) {
+        guard board != self.board else { return insert(record) }
+        guard isNewToFile(record.id), !climb(board).isTaken, var there = transaction(on: board) else { return }
+        there.isCascading = isCascading
+        // `there` reads the board as this transaction leaves it, sharing its storage with the copy this one has staged
+        // (`update(_:on:_:)`): this one lets go of its copy while `there` writes, and takes the result back.
+        let wasStaged = stagedBoards.removeValue(forKey: board) != nil
+        there.insert(record)
+        if there.didChange {
+            take(there, reserving: false)
+            stagedIDs[record.id] = board
+            inserted.append(record.id)
         } else {
             refused.formUnion(there.refused)
             if wasStaged { stagedBoards[board] = there.document }
@@ -1682,7 +1996,7 @@ public struct Transaction {
         if readingThrough {
             let here = self, file = file
             access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow,
-                                values: file.values)
+                                values: file.values, standIns: file.standIns, namers: file.namers)
         }
         var there = Transaction(document: contents(of: board), board: board, isBoardReadOnly: isReadOnly(board: board), registry: registry,
                                 camera: camera, keys: keys, file: access, layout: layout)
@@ -1690,7 +2004,10 @@ public struct Transaction {
             there.changes.added.insert(id)
             there.writes.append(id)
         }
+        there.placedElsewhere = placedElsewhere
+        there.makesRoom = makesRoom
         there.mayReachBoardShown = mayReachBoardShown
+        there.boardShown = boardShown
         there.stagedFileValues = stagedFileValues
         return there
     }
@@ -1706,6 +2023,11 @@ public struct Transaction {
     /// Takes in what a transaction over another board did (`transaction(on:)`): that board as it
     /// leaves it, if it changed anything there, and what it refused.
     mutating func take(_ there: Transaction, reserving: Bool = true) {
+        // What it grew there makes room there, as a step on that board would.
+        var there = there
+        there.makeRoom()
+        for (id, delta) in there.madeRoom { madeRoom[id, default: .zero].y += delta.y }
+        placedElsewhere.formUnion(there.placedElsewhere)
         refused.formUnion(there.refused)
         takeInWrites(of: there)
         takeFileValues(of: there)
@@ -1728,6 +2050,12 @@ struct FileAccess {
     let canShow: (BoardID) -> Bool
     /// The file's own values (`FileProperty`), as the file holds them.
     let values: () -> FileValues
+    /// The stand-ins whose record names a shape, on any board the editor can show, as the editor's lookup has them before
+    /// this transaction (`registrar.standInLookup`, Topology's); none without one.
+    let standIns: (ShapeID) -> [ShapeID]
+    /// The shapes whose records name a shape as a value, as the editor's lookup has them before this transaction
+    /// (`registrar.standInLookup(_:names:namers:)`, Topology's); none without one.
+    let namers: (ShapeID) -> [ShapeID]
 
     /// Over a file of one's own, whose boards `boardOwningKinds` (the registry's) show.
     init(_ file: CanvasFile, boardOwningKinds: Set<ShapeKind>) {
@@ -1736,14 +2064,29 @@ struct FileAccess {
         contents = { file[$0] }
         canShow = { file.canShow($0, boardOwningKinds: boardOwningKinds) }
         values = { file.fileValues }
+        standIns = { _ in [] }
+        namers = { _ in [] }
     }
 
     init(locate: @escaping (ShapeID) -> BoardID?, subtree: @escaping (Set<ShapeID>) -> [BoardID],
-         contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool, values: @escaping () -> FileValues) {
+         contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool, values: @escaping () -> FileValues,
+         standIns: @escaping (ShapeID) -> [ShapeID] = { _ in [] }, namers: @escaping (ShapeID) -> [ShapeID] = { _ in [] }) {
         self.locate = locate
         self.subtree = subtree
         self.contents = contents
         self.canShow = canShow
         self.values = values
+        self.standIns = standIns
+        self.namers = namers
+    }
+}
+
+/// How many shapes of a kind: one entry of `Transaction.deletedAlong`.
+public struct KindCount: Equatable, Sendable {
+    public let kind: ShapeKind
+    public var count: Int
+    public init(kind: ShapeKind, count: Int) {
+        self.kind = kind
+        self.count = count
     }
 }

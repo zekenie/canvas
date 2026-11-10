@@ -2,6 +2,7 @@ import Canvas
 import Connections
 import CoreGraphics
 import Geometry
+import Topology
 
 /// Arrow behavior, modeled closely on tldraw's: targeting, binding and the one shared precise timer.
 ///
@@ -17,6 +18,9 @@ import Geometry
 final class ArrowTargeting {
     unowned let editor: CanvasEditor
     private var preciseTimer: ScheduledTask?
+    /// The channel each arrow being drawn for a port's drag will be released on, by the shape its end is on: not stored on the arrow
+    /// (a channel restricts what an end binds to), only read as its look is asked, so the marks it will have show as it is drawn.
+    private(set) var provisionalChannels: [ShapeID: ChannelID] = [:]
     /// Every plugin's rules for what an end may bind to (`ArrowBindingRules`), found once.
     let rules: [ArrowBindingRules.Contribution]
 
@@ -27,9 +31,15 @@ final class ArrowTargeting {
 
     var connectables: Connectables { Connectables(shapes: editor.shapeContext) }
 
-    func geometry(of arrow: Arrow) -> ArrowGeometry {
+    /// `arrow` (a value that may not be written yet) as the arrow `id` is laid out, but for its heads and width: a level curve
+    /// reaches as far as its kept marks need, so the bend handle is where it is drawn.
+    func geometry(of arrow: Arrow, id: ShapeID) -> ArrowGeometry {
         let connectables = connectables
-        return ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+        // As the arrow is drawn among others sharing its path (its slot's bow, its fans), so what a drag or a key turns into stored
+        // values (a bend, an end's place) starts from the line the person sees.
+        let detail = editor.shapeContext.geometry(of: id)?.arrowDetail
+        return ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth, markReach: detail?.markReach ?? (0, 0),
+                             spread: detail?.spread ?? ArrowSpread()) { connectables[$0] }
     }
 
     func arrow(_ id: ShapeID) -> Arrow? { editor.document[id]?.typed(as: Arrow.self)?.props }
@@ -80,10 +90,12 @@ final class ArrowTargeting {
     /// through the rest. `onto` is a shape a key picked (⌥⌘ and an arrow on a focused end: `ArrowParts`),
     /// bound to in place of the one at `point`, as an end that arrived quickly is: no pointer aimed.
     /// `reshape` changes the arrow further in the same commit, once the end is bound or free (a port's
-    /// arrow bound back to the shape it starts from is made a loop).
+    /// arrow bound back to the shape it starts from is made a loop). An end onto a shape whose rows it binds (`bindsPart`,
+    /// a port's drag's; else the plugins' `ArrowPartRules`) binds the row nearest `point` across, at its side facing the
+    /// other end, lit as the hint's part (`editor.hintedPart`).
     func bindTerminal(of arrowID: ShapeID, _ end: ArrowEnd, to point: CGPoint, isPrecise: Bool, modifiers: Modifiers,
                       accepting also: ((AnyShapeRecord) -> Bool)? = nil, onto picked: ConnectableShape? = nil,
-                      then reshape: ((inout Arrow) -> Void)? = nil) {
+                      bindsPart: ((AnyShapeRecord) -> Bool)? = nil, then reshape: ((inout Arrow) -> Void)? = nil) {
         guard let arrow = arrow(arrowID) else { return }
         let current = arrow[end].binding
         let opposite = arrow[end.opposite].binding
@@ -93,6 +105,11 @@ final class ArrowTargeting {
                 reshape?(&$0)
             }
             editor.hintedShapeID = nil
+            return
+        }
+        if let record = editor.document[target.id], let arrowRecord = editor.document[arrowID],
+           bindsPart?(record) ?? editor.registry.arrowBindsPart(arrowRecord, end, of: record, in: editor.shapeContext) {
+            bindPart(of: arrowID, end, on: target, near: point, arrow: arrow, then: reshape)
             return
         }
 
@@ -125,11 +142,45 @@ final class ArrowTargeting {
         if let opposite, opposite.shapeID == target.id, opposite.normalizedAnchor == normalized {
             normalized.x += 0.05
         }
+        // A pill for a row (an endpoint's) is the row: the binding names it, as one made by name does.
+        let row = editor.topology?.directPart(of: target.id)
         updateArrow(arrowID) {
-            $0[end] = .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: normalized, isPrecise: precise, isExact: isExact))
+            $0[end] = .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: normalized, isPrecise: precise, isExact: isExact, part: row))
             reshape?(&$0)
         }
         editor.hintedShapeID = target.id
+    }
+
+    /// Binds `end` to the row of `target` nearest `point` across, at its side facing the other end (the stored anchor, where
+    /// it's drawn while the row is gone), and lights it; with no row shown, or the row the other end is at, the end is free at `point`.
+    private func bindPart(of arrowID: ShapeID, _ end: ArrowEnd, on target: ConnectableShape, near point: CGPoint, arrow: Arrow,
+                          then reshape: ((inout Arrow) -> Void)?) {
+        guard let frame = target.parts.frame(nearestY: point.y) else {
+            updateArrow(arrowID) {
+                $0[end] = .free(point)
+                reshape?(&$0)
+            }
+            editor.hintedShapeID = nil
+            return
+        }
+        // Not the row the other end is at: a key from a row to itself joins nothing, so nothing is lit where a release would make it.
+        if arrow[end.opposite].binding?.address == PartAddress(target.id, part: frame.id) {
+            updateArrow(arrowID) {
+                $0[end] = .free(point)
+                reshape?(&$0)
+            }
+            editor.hintedShapeID = nil
+            return
+        }
+        let far = geometry(of: arrow, id: arrowID).handlePoint(at: end.opposite).x
+        let binding = ArrowConnections.binding(to: target.id, part: frame.id, side: PartSide(facing: far, from: frame.rect), in: editor.shapeContext)
+            ?? ArrowBinding(shapeID: target.id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: frame.id)
+        updateArrow(arrowID) {
+            $0[end] = .bound(binding)
+            reshape?(&$0)
+        }
+        editor.hintedShapeID = target.id
+        editor.hintedPart = frame.id
     }
 
     func startPreciseTimer(after delay: Duration, _ fire: @escaping @MainActor (ArrowTargeting) -> Void) {
@@ -138,6 +189,11 @@ final class ArrowTargeting {
             guard let self else { return }
             fire(self)
         }
+    }
+
+    /// Sets, or with nil clears, the channel the arrow being drawn will be released on (in the transaction that binds its end).
+    func setProvisionalChannel(_ channel: ChannelID?, for id: ShapeID) {
+        provisionalChannels[id] = channel
     }
 
     func cancelPreciseTimer() {

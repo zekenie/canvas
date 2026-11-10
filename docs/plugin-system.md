@@ -334,6 +334,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; `ArrowPortsPlugin` draws the arrow | [Ports](#a-kinds-ports), [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
 | Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [`ArrowPortsPlugin`](#the-connector-arrows) |
+| Say what a pick in ⌘L's picker means for a kind (the step, the ends, what is written first) | `x.connectPicks(admitting:_:)` → a `ConnectPlan`; `editor.connect(_:to:plan:fulfil:)` is the writer | [Connecting without a drag](#connecting-without-a-drag) |
 | Connect two shapes without a drag, as a connector would from a port | `make` and `ends` on `registrar.connects`; `registry.connection(_:existing:in:)`, `registry.connectionEnds(of:)` | [Connecting without a drag](#connecting-without-a-drag) |
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Have a command answer later (it waits on a model, or runs off the main actor), its output written off the main actor | `registrar.automationCommand(…, runAsync: { params, context async throws(AutomationError) in … })` | [A command may be async](#a-command-may-be-async) |
@@ -436,7 +437,7 @@ Horizontals are part of the **platform**: what every shape gets, whatever its ki
 holds three more groups, which are not interfaces a kind plugs into but are still every shape's:
 
 - **Things you do**: a palette, a command or a gesture the person uses, that no kind opts into and
-  nothing builds on. Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
+  nothing builds on (but Clipboard, which plugins import to read the pasteboard: [the clipboard](#the-clipboard)). Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
   and the table of contents' drops, Snapping is what a drag lines up with, the clipboard is cut, copy
   and paste, and [Reordering](#many-kinds-reordering) is the Arrange menu of the kinds painted in document order: each works on the
   shapes its rule covers (Snapping: those with a frame) and no kind opts in. Jump To reaches into
@@ -641,7 +642,7 @@ Ask in this order, and the first yes is the rung:
 3. Is it a shape that holds something of its own, which no other plugin need build on? Then product.
 4. Otherwise, platform: what every shape gets, whatever its kind. Under which heading: an interface
    a kind plugs into, something a shape shows up on or has, is a horizontal; a palette, a command or
-   a gesture nothing builds on is a thing you do; what any plugin runs or asks is an engine; what
+   a gesture nothing builds on (but Clipboard, for its paste readers) is a thing you do; what any plugin runs or asks is an engine; what
    speaks the wire to an agent is for agents.
 
 A kind other plugins must build on is platform, as References is: a product can't be imported.
@@ -1020,7 +1021,9 @@ The details:
   `[]` unless it answers: an arrow whose end a drag is moving, which a service that counts arrows
   leaves out until the drag is over; `editor.session` is still the drag's session when `end` and
   `cancel` run and for the commits they make, so it names them then too, and is nil once the press
-  has ended). A session can hand over to another by
+  has ended), `ghosts` (shapes not on the board it shows under the pointer, drawn as one layer,
+  opaque, laid out where they are, bare of overlays, each under an id of its own:
+  rows dragged, as a card of their own). A session can hand over to another by
   setting `editor.session` (pressing an arrow handle becomes dragging it). A session that sets
   `editor.hintedShapeID` clears it when it ends.
 - **Scrolling at the edges** is tldraw's (its EdgeScrollManager and options), for a session that
@@ -1264,7 +1267,7 @@ chevrons, below 35% alone: the POC's transcript and every render at 35% and abov
 A skeleton is this app's own, with nothing of tldraw's to match.
 
 An arrow says how wide its line is, 3.5 world units whatever it holds (`StrokedShape`, `ArrowStyle.strokeWidth`),
-so a tinted outline of it, a light of [Neighbors](#neighbors), covers its body and heads as wide on screen as
+or the width its connection's look gives (a key's 2.5), so a tinted outline of it, a light of [Neighbors](#neighbors), covers its body and heads as wide on screen as
 its line and a point more, instead of a thin stripe down the middle of it.
 
 ## A horizontal plugin
@@ -1773,7 +1776,12 @@ the two never disagree:
   to: CanvasTesting's `Properties<MemoNote>(definition: "memo-note")` is `canvastesting.memo-note`
   in a schema, named after the module that declares the type, so a type has one name wherever it's
   described, and two modules' definitions never collide. A struct that holds itself (a tree) needs a
-  name, and its definition then refers to itself.
+  name, and its definition then refers to itself. `Properties(readsAs: "name")` says which member a
+  value of the struct reads as where a query compares it as one value (the schema's
+  `x-canvas-reads-as`; it must be one of its properties, or the registry refuses the kind), and
+  `namedBy: "shape"` the member holding the id of a shape whose name it then reads as while that shape
+  has one (`x-canvas-named-by`): the engineering kit's `TypeRef` reads as the name of the enum or type
+  it names now, its words only where none ([What plugins add](#what-plugins-add), Queries).
 - **A dictionary keyed by strings** is an object whose members, named anything, are each its
   value's type (`additionalProperties`).
 - **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Arrows'
@@ -2090,10 +2098,10 @@ concern, references between shapes. The first is bindings, the `ShapeReferencing
 | Adopted by | a kind's definition | a value, wherever a shape keeps it |
 | For | an arrow's bound ends | a mention |
 | The shape it's bound to, or names | must be on the board | may be on any board of the file, or gone |
-| Deleting it | lets go of it, in the deleting transaction | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
-| Copying without it | lets go of it (an arrow's end stays where it's drawn) | keeps naming the original |
+| Deleting it | lets go of it, in the deleting transaction (deletes it, for a kind that takes bound shapes: `TakesBoundShapes`) | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
+| Copying without it | lets go of it (an arrow's end stays where it's drawn), unless the copy takes it along (a kind that takes bound shapes copies the arrows bound only to shapes copied) | keeps naming the original |
 | Copying with it | is bound to its copy | names its copy, on whatever board of the copied tree it is |
-| Cutting it, then pasting it (a move: [the clipboard](#the-clipboard)) | lets go of it at the cut, as a delete does; the paste doesn't bind it again | names it again once it's pasted, on whatever board, since it keeps its id |
+| Cutting it, then pasting it (a move: [the clipboard](#the-clipboard)) | lets go of it at the cut, as a delete does (deleted, for a kind that takes bound shapes); the paste doesn't bind it again | names it again once it's pasted, on whatever board, since it keeps its id |
 | `canvas draw` with one that isn't there | refused (`invalid_value`: `the pin on line 1 is bound to a shape that isn't on this board`, or `… on another board of the file`) | made, with a warning if it's in no board of the file (or the script deletes it), or on a board the app can't show |
 
 ```swift
@@ -2266,20 +2274,21 @@ command line doesn't read or write one.
 ## Kits
 
 A kit is a named set of the plugins the app ships, which a file turns on or off as one: File ▸ Kits ▸
-Stickers. Off in a file, a kit's ways in are gone from it (its tools, their Insert items, its keys, its
+Engineering. Off in a file, a kit's ways in are gone from it (its tools, their Insert items, its keys, its
 slash commands, its menu items, its paste readers); its shapes stay drawn, editable and checked, since the
 registry is still built once with every plugin. Every kit is off until someone turns it on, so a file
 without a kit shows nothing extra. The core knows what a kit is and never which kits exist
-([`Kits.swift`](../Sources/Canvas/Plugins/Kits.swift)), and the example kit, Stickers
-([`Examples/Stickers`](../Examples/Stickers)), stays only until the first real kit lands.
+([`Kits.swift`](../Sources/Canvas/Plugins/Kits.swift)). The kit that ships is Engineering
+([`Sources/Engineering`](../Sources/Engineering), [The engineering kit](#the-engineering-kit)), which
+took the place of the example kit, Stickers.
 
 **A kit is a type**, the key, as a file property is:
 
 ```swift
-public enum StickersKit {}
-extension StickersKit: Kit {
-    public static let id: KitID = "stickers"       // what a file keeps; never changed once shipped
-    public static var title: String { "Stickers" }  // File ▸ Kits ▸ Stickers, Insert ▸ Stickers, Turn On Stickers
+public enum EngineeringKit {}
+extension EngineeringKit: Kit {
+    public static let id: KitID = "engineering"       // what a file keeps; never changed once shipped
+    public static var title: String { "Engineering" }  // File ▸ Kits ▸ Engineering, Insert ▸ Engineering, Turn On Engineering
 }
 ```
 
@@ -2287,16 +2296,16 @@ extension StickersKit: Kit {
 then the kit's; nothing else it gives is:
 
 ```swift
-registrar.join(StickersKit.self)
+registrar.join(EngineeringKit.self)
 ```
 
 There is no list of a kit's plugins anywhere: the kit is the plugins that join it. A module whose ways
 in are partly always on puts those in a plugin value of their own, which joins nothing. The registry
 refuses a plugin in two kits (or one twice), two kit types of one id and two kits of one title; its
-report says `kit stickers` first on each member's line. Once a plugin joins a kit, the core declares
+report says `kit engineering` first on each member's line. Once a plugin joins a kit, the core declares
 its file value (`kits`), gives each kit an item in File ▸ Kits (`CanvasCommand.kit(_:)`, checked while
 the kit is on, never switched itself) and puts the Insert items of a kit's tools in a submenu named for
-the kit (`KitShapes<StickersKit>`); a list where no plugin joins one has none of it.
+the kit (`KitShapes<EngineeringKit>`); a list where no plugin joins one has none of it.
 
 **What a kit switches** is a point that says so, `KitSwitched`, a marker its owner adds in an extension:
 
@@ -2309,7 +2318,7 @@ the kit (`KitShapes<StickersKit>`); a list where no plugin joins one has none of
 | `ShapeSlashCommands`, `SelectionSlashCommands` | SlashCommands | its commands, in a `/` list and the command bar |
 | `ShapeContextMenus`, `CanvasContextMenu` | ContextMenus | its menu items, the Shape menu's too |
 | `DoubleClickPlacement` | Selection | a double-click on empty canvas placing its shape |
-| `PasteReaders` | Clipboard | its readers of text on the pasteboard |
+| `PasteReaders` | Clipboard | its readers of the pasteboard (text or files), recognizing or plain, giving shapes or a draw program |
 
 A kit's kinds, properties, services, overlays, adornments, panel tabs, rows, rules and its words for
 `canvas draw` and `canvas query` are never switched: a kit hides what a person sees, and agents' words
@@ -2322,9 +2331,9 @@ kind and set of kits on, so a per-shape ask costs what it did. A reader that gat
 contributions once gathers them again when `editor.kits` changes. `registry.contributions(to:)` still
 holds every contribution, which a point's `check` reads.
 
-**Turning one on or off** is one step, "Turn On Stickers" or "Turn Off Stickers":
-`editor.turn(StickersKit.self, on: true)`, which File ▸ Kits runs. The file keeps the ids of the kits
-on, sorted, `[ "stickers" ]` in its `values` (format 6 only while one is on); an id this app has no
+**Turning one on or off** is one step, "Turn On Engineering" or "Turn Off Engineering":
+`editor.turn(EngineeringKit.self, on: true)`, which File ▸ Kits runs. The file keeps the ids of the kits
+on, sorted, `[ "engineering" ]` in its `values` (format 6 only while one is on); an id this app has no
 kit for stays and is written back. A tool in use whose kit goes off gives way to the default tool.
 
 **In the window** the menu bar follows the key window's file: `BoardMenus.showCommands(of:in:registry:)`
@@ -2336,7 +2345,468 @@ submenu.
 **Testing.** CanvasTesting's `Workshop` and `Studio` are the tests' kits, and `WorkshopPlugin` a plugin
 in one (planks, a tool and Edit ▸ Carve): each module's tests join a kit with fixture plugins of their
 own. [`KitTests`](../Tests/CanvasTests/KitTests.swift) hold the core; each horizontal's tests hold its
-switched point; StickersTests and CompositionTests' `kitsShippedTests` hold the example.
+switched point; EngineeringTests' `kitTests` and CompositionTests' `kitsShippedTests` hold the kit that ships.
+
+## The engineering kit
+
+The first real kit ([`Sources/Engineering`](../Sources/Engineering), product): database tables, their
+enums and the databases that hold them, and REST APIs. One module in parts, `Model` (the kinds' props, `TypeRef`,
+`KitStyle`, how a row is drawn on the paper, the file's tables and enums by name), `Grammar` (the line grammars,
+pure), `Tables` and `APIs` (the kinds drawn, placed and written), `Readers` (what's pasted: SQL, OpenAPI) and
+`Agents` (what agents read: routes, `--ask`'s blocks), since an API names tables and two products could not see
+each other. Its plugin joins the kit and gives:
+
+```swift
+registrar.join(EngineeringKit.self)
+registrar.shape(TableDefinition()) { table in
+    table.tool(label: "Table", systemImage: "tablecells", placing: table.editingPlacement(size: …) { DatabaseTable.starter() })
+    table.title(symbolInPill: true, placeholderInPill: "Table", bars: true)   // named in its pill; a bar zoomed out
+    table.lineRows(TableLines())                                       // its columns written a line each (LineRows)
+    …
+}
+registrar.shape(APIDefinition()) { api in
+    api.tool(label: "API", systemImage: …, placing: api.editingPlacement(size: …) { API() })
+    api.lineRows(APILines())                                           // its server a fixed line, its endpoints a line each
+    …
+}
+registrar.tableCommands(placing: editedTable)                            // /table, /database, Create Database
+registrar.apiCommands(placing: placedAPI)                                // /api [NAME]
+registrar.rowsDraw()                                                     // canvas draw's columns: and values:
+registrar.apiDraw()                                                      // canvas draw's server: and endpoints:
+registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
+registrar.openAPIPaste()                                                 // ⌘V of OpenAPI, "Paste OpenAPI"
+```
+
+What agents read of it is a plugin value of its own, `EngineeringAgentsPlugin`, after Queries and in no kit, so a file
+with the kit off is asked about its tables as one with it on. An endpoint taken out of an API is read as the row it was:
+`:route` matches it, its row is named as the API's was, and `<apis>` lists it as an API of one route.
+
+```swift
+registrar.queryPseudoClass("route", …, argument: "route", reads: .file, refusing: RoutePattern.refusal(of:),   // :route("POST /orders/{id}/refunds")
+                           prepare: { _, text in RoutePattern(text) }, matches: …, members: ["routes"], rowMembers: …)
+registrar.queryPartNames(of: DatabaseTable.kind) { record, part in …columns.first { $0.id == part }?.name }   // "row": "customer_id"
+registrar.queryPartNames(of: StandaloneEndpoint.kind) { record, part in … }   // an endpoint taken out keeps its row's name
+registrar.queryAskFact(tag: "tables") { editor, question in KitAskFacts.tables(in: editor, question: question) }
+registrar.queryAskFact(tag: "apis") { editor, question in KitAskFacts.apis(in: editor, question: question) }
+```
+
+A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
+unique, pk, default, on delete, on update and the words no grammar placed); it stores its width and lays
+its height out from its rows (`LaidOutBox`), so a row costs no write of the box. Its rows are its parts
+(`PartedShape`, below). A column is written as a line, `name type [null] [unique] [default …] [pk] [→ table.column]`,
+by `ColumnGrammar`, whose printer gives back what it read. [engineering](../.claude/rules/engineering.md)
+is the whole of it.
+
+**Parts.** A kind whose shapes are made of rows says them from the record, the core's one source of rows:
+
+```swift
+extension TableDefinition: PartedShape {
+    func parts(of shape: ShapeRecord<DatabaseTable>) -> [PartName] {
+        shape.props.columns.map { PartName(id: $0.id, name: $0.name, kindWord: "Column") }
+    }
+}
+```
+
+and where each is in its geometry (`ShapeGeometry(outline:…, parts: PartFrames(…))`, each a `PartFrame`: its
+id, its rect as wide as the shape at the row, and whether it's shown), worked out with the rest of it.
+`registry.parts(of:)` reads them; a `PartAddress` is a shape and maybe one of its parts. A kind that binds a
+part says so in `ShapeReferencing` (`boundParts(of:)`, `movingParts(of:_:)`), and the one writer of a kind's
+parts tells the transaction when they go or move, so nothing stays bound to a row that's gone:
+
+```swift
+transaction.removeParts([PartAddress(table, part: column.id)])   // what's bound to it goes with it, or binds the table
+transaction.moveParts([PartAddress(orders, part: id): PartAddress(items, part: id)])   // bindings follow; partsMoved runs
+registrar.partsMoved { moves, transaction in … }                  // a name of a row renamed where it went
+transaction.moveParts([PartAddress(endpoint): PartAddress(api, part: id)])   // a shape that was all its one row, as a whole
+```
+
+A key may be a shape as a whole: a shape that was all its one row and went with it into another shape (an endpoint of
+its own put back into an API: LineRows' `landRows` says so), so what names the shape as a whole (a mention, a pill for it)
+names the row where it went.
+
+A binding may reach a row through a pill for its shape (a key to a column on another board: the pill, with the
+column on the binding). Both reach those too, on the pill's board and in the same step, through the one stand-in
+lookup a plugin gives the core (Topology's, `standIns(naming:)`):
+
+```swift
+registrar.standInLookup { editor, shape in editor.topology?.standIns(naming: shape) ?? [] }
+transaction.standIns(naming: table)      // [(id, board)]: each pill for the table, where it is
+```
+
+In a step on a board that is not shown (`transact(on:)`) they leave the board shown's bindings as they are, as a handler of
+yours must (`transaction.mayWrite(on: board)`): a write there would drop the whole commit.
+
+**Keys.** A key is an arrow bound to two rows, on the kit's channel. The kit declares the channel, gives
+a table's rows ports on it both ways, and keeps an index of each table's keys that its render reads:
+
+```swift
+public enum ForeignKey {}
+extension ForeignKey: Channel {
+    public static let id: ChannelID = "foreign-key"
+    public static var isOnEveryChannel: Bool { false }    // a subboard, open to every channel, takes no keys
+}
+registrar.channel(ForeignKey.self)
+registrar.service { KeyIndex(editor: $0) }               // per table, from Topology's edges with their parts
+table.partPorts(ForeignKey.self)                         // a dot at each end of the hovered row; a key ends on a row
+extension TableDefinition: TakesBoundShapes {}           // a table or a column deleted takes its keys
+```
+
+An arrow's end binds a row (`ArrowBinding.part`) and is drawn at the row's side facing the other end
+([the connector](#the-connector-arrows)); its edge carries both rows (`Edge.parts`, [Topology](#topology)).
+`KeyIndex` reads them (`edges(of: table, .outgoing, types: .only(foreign-key))`), redoes only the tables a
+change to those edges touched, and the column that starts a key shows a link in its gutter. `canvas draw`
+names a row with a dot outside the quotes: `edge "orders".customer_id -> "customers".id`, `delete
+"orders".legacy_note`; a kind takes a row out by id through `PartedShape.removing(_:from:)`.
+
+**How a key looks.** What a connection means is its channel's plugin's, so the kit says how a key's ends
+are drawn, from its column, through Connections' `ConnectionLooks`; the arrow asks when it works out its
+geometry and keeps the answer, so a column made nullable redraws its keys with nothing written to them:
+
+```swift
+registrar.connectionLook { query in                       // the first answer wins; nil: not a key
+    guard query.channel == ForeignKey.id else { return nil }
+    let column = …                                        // the column at query.from, read through query.shapes
+    return ConnectionLook(start: unique ? .one : .many,  // a crow's foot, two bars when unique
+                          end: nullable ? .zeroOrOne : .one, lineWidth: KitStyle.keyLineWidth)   // 2.5
+}
+ShapeGeometry(outline: …, parts: …, entries: ShapeEntry.sides(of: firstRow))   // a line to the table meets its first row
+```
+
+**Columns written as lines.** Edited, a table is LineRows' editing view ([rows written as
+lines](#rows-written-as-lines)): its name in its pill, then a line a column. `ColumnLineGrammar` reads a line
+through `ColumnGrammar.scan` (each word's role and range) into spans the field draws (the type as code, an
+enum's name as its purple pill, standing for the enum), offers SQL's types and the file's enums after a name
+and null, unique, default, pk and → after a type, and `TableLines` names each commit's step ("Rename Column"
+when only the name changed). A column's type that names an enum binds it, the nearest by name, so its pill
+says the enum's name as it's called now.
+
+**Keys typed.** After `→` the line offers the key columns of the tables Mentions finds (`customers.id`), after
+`customers.` that table's, the highlighted one's row lit; Tab picks, and the picked words stand for the row. The
+line's row is a `ColumnLine`, the column and what the line says of its key (`ColumnKey`: as stored, none, or a row),
+so the model writes the key with its column in the row's one step:
+
+```swift
+func apply(_ changes: [LineChange<ColumnLine>], to id: ShapeID, in transaction: inout Transaction) -> Bool {
+    …                                                          // the columns, as any model writes its rows
+    for (column, key) in keyed {                               // a key made, re-aimed (movingParts) or deleted
+        guard KeyArrows.write(key, from: column, of: id, keys: keys, in: &transaction) else { return false }
+    }
+    return true
+}
+```
+
+named "Add Key", "Change Key" or "Delete Key" when only the key changed. The key is never words of the column:
+a focused line prints it from the key index by the far names now, so a rename follows with nothing written; a `→`
+that names nothing stays words (a key to a table with no name yet prints with the pill's placeholder, so editing the column keeps it; a locked table takes no key). `canvas draw`'s `columns:` says the same with an implied edge (`implies:` on its
+value writer, [draw](#draw)), and ⌘L's picker on a table makes a key column (`table.connectPicks(admitting:_:)`:
+`customer_id`, typed as customers' primary key, "Add Key Column").
+
+**An API.** An `api` keeps its server (`APIServer`: host and auth, its first line), its version, deprecated, and one
+flat list of rows (`APIRow`): a path-prefix header (`{"header": "/orders"}`) or an `Endpoint` (method, a path under
+the header above it, name, summary, scope, path parameters' types, a body and responses whose types are `TypeRef`s
+to type notes, deprecated, unread words). A group is a header and the endpoints after it, so retyping `/orders` is one
+row's edit and every full path follows (`APIGroups`, which every writer of whole paths shares: a whole path goes under
+the longest header it starts with; a header put in among rows, taken out or moved leaves each endpoint's full path as it was,
+`APIGroups.regrouped`, by `LineModel.applying`: one it puts in heads those after it it covers and never adopts one it doesn't).
+Return at the very start of a row opens the line above it, and ⌥↑ on the first header passes the endpoints above it,
+taking the nearest it covers. An endpoint is written `METHOD /path/{param} [(Body)] [→ [status] [Response]]`
+(`EndpointGrammar`); its part's name is its method and full path. A body names a type note and is drawn as that type's
+pill, live, dashed while it names none; "New type Problem", last in the caret list and highlighted while no type is called
+or starts so (`LineOffer.action(_:_:isDefault:)`), makes the note through Types,
+which puts it down settled (`Placement.settled()`) and makes nothing an instance of it (with the view full, at the clear
+spot whose pan into view takes nothing the person works with out of it, the nearest the row its card hangs from or the API,
+the view panned the least to it, the API and the types the line names kept in view where they fit, else the API, else that
+row). Words written before their type was made are bound
+at rest, a name of several words is quoted after a status:
+
+```swift
+editor.newType(named: "Problem", besides: typesTheAPINames, givingType: false, editing: false)   // in the line's "New Type" step
+TypeChips.label(forType: ref.shape, named: ref.words, in: editor.types, onPaper: true)           // the pill, at rest
+```
+
+**What an API does.** Writes, reads and calls are three channels the kit declares, each with a title and a tint (its pill
+on the line, its row in the one release list, [ports](#ports)): an endpoint's row writes or reads a table as a whole, and
+calls an endpoint, which anything with dots may call too.
+
+```swift
+public enum Calls {}
+extension Calls: Channel {
+    public static let id: ChannelID = "calls"
+    public static var color: NSColor { NSColor(KitStyle.callsTint) }   // its dots, and its pill's capsule
+    public static var title: String? { KitStyle.callsTitle }
+    public static var anyKindMayStart: Bool { true }                    // a note, a frame, a subboard calls an endpoint
+}
+api.partPorts(Calls.self)                                // both ends of an endpoint's row; a header's part frame is no end
+api.partPorts(Writes.self, role: .source)
+table.ports(Writes.self, role: .target)                  // taken whole, no dots on its sides
+```
+
+A drag from an endpoint's dot onto a table draws the arrow plain and the release offers writes and reads; the card's
+"relations" lines (`writes refunds`, `calls Stripe API.POST /v1/refunds`) are the endpoint's arrows read and written in
+their own steps (LineRows' `list(_:grammar:get:writing:)`), and ⌘L from an endpoint (`EndpointPicks`) reaches tables,
+and endpoints on any board (through a pill for the endpoint, drawing its method's chip); a call ends on an endpoint's row alone
+(`Calls.isOnEveryChannel` is false).
+
+**Changing and retiring an API.** The method chip is a row's lead whose click pops the method menu (the current checked
+and highlighted); the card's method line, Change Method ▸ in the selection's menu and Space on the row are its keys, each
+"Change Method". The card's deprecated is "Deprecate Endpoint" (the chip hollow, the words faint); `/new-version` marks
+the API deprecated and puts a copy beside it, its title's and server's version bumped, its rows under their ids and the
+arrows its rows start copied (the copy on the side of the old one facing what those arrows reach, or below it, so they never
+cross the old version: Placing's `sides(of:facing:)`); `/group-by-prefix` runs `APIGroups.byPrefix`, the paste's rule, on the API's full paths.
+One endpoint taken out is the `endpoint` kind, the row's card drawn open, under the row's id so its arrows follow; it is
+written as lines for moves alone, so its chip drags it back into an API:
+
+```swift
+struct EndpointLines: LineModel {                    // Props == StandaloneEndpoint, Row == APIRow
+    func rows(of props: StandaloneEndpoint) -> [APIRow] { [.endpoint(props.endpoint)] }
+    var goesWithItsRows: Bool { true }               // its row moved, cut or deleted, the shape goes
+    …
+}
+extension APILines {
+    func takeOutShape(_ rows: [APIRow], from shape: ShapeRecord<API>) -> AnyShapeRecord? { /* one endpoint: an endpoint */ }
+    func takesRows(of kind: ShapeKind) -> Bool { kind == StandaloneEndpoint.kind }
+}
+extension APIDefinition: TakesBoundShapes {}         // "Delete Endpoint and 3 Arrows"
+```
+
+**Paste SQL.** ⌘V of `CREATE TABLE` (or `AS ENUM`, or a `.sql` file) is a paste reader of the kit's, so it's gone
+with the kit off ([the clipboard](#the-clipboard)). The reader parses SQL itself (`SQLReader`, pure: Postgres DDL into
+tables, columns, enums and keys) and writes a draw program for Draw to put down (`DrawPut`), knowing nothing of how
+shapes are found or made:
+
+```swift
+registrar.pasteReader("SQL", sniff: { SQLPaste.sniffs($0) }) { content, _ in
+    SQLPaste.read(content, keys: SQLPaste.foreignKeys)   // a table a statement, its columns as JSON,
+}                                                       // its keys the edges it implies
+```
+
+A table is found by its title, nearest first and file-wide (`billing.payments` the payments in the database
+billing first, `DrawPut.Shape.within`), and its columns are joined by name as `columns:` joins them, so their ids
+stay and so do the keys bound to them; a new column goes after the column pasted before it. A key is an edge the
+statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `→` is; one whose table or row is found
+nowhere is left out (a key the column had stays), and the paste lands anyway. The reading holds only the text: a key to a
+table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
+brought into it, one pasted with the view so far out it draws skeletons is zoomed in to (no closer than 100%), an enum is made
+as wide as its name reads in its pill at 50%, and VoiceOver hears what was made and what changed (a paste again as it was: "Nothing changed", no step);
+SQL that reads as nothing says "Nothing to paste". The reader orders what it puts by the keys (enums on rows of their own,
+then the tables from the one most keys name, each after the one it keys to most, put in a grid four columns wide where each
+lands beside, above, below or corner to corner with the tables it keys to: `ReaderLayout.grid`, `DrawPut(grid:)`), and makes
+each table as wide as its longest line (`DrawPut.Shape.size`), so a dump reads as a schema, not an alphabet, and no key runs
+under a card. The reader says what of the file it reads (`readsOfFile`: the file's enums, which measure a column typed as
+one), so its reading, kept per pasteboard change, is read again when that changes. Two OpenAPI files of one title paste as
+two APIs, the later titled by its version.
+
+**Paste OpenAPI.** ⌘V of an OpenAPI 3 file (`.yaml`, `.yml` or `.json`) or its text is the kit's second reader. YAML is
+read by a subset reader of the kit's own (`YAMLReader`) into Types' ordered `SchemaValue`, JSON by Types' reader, so
+endpoints and fields keep the file's order; `OpenAPIReader` (pure) makes the API (title, server line, endpoints grouped
+by `APIGroups.byPrefix`, Group by Prefix's rule) and its types (components' schemas, inline objects named for their
+operation) in JSON Schema 2020-12. The program it writes needs what only the put knows, so its type statements carry late
+values and say which shapes they may find:
+
+```swift
+var type = DrawPut.Shape(kind: editor.newTypeKind()!.rawValue, title: "Refund")   // the kind New Type makes, never a literal
+type.late = [DrawPut.LateValue(key: TypeSchemaProperty.key.rawValue) { names in
+    // `$ref: #/components/schemas/Money` points at Money's note, made or found by this same put:
+    OpenAPIPaste.pointed(schema) { names.shape(kind, called: $0) }.pretty           // and, where names.found, joined
+}]                                                                                  // with what the type holds
+type.admits = { $0[TypeSchemaProperty.self] != nil }                                // a type finds only a type
+```
+
+The API is found by its title and its endpoints by method and full path (`endpoints:`'s writer), a body's words bind to
+the put's type notes by their ids, a late value of the API's (a pill, never an arrow; a title may be another shape's too),
+and a type pasted again keeps its id, its properties joined by name in the order it holds, so the same file pasted again
+changes nothing; each property is titled as the file keys it (`OpenAPIPaste.titled`), so a field reads `payment_id`. A statement may also say the size its new shape is drawn at (`DrawPut.Shape.size`) and what the kind it
+makes is called when the paste is announced (`DrawPut.labels`: "Type", not "Note").
+
+## Rows written as lines
+
+LineRows ([`Sources/LineRows`](../Sources/LineRows), platform) writes a kind's rows a line each: one line field
+moved to the row with the caret, the kind's grammar reading the line as it's typed (its words' looks, what
+fits at the caret) and printing a row back, and each row committed as the caret leaves it, one step the kind
+names. A kind gives a model and opts in:
+
+```swift
+struct TallyLines: LineModel {
+    var noun: LineNoun { LineNoun("entry", plural: "entries") }       // "Entries of …", "Entry 2 of 5"
+    var style: LineStyle { … }                                         // the kind's fonts and inks at rest
+    func rows(of props: Tally) -> [TallyRow] { props.rows }
+    func setRows(_ rows: [TallyRow], in props: inout Tally) { props.rows = rows }
+    func id(of row: TallyRow) -> PartID { row.id }
+    func grammar(for role: LineRole) -> any LineGrammar<TallyRow> { TallyGrammar() }
+    func lineRect(_ line: Int, in frame: CGRect) -> CGRect { … }      // where line n is drawn
+    func stepName(of change: LineChange<TallyRow>) -> String { … }    // "Add Entry", "Rename Entry", "Move Entry"
+    …
+}
+
+registrar.shape(TallyDefinition()) { $0.lineRows(TallyLines()) }    // LineRowsKinds; ShapeCapability.lineRows
+extension TallyDefinition: Editable {
+    func makeEditingView(for shape: ShapeRecord<Tally>, context: EditContext<Tally>) -> EditingView {
+        LineRowsView.make(shape, context: context, model: TallyLines(), title: nil)   // or a LineTitle making a TitleField
+    }
+}
+```
+
+The grammar (`LineGrammar`) reads a `LineText` (the string and the runs that stand for a shape by id) into a
+`LineReading` (the row, `LineSpan`s with their `LineLook`, a gutter `LineMark`), prints a row back (a
+shape's name as it's called now, carrying its reference), offers `LineOffers` at the caret (each a
+`CaretCompletion` and what it lights), splits a pasted block, substitutes `->` as `→` and says a row for
+VoiceOver; `losses(in:unread:in:)` is the law its tests hold a corpus to (what's read prints back as the same
+row, unread words in order). While a shape is edited the session sets `LineRowsLayout.waiting` and `.focused` on
+it alone, so its kind lays itself out a line taller and draws no row the field has. The keys are rows-editing's:
+↩ commits and opens a line below (on an empty one ends), ↑ ↓ and Tab walk the stops (past the ends, the next
+shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes one (one step), a pasted block is a row a
+line, ⇧↩ puts a shape beside, Home and End go to the first and last row. A row another writer takes out under the caret leaves the
+keyboard on the waiting line (VoiceOver told: "Entry removed"); the line's words, if the person had changed it, stay there as a draft written only as
+the caret leaves, and an untouched line is emptied, so leaving never puts back what was taken. A line typed wider than the shape lays it out as wide as the line needs
+(`LineRowsLayout.width`, provided), nothing written; a kind that says how wide its rows read whole at rest
+(`wholeWidth(of:in:)`, asked of the shape's record: an enum keeps its name whole in its pill too) has a commit that leaves it
+narrower write that width in the same step, so the shape keeps it as the caret leaves. The line's field is placed so its
+baseline is where the kind sets the row's text at rest (the style's font's middle on the row's middle), so nothing moves as
+the caret comes onto a row. While it is laid out wider or taller than it stores, the core paints and hits the shape edited
+above what it overlaps and no other shape's pill is drawn in its room, so a shape beside it never covers its rows. [line rows](../.claude/rules/line-rows.md) is
+the whole of it.
+
+**A row's card.** ⌘↓ in a row writes its line and shows what more the row holds than its line says, a line
+each, in a core card hung from the row (LineRows' Card part). The kind gives it, and each line reads the row and
+writes it back; the card holds no step, a line left commits the row as its line does, one step the kind names:
+
+```swift
+func card(of row: TallyRow, in context: LineContext) -> LineCard<TallyRow>? {     // LineModel; nil: none (an enum's value)
+    LineCard(header: LineCardHeader(name: row.label), lines: [
+        .field("count", grammar: CountGrammar(), get: { row, _ in row.count }, set: { row, count, _ in row.count = count }),
+        .toggle("starred", get: \.starred, set: { $0.starred = $1 }),                 // Space: "Star Entry", at once
+        .choice("color", options: ["red", "green", "blue"], get: \.color, set: { $0.color = $1 }),
+        .list("notes", grammar: NoteGrammar(), get: { row, _ in row.notes }, set: { row, notes, _ in row.notes = notes }),
+    ])
+}
+```
+
+Tab and ⇧Tab round its lines, ↑ ↓ step them, Escape and ⌘↑ give the row's line the keyboard back, ⌘↩ ends
+editing; Return is done with a field and opens a list's next line; Space toggles and opens a choice. It follows
+its row as commits move it (or a waiting line opened above it), shows what the row holds now (its header's mark and
+name too, and what VoiceOver calls it) and closes as the row goes. A line the file refuses keeps its words and the
+shape shakes, as a row's line does; a toggle or a pick is spoken ("null yes") beside the step's name. A kind that
+asks for one gets a "›" on the row with the caret (`showsCardChevron`), a click opening the card; one that draws its
+own opens it with `editor.service(LineRowsService.self)?.openCard(of: PartAddress(shape, part: row))`. A table's column has one
+(type, references, null, unique, primary key, default, on delete, on update: [engineering](../.claude/rules/engineering.md)).
+The card is as wide as its longest line reads whole, up to `LineCardStyle.widthMost`, and never narrower than the row it hangs from; a line
+longer than that is cut at its end.
+
+**A fixed line, action rows, indents.** A kind may have a line above its rows that's never a row (an API's server):
+`fixedLine` gives its grammar, placeholder, step and rect, and the session makes it a stop after the title. An offer
+may be an action, done by Return (which never picks a word) or Tab, listed last; the host makes what it makes and the words stand for it:
+
+```swift
+var fixedLine: LineFixedLine<API>? {
+    LineFixedLine(name: "Server", placeholder: "server", stepName: "Change Server", grammar: ServerLineGrammar(),
+                  rect: APIRows.serverRect(in:), get: { $0.server.isEmpty ? nil : $0.server }, set: { $0.server = $1 ?? APIServer() })
+}
+items.append(.action("New type \(name)", LineAction(step: "New Type") { context in make(name, context).map { PartAddress($0) } }))
+func indent(at index: Int, of rows: [APIRow], isNew: Bool) -> CGFloat { … }   // a header's members, further in
+```
+
+**Folds.** ⌃⌘↑ (View › Fold Rows) folds the selection's shapes written as lines, or every one on the board with
+nothing selected, to the rows their model marks (`marked(_:in:)`; the first two where it marks none), with a
+"+N ›" line for the rest; ⌃⌘↓ unfolds. A fold is a view: `RowFolds` keeps what was asked for per shape, and the
+lines shown are a provided layout input, so a commit keeps the fold and the kind's frame, render and row rects
+follow it:
+
+```swift
+func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSize {
+    let shown = context.layoutInput(LineRowsLayout.shown, of: shape)        // RowsShown: nil for every row
+    let lines = shown?.count ?? shape.props.rows.count
+    …
+}
+// a hidden row's rect is the line standing for it: shown.line(standingFor: index), its PartFrame not shown:
+// PartFrame(id: row.id, rect: …, isShown: shown?.isShown(index) ?? true)
+```
+
+Editing a folded shape shows every row; Find's hits show in place while Find is open
+(`FindState.rangesHit(of:)`, a kind keeping folded a row whose hits it draws elsewhere: `LineModel.peeks`); the "+N ›"
+line opens with a click, or ⌥Tab then Return or Space; a closed header opens with a click on its chevron only
+(`LineRowsContribution.opener`: the line up to where its words start), a click on its words selecting it as an item. A kind with headers (an API's path prefixes) folds as far as
+it goes: ⌃⌘↑ closes every header too, each showing its count, and → or Space opens one selected as an item, ←
+closes it. Folds are remembered with the file's view on this Mac, a core view value (`ViewValueKey`,
+`editor.setViewValue`, no step), which `BoardDocument` saves and hands back before the canvas is made.
+
+**Arrows drawn together.** Where a fold makes connections end at one line (a closed group's endpoints all writing one
+table) they are drawn as one: LineRows provides Connections' `ConnectionBundle` for the connections at shapes written
+as lines, worked out from Topology's literal connections at the shapes a change reaches, and the connector draws what
+it says. The first in the board's order leads, its pill counting the rest ("writes · 9"), which keep its outline under
+the core's `ShapeGeometry.isHidden` (not drawn, hit or spoken); a press on it selects them all (Selection's
+`SelectionUnits`). The same answer bows apart connections with the same two ends, fans those that end together from
+one shape's rows (their pills slid to their starts, a lone one on a straight stub of its line so it stays in its row's
+band), parts those that leave one row for different places (each line leaving the row on its own, in the row's inner
+band, their pills stacked out from it in the row's band, each on a straight stub of its own line), hands the connections
+between the same two shapes in their order with the marks they end with at each (`run`, `runMarks`, which a narrow gap's turns keep clear of), and brings a line to a table as a whole in at a row clear of the keys at its side:
+
+```swift
+registrar.layoutInput(ConnectionBundle.input) { record, reading in reading.service(RowBundles.self)?.answer(for: record, in: reading) }
+registrar.selectionUnits { editor, id in editor.service(RowBundles.self)?.unit(of: id) }   // a bundle, selected whole
+// the connector, as it lays a connection out:
+let bundle = context.layoutInput(ConnectionBundle.input, of: shape)
+if let lead = bundle?.lead, let led = context.geometry(of: lead) {
+    return ShapeGeometry(outline: led.outline, bounds: led.bounds, isClosed: false, isHidden: true)
+}
+```
+
+**Rows as items and wholes.** A kind written as lines gets its rows selected on the canvas, as Selection's items of
+its shape ([Items inside a shape](#items-inside-a-shape)), and moved as wholes, with no code of its own beyond two
+members of its model:
+
+```swift
+func renaming(_ row: TallyRow, to id: PartID) -> TallyRow { var row = row; row.id = id; return row }
+// Optional: what rows taken out are (by default a new shape of the kind holding only them), and whether its name is
+// typed at once.
+func takeOut(_ rows: [ColumnLine], from shape: ShapeRecord<DatabaseTable>) -> DatabaseTable { … }   // `id uuid pk` first
+var takeOutEditsTitle: Bool { true }
+```
+
+One function moves them, `editor.moveRows(_:of:to:)`: `.into(shape, before:)` (the same shape reorders; another
+of its kind takes them), `.board(origin:)` or `.beside(shapes)` (the take-out, where Insert would put one). One
+step named from the noun ("Move Column", "Move Columns to New Table"), all or nothing, a read-only source or
+target shaking; a row keeps its id (a new one only where the target holds it), and what's bound to it follows
+through the core's `moveParts` (`PartsMoved` hears it). On the pasteboard (the editor's: Clipboard's) rows are a
+board file of the source holding only them, their lines as text beside it: `copyRows` carries the arrows they start,
+`cutRows` every arrow bound to them, counted in its step ("Cut Columns and 2 Arrows"), and `pasteRows` lands them
+as `moveRows` does, a cut's paste a move (its arrows back under their ids) while neither the shape they were cut from nor the one a first paste put them in holds them, on any board.
+While a shape is edited, ⇧↑ ⇧↓ select rows whole (the first the caret's row), which ⌫, ⌥↑ ⌥↓, ⌘C ⌘X ⌘V act on,
+and Escape leaves selected as items. The selection's menu offers the take-out of rows selected.
+
+Every move goes through the kind's own changes, so a row keeps what it means by its neighbors (an API's endpoint its
+full path): what moves and what's left are the rows with the rest taken out as `applying(.delete)` takes them, rows
+put in go as `placing(pasted:)` places a paste, and a reorder is `reordering(_:to:in:)`, a plain block by default. A
+header moves with the rows it heads (cut and copied with them too), and ⌥↑ ⌥↓ with one passes a whole group; a block of only headers is named by `headerNoun` (nil by default: the noun).
+
+Rows are dragged too: a press on rows selected as items, past the threshold, or on a row's lead at any time
+(`lead(of:at:among:line:in:)`, nil by default: a column's key mark, an endpoint's method chip). Nothing is written
+until the release; meanwhile the rows are drawn faded where they are (the kind reads `LineRowsLayout.faded`), a drop
+line marks the gap among the target's lines where they would land (worked out through the kind's own move), the
+target is hinted, and a ghost of the rows, a card at the pointer's right, follows it (`Session.ghosts`; the drop line ends where it begins). Released, it's `moveRows`: into
+the target, which unfolds if folded, or onto the board as the take-out; over a read-only shape it shakes it.
+
+```swift
+// Optional: where a row drags from at once, in its line's rect.
+func lead(of row: ColumnLine, at index: Int, among rows: [ColumnLine], line: CGRect, in context: LineContext) -> CGRect? {
+    row.column.primaryKey ? CGRect(x: line.minX + 7, y: line.minY, width: 24, height: line.height) : nil
+}
+```
+
+A lead may also act: `leadAction` gives what its click does after the click's level at a time, which Space on the row
+selected does too, and VoiceOver hears as a button after the row. An endpoint's chip pops its method menu:
+
+```swift
+func leadAction(of row: APIRow, at index: Int, among rows: [APIRow], in context: LineContext) -> LineLeadAction? {
+    guard case .endpoint(let endpoint) = row else { return nil }
+    return LineLeadAction(title: "Method, \(endpoint.method)") { editor, chip in /* popUpMenu(…, below: chip, highlighting: current) */ }
+}
+```
+
+A take-out may be a shape of another kind, named by the kind (one endpoint out of an API is an `endpoint` of its own,
+"Take Out Endpoint": `takeOutShape`, `takeOutStep`), and a kind may be one row standing alone (`goesWithItsRows`: it takes
+no rows and has no take-out, and goes as its row goes, after what's bound to the row has followed it, and what names it as
+a whole names the row where it went) whose row another kind takes (`takesRows(of:)`, `rows(taken:)`: an API takes an
+endpoint dropped on it, or its row pasted in).
 
 ## Selection
 
@@ -2668,7 +3138,8 @@ overrides; a minimum that isn't above zero and finite either way refuses the plu
   wrote it during the drag), and the step comes to nothing.
 - **A kind laid out past its box** (`LaidOutBox`: a note with rows) is resized only if it takes a
   frame its own way (`CustomSizing`), and then only the shapes it says (`isResizable`: not a
-  relationship type's pill). Its handles are on the frame it's laid out in (`context.frame(of:)`),
+  relationship type's pill). A kind that gives only its width (`resizedAxes`: a table, an enum, an API, whose height is
+  their rows') is resized by its corners alone, with no handle at a side's middle, where a row's line ends. Its handles are on the frame it's laid out in (`context.frame(of:)`),
   which is the box for every other kind, and every frame a drag or a key gives goes through
   `registry.sized(_:to:giving:in:)` with the ways the handle gives (a side's one, a corner's or ⇧'s
   both), so `canvas draw`'s `size:`, which goes through it too, agrees. Where the kind lays the shape
@@ -2925,8 +3396,17 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
   selected shapes are in; Boards adds the third step, up a board. Escape climbs the same steps, then
   deselects, never leaving the board.
 - **The camera** moves only for a stop that is not all in view (`editor.revealIfOffscreen(_:)`,
-  tldraw's `zoomToSelectionIfOffscreen`): it centers the shapes with 100 points of margin at the zoom it
-  has, or farther out where they do not fit, never closer. One in view leaves it alone.
+  tldraw's `zoomToSelectionIfOffscreen`), the row above it (a title's pill) counted and the inspector a
+  selection just made counted before it slides in (`unobscuredViewport` as the chrome is headed): it pans
+  by as little as brings the shapes in, 40 points from the edges, at the zoom it has, never centering them,
+  so what was beside them stays in view (`keeping:` a shape to keep in view with them when both fit: the
+  one Insert put the new shape beside; `orKeeping:` a rect to keep where that doesn't fit, the row a card hangs from;
+  `revealIfOffscreen(_:keepingFirstOf:)` the first of several that fits, as a type made from an endpoint's line or card with
+  the view full is revealed, and `revealTakesAway(_:bringing:keepingFirstOf:)` what that pan would take out of view, for a
+  caller ranking spots); farther out only where they do not fit, never closer, but with `zoomingIn` (a paste) from a view
+  so far out it draws skeletons, zoomed in to fit them, no closer than 100%. One in view
+  leaves it alone. Escape and ⌘↑ to a group or a container move nothing while any of it is in view, and
+  otherwise pan to it, never zooming out (`revealEnclosure`).
 - **For a plugin.** `editor.shape(.next, from: id, among: { record in … })` (`.previous` too) is the
   same reading order over the shapes `among` takes in `id`'s container (the board's own, in none),
   each a stop of its own, wrapping, nil when no other is taken: it selects nothing. A note's editor
@@ -3023,11 +3503,12 @@ registrar.forShapes(holding: LinkProperty.self) { link in
   shape). An arrow's ends, bend and label are handles of this kind (Arrows' `ArrowParts`): an end bound
   with ⌥⌘ goes to `editor.nearestShape(to:toward:among:)`, the nearest shape that way by the rule ⌥⌘
   steps by.
-- **Order.** `editor.shapeParts(of:)` lists every plugin's in reading order of their rects' middles
-  (`StopOrder.reading`, as Tab reads shapes, a row being parts within half the shortest one's height,
-  so a note's rows read top to bottom), parts level with one another by `order`, then plugin
-  order; a part two lists give (the same id) once. None for the shape being edited, whose parts are
-  its editor's.
+- **Order.** `editor.shapeParts(of:)` lists the shape's own parts first and its arrows (`.connection`)
+  after them, each in reading order of their rects' middles (`StopOrder.reading`, as Tab reads shapes,
+  a row being parts within half the shortest one's height, so a note's rows read top to bottom), parts
+  level with one another by `order`, then plugin order; a part two lists give (the same id) once. So
+  ⌥⇧Tab from a shape is its last arrow at once. None for the shape being edited, whose parts are its
+  editor's.
 - **Listed when a key asks**, never on every frame: a list may lay out what it needs. The ring's place
   is kept from the last listing until the board, the layout or the zoom changes.
 - **The focus** is Selection's (`editor.focusedPart`, `hasFocusedPart`): it goes with any other change
@@ -3049,6 +3530,49 @@ registrar.forShapes(holding: LinkProperty.self) { link in
 - **Adornments lists every clickable adornment** by itself, in the scope it is registered in
   ([Adornments](#adornments)): the lock, private and type chips, "+N", the relationship pill and its offer
   are parts with no code of their own.
+
+### Items inside a shape
+
+What is selected inside a shape, one level in as a group's parts are: its items (a table's rows, which LineRows
+lists for every kind written as lines). A plugin lists a kind's items and says what the keys do to them; Selection
+does the rest (the click ladder, the keys, the outline, Escape, Undo, VoiceOver), and the plugin writes no key code:
+
+```swift
+registrar.forShapes(adopting: .lineRows) { kinds in
+    kinds.shapeItems(named: "rows", { editor, shape in
+        rows(of: shape).map { ShapeItem(id: $0.id, title: spoken($0), rect: rect(of: $0)) }    // title asked lazily
+    }, at: { editor, shape, point in row(at: point, of: shape)?.id },
+    actions: ShapeItemActions(
+        delete: { editor, shape, ids in … },            // ⌫ ⌦, one step the kind names
+        move: { editor, shape, ids, delta in … },       // ⌥↑ (-1) ⌥↓ (+1)
+        open: { editor, shape, id, point in … },        // Return, a click on the only selected item
+        setOpen: { editor, shape, id, open in … }))     // → ← Space on an item that hides others
+}
+```
+
+- **The ladder.** A press on an item of a shape not selected is the shape's. On the only selected shape, a click
+  on an item selects it, ⇧ the run from the anchor, ⌘ toggles one, and a click on the only selected item opens it
+  where it was clicked; a press anywhere else drops them. A `drag` and a `lead` (an item's chip pressed before
+  faces, on the shape selected or not: dragged, that item at once; its click told whether the shape was the only one
+  selected before the press) are optional actions; LineRows gives both for rows.
+- **The keys.** ↑ ↓ step them, ⇧↑ ⇧↓ draw the run, ⌥↑ ⌥↓ move them (the chord resizes a shape with none), ← →
+  and Space open and close an item that hides others (`ItemOutline`), and Space presses the lead of one that hides
+  nothing where its kind gives `pressLead` (an endpoint's chip: its method menu; VoiceOver hears it as a button after the
+  item, `leadTitles`; Space on a shape selected whole that is its one item (an endpoint of its own) does the same, `pressWhole`), ⌫ deletes them, Return opens the first, ⌘A selects every item, Escape and ⌘↑ go back to the shape.
+  Clipboard cuts, copies and pastes them before the shape. The way in by keys is ⌥Tab: a shape's items are the first
+  stop of its ⌥Tab ring, one stop (its first item), before its parts, and ⌥⇧Tab back from the first part lands on the
+  item left; Tab and ⇧Tab (and ⌥⌘ arrows) from an item come back to it.
+- **Items that head others.** `heads` lists the items one heads, shown or hidden (a header's rows); read with
+  `editor.itemsHeaded(by:of:)`, while the shape is edited too. A row's panel lists a header's rows' connections.
+- **Hidden items.** An item that stands for hidden ones (`stands`: a fold's "+N ›" line) shows selected while one
+  of those is, and gives it back as it shows again.
+- **Read it** as `editor.selectedItems` (the shape, the ids in its order, the anchor, and `acting`: what the keys
+  delete, move, cut and copy, which for a line standing for selected hidden items is those items) and set it with
+  `editor.selectItems(_:of:)`. The shape stays selected; its outline and handles give way to the items', drawn inside it,
+  and come back if the shape lists none of what is held (another writer deleted them). A ⌘ press on an item still
+  brushes when dragged. VoiceOver hears them as rows (`AccessiblePart.Role.row`; a part's `title` is worked out when
+  asked, so listing a big shape's rows costs their rects), before the shape's parts, said selected, and a run drawn
+  out or toggled is counted aloud through the actions' `selectedWords`.
 ## Describing a shape for VoiceOver
 
 VoiceOver sees the canvas as a layout area named for its board, whose children are its shapes, each
@@ -3074,6 +3598,9 @@ registrar.shape(PatchDefinition()) { patch in
   (`registry.label(of:)`, always), every plugin's `labelParts`, then every plugin's `states`, joined
   with ", " ("Checkout, Note, Person, locked"), and the first `value` and `help`. With none, a shape is
   its kind ("Note").
+- **A part's name** is `editor.accessibleName(of: PartAddress)`: the shape's name for a shape as a
+  whole, a part's name read with its shape's ("id in customers") or alone for a part that stands
+  alone; nil for what isn't there. A list of rows and an arrow's end at a row use it.
 - **Asked, never kept.** It runs only when an assistive app asks for a shape, never per frame, and
   is worked out afresh each time, so a description reads the record and services as they are.
 - **The order and the parts** are two claims, each one plugin's: `registrar.accessibleOrder` (the Tab
@@ -3098,8 +3625,8 @@ Something a person can ask for in more than one way (a key, the menu bar, a righ
 in a shape's text, a chip, a button in the panel) is a command, declared once by the plugin it
 belongs to, and every way in runs that declaration
 ([`Sources/Canvas/Plugins/Commands.swift`](../Sources/Canvas/Plugins/Commands.swift)). The core
-knows what a command is and never which exist, as it knows kinds and tools: its own are undo, redo
-and the four zooms, and the window and the app name no plugin's command.
+knows what a command is and never which exist, as it knows kinds and tools: its own are undo, redo,
+the four zooms and Insert beside (⇧↩), and the window and the app name no plugin's command.
 
 ```swift
 extension CanvasCommand { public static let group: CanvasCommand = "group" }
@@ -3156,10 +3683,26 @@ registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.se
   claims the insertion spot gives (`registrar.insertionSpot { editor, size, beside in … }`: Draw's,
   beside the selection as Placing puts a box beside a shape, or with none somewhere clear in the middle
   of the view), else the middle of the view; then as `place(_:in:)` puts it, edited if its placement
-  edits, one step named as the tool's placing ("Add Note"). Beside one shape, a kind may make its shape
+  edits, one step named as the tool's placing ("Add Note"), which VoiceOver hears once. Draw's spot puts the
+  shape where the person sees it (`PutBeside`, [placing](../.claude/rules/placing.md)): beside a shape
+  top-aligned on its right or left, on a side where the two fit in the clear view together (the view then
+  pans to them), with none at the nearest clear spot inside the clear view, the title's row above it
+  counted. The clear view leaves out the minimap's corner (`editor.clearView`). A side whose pan would take
+  out of view a shape joined to the one it's beside (any edge Topology knows) or holding it ranks under a
+  side in view as it is, so what the person works with stays; a chain of shapes joined to nothing goes
+  right in one row; and no put beside the selection takes left or above over right or below that is seen. Beside one shape, a kind may make its shape
   from that one (`x.madeBeside { made, neighbor in … }`: a note takes the color of what it's put beside,
-  as tldraw's adjacent notes do). A key is another plugin's to give: StickyNotes gives Insert › Note ⇧↩
-  (`registrar.shortcut(chord, forCommand: .insert(ToolID(placing: StickyNote.kind)))`).
+  as tldraw's adjacent notes do). The one insertion spot is `editor.insert(_ placement:, named:, beside:)`,
+  which a tool's insert calls: the same frame, made as the kind says, one step named as given, and the
+  new shape's id back (nil when nothing was put down: shapes waiting to be placed, a press under way, a
+  board or container that takes nothing).
+  Insert's first item is the core's `.insertBeside` ("New Table Beside"; "New Note" with nothing selected),
+  `.whenIdle`, on ⇧↩ (Keyboard's, as it binds ⌘Z): a shape of the selection's kind beside it,
+  whichever kind that is (`editor.toolBeside(shapes)`: the first tool that places the one kind the
+  selected shapes are, if the file has it on, else the tool a plugin claimed with
+  `registrar.insertsBesideByDefault(tool)`, one claim: StickyNotes' Note, so nothing selected, an arrow, or
+  mixed kinds still make a note). A kind of a kit that is off in the file gets the claim's tool.
+  Inside a note's words ⇧↩ is the note editor's, as ever.
 - **At most one plugin claims a command**, and one command answers each standard action
   (`RegistryError.conflict`); the registry's report says each command and where its item is
   (`command group in GroupingSection`, `command pasteAtPointer after paste in EditMenu.CutCopyPaste`).
@@ -3212,6 +3755,7 @@ What the shipped app's keys do:
 | ⌥⌘P | Gives the path of crumbs over the canvas the keyboard, as Go › Board Path does (off the root only): ← and → walk the crumbs and "…", Return goes up, ↓ shows a crumb's menu whose rows ↑ ↓ → ← walk and Return picks, Escape backs out a level at a time | Boards |
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
 | ⇧⌘V | Pastes as ⌘V does, centered on the pointer while it's over the canvas (`editor.isPointerOverCanvas`), else as ⌘V; Edit › Paste at Pointer, which text being edited keeps the key of | Clipboard |
+| ⌥⇧⌘V | Pastes what a plain reader reads of the pasteboard (any text, or a small text file's: one note, `@[` written as text) beside the selection, in one step, Paste as Note: Edit › Paste as Note, which text being edited keeps the key of | Clipboard, StickyNotes' reader |
 | ⇧⌘C | Copies the selection, or the whole board with nothing selected, as a PNG image (2×, in the window's appearance): Edit › Copy as Image, a menu item of the window's own, which draws what [Clipboard says](#host-slots) (`registrar.imageSource`) | The window (CanvasUI), Clipboard's shapes |
 | ⌥⌘S | Shows the sidebar if it's hidden and gives it the keyboard: the table of contents' list, which ↑ ↓ then walk (an empty board has none, and the keyboard stays where it was); Escape gives it back to the canvas. View › Focus Sidebar, beside Show Sidebar (⌃⌘S) | The window (CanvasUI), the table of contents' list |
 | ⌥⌘I | Shows the inspector if it's hidden and gives it the keyboard: the panel's first field or control, the selected shape's title; Escape gives it back to the canvas. View › Focus Inspector, beside Show Inspector (⌃⌘I); both dimmed with nothing selected, when the inspector has nothing to show and nothing wants it | The window (CanvasUI) |
@@ -3229,6 +3773,7 @@ What the shipped app's keys do:
 | ⌥⌘ and ← → ↑ ↓ (⇧ too) | Selects the nearest shape that way, from the one selected last; with ⇧ adds it to the selection (again and again while held; while nothing's under way or edited) | Selection |
 | ⌥⇥, ⌥⇧⇥ | Focuses the only selected shape's first or last part in reading order (its chips, pills, buttons, handles: [parts of a shape](#parts-of-a-shape)), then the next or previous, round inside the shape, bringing it into view if it is not; ↩ and Space press it, ← → ↑ ↓ adjust one that moves (else nudge the shape), ⎋ goes back to the shape (while one shape is selected and nothing's under way or edited) | Selection |
 | ⌘L | Connects two selected shapes, from the one selected first to the other, or one shape to itself (a loop), as `canvas draw` makes an edge (`registry.drawConnection`: the channel both take; where none does, or the maker refuses, nothing, and both shake), one step, Connect; Connect in a right-click on two shapes and in the Shape menu runs it too | Connections (`PortsPlugin`; the item, `ConnectMenuPlugin`) |
+| ⇧↩ | Puts a shape of the selection's kind down beside it, as Insert › New (kind) Beside does; a note for nothing selected, an arrow or mixed kinds (the claimed tool); one step, Add (kind) | Keyboard, for the core's `.insertBeside`; StickyNotes claims the Note |
 | ⇧↩ in a note | Puts a new note down beside the one edited (where Placing puts a note's box beside it, `Surroundings.near`, the right first), in its color, and edits it: one step, Add Note; with no room, the note shakes | StickyNotes (a key hint: the note's editor reads it) |
 | ⇥, ⇧⇥ in a note | Edits the next and the previous note in reading order, round the notes in the one's container, passing over read-only ones (a list open at the caret takes them first) | StickyNotes (a key hint) |
 
@@ -3302,7 +3847,7 @@ What the shipped app's keys do:
   `EditMenu.FindAndSpelling`; `ViewMenu.Zoom`, the core's zooms, which Selection's Zoom to Selection
   joins) and in its own otherwise (File's two, View's panels, Enter Full Screen's, which is last, so a
   plugin's View section comes before it, Window's two, Help's). The shipped bar's rules:
-  Paste at Pointer after Paste and Duplicate after it, Find's submenu first beside Spelling and
+  Paste at Pointer after Paste, Paste as Note after it and Duplicate after that, Find's submenu first beside Spelling and
   Grammar, Remove Mention after Select All, Forward after Back and Enclosing Board after Forward (in
   Selection's `NavigationSection`), Jump To… first in Boards' `PathSection`, before Board Path, the
   window's panes' focus and Show Minimap placed last among View's panels, so the inspector's tab
@@ -3549,6 +4094,26 @@ correction, text replacement, smart quotes and smart dashes, `CaretListSubstitut
 four off, and `apply(to:)` sets a view's, so its owner puts them back as they were when the list
 closes.
 
+What can be typed at a caret, in a host's own language, is `CaretCompletions`: the `range` a pick replaces
+(holding the caret), what's typed (`query`) and every candidate as offered, a `CaretCompletion` each (its
+`label`, `detail`, the `insert` a pick puts in, the `selection` it leaves, `reopens`, `isRelevant`,
+`isAction` and a `chip` color). The panel's code editor and a row written as a line offer in these terms
+(DetailPanel's `DetailCodeCompletions` is a name for them), and `listed(isBlank:scoring:)` ranks them by the
+matcher the host passes in:
+
+```swift
+let listed = offers.listed(isBlank: { FuzzyMatcher.Query($0).isEmpty }) { query, labels in
+    FuzzyMatcher.matches(query, in: labels).map { $0.map { (score: $0.score, matched: $0.matched) } }
+}
+list.returnPicks = .actionsOnly        // a line's list: Return commits the line, or does an action row; Tab picks
+```
+
+A list picks on Return (`returnPicks`, `.always`) unless it says `.actionsOnly`, where Return on a row of words
+isn't taken (the text gets it) and on an action row (`CaretListItem.isAction`, "New type Problem") picks it.
+A highlight can be a pill's line too: `TextHighlight(range:fill:stroke:isDashed:)`, a line round the fill,
+dashed for a name that stands for nothing yet. `height:` and `cornerRadius:` (nil: a pill's, from the font) draw it as a shape of the owner's own
+draws the same mark at rest (an endpoint's method chip), so nothing moves as editing starts.
+
 ### Where string drawing puts text
 
 The canvas draws text with string drawing (`NSAttributedString.draw(with:options:
@@ -3573,7 +4138,7 @@ project (it knows no canvas, registry or plugin, and not TextEditing), pure and 
 thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on TestKit alone.
 
 - **`FuzzyMatcher`** ranks a query against labels, as every list that ranks typed text does
-  (Mentions' `@` picker, slash commands' list, a code editor's completions, and Jump To), so they
+  (Mentions' `@` picker, slash commands' list, a code editor's completions, Jump To, and ⌘L's picker), so they
   agree. A `Query` is the typed text folded once (lowercased, without diacritics, each run of
   whitespace one space) and a `Label` a label folded once (each scalar marked where it starts a
   word, with the `Character` it came from); a label takes its best tier (`FuzzyRanking`): exact 1000,
@@ -3943,7 +4508,7 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   a name, a string, a number, a keyword, or what doesn't belong, red and underlined), asked for
   the whole text at every keystroke, so a scan, not a parse. `completions: { text, caret in … }`
   (a `DetailCodeCompleting`, the caret in UTF-16) says what can be typed at the caret, or nil: a
-  `DetailCodeCompletions`, the `range` a pick replaces (it holds the caret), what's typed so far
+  `DetailCodeCompletions` (TextEditing's `CaretCompletions`, by another name: [a list at the caret](#a-list-at-the-caret)), the `range` a pick replaces (it holds the caret), what's typed so far
   (`query`), and every candidate, as offered and unfiltered, each a `DetailCodeCompletion` (its
   `label`, a `detail`, the `insert` that replaces the range, the `selection` within it a pick
   leaves, the caret or what's to be typed over, `reopens` where that has completions of its own,
@@ -4013,6 +4578,7 @@ or status lines name them.
 |---|---|---|
 | `ShapeDetails` | keyed | A header and sections, one contribution per `details` call. Each section claims (target, tab, id), and a header claims its target, so two plugins adding a Color section to a kind's Style tab, or two headers for one kind, are a `conflict`. A kind's own section and a scoped one (an every-box one, say) may share an id; both show. |
 | `DetailStatuses` | list | Status lines, the shape's state rather than its settings, as a `DetailStatusContribution`: where they go (the footer, or a tab) and `@MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]`. |
+| `RowDetails` | keyed | A row's tabs' sections, for the rows of the kinds its target reaches: when one shape is selected with one of its rows as an item (or the row its editing has the keys on, `editor.editingPart`), that row is the subject (`editor.detailRow`), and the panel shows the row's header (its lead and name, `DetailRowHeader`) and these tabs alone, no status lines. `x.rowDetails(in:id:title:when:) { row in … }` on a kind (the engineering kit's Endpoint and Column), and in a scope (Neighbors' Connections on every kind with parts). |
 
 Plugins write the sugar, not the points:
 
@@ -5839,6 +6405,26 @@ layout slides the slots against the anchor and `editor.adornmentAnchor(of:)` is 
 from where the row is. The slide reasons from the chord, so a straight shape is never crossed; a bent arrow's arc leaves the chord's direction away from the anchor
 (more as it bends), and its chip may still be crossed (measured against the arc itself, with a chip centred: touched in one cell of the 150-long grid at +34, nearer than the margin in a few more, clear in the rest). A plugin does nothing for this.
 
+### Clear of a container's tab
+
+A closed shape's row above its top-left starts past any container's tab it meets
+(`AdornmentLayout.frames(of:width:leftStart:)`, the left end from there and the right end where it was; a row with no
+right end keeps the room it had, running on past the shape's edge, so a name isn't cut by the tab), at every
+zoom: a tab keeps its size on screen and a shape's inset in its container doesn't, so zoomed out a note at its
+frame's top-left would have its pill over the frame's tab. Titles' bars zoomed out sit just above their own shape, clear
+of a selected shape's outline and corner handles, and start where the row does (`editor.adornmentRowStart(of:)`) while
+some of the bar is still over the shape; for a shape too narrow for that the tab gives way instead, up off its container's
+edge (a turned one left), and the bar stays at the shape's top as every bar is. A plugin says what its shapes keep in that
+row zoomed out on the kinds a scope reaches, as Titles does for its bars:
+
+```swift
+registrar.forShapes(adopting: .titlePill) { pilled in
+    pilled.rowZoomedOut { shape, shapes in TitleBar.kept(of: shape, in: shapes) }  // RowZoomedOut(rect:least:), or nil
+}
+```
+
+No kind is named.
+
 ### Plain text and a number
 
 `AdornmentLabel.line(_:ink:)` is plain text with no capsule, in the row as a chip of its width is: a word
@@ -6228,7 +6814,7 @@ giving a shape back the id it had.
   of the shapes left out of the copy, and pasting asks it to bind the copies of those copied with it. So
   two notes and the arrow between them paste as two notes and an arrow between the copies, and an
   arrow copied alone pastes free, ending where it was drawn, as it would if its notes were deleted.
-  tldraw's copy does the same. A shape that can't let go of one it can't find (an arrow bound to a
+  tldraw's copy does the same, except for a kind that takes bound shapes (`TakesBoundShapes`: a table), whose copy takes along the arrows bound only to shapes copied, selected or not, and whose cut deletes the arrows bound to it: a departure from tldraw. A shape that can't let go of one it can't find (an arrow bound to a
   shape its board keeps aside, or one a paste can't read) is left out, rather than copied wrong.
 - **Shapes that only name shapes** ([`ShapeNaming`](#values-that-name-shapes), a mention) go through
   the same call, `record.remappingReferences`, which renames their names too: a copy names the
@@ -6270,7 +6856,15 @@ giving a shape back the id it had.
   it into shapes (`registrar.pasteReader("emoji") { text, editor in CanvasFile? }`, asked in plugin
   order, the first that reads it the paste, never while its plugin's kit is off: [Kits](#kits)): new
   shapes, no copies, in the middle of the view (on the click or the pointer where Paste says), one
-  Paste step. Anything else on the pasteboard (an image, text no reader reads) is left alone. ⌘V, Edit › Paste and
+  Paste step. A reader may instead give a draw program Draw puts down by names
+  (`registrar.pasteReader("SQL", sniff: { … }) { content, editor in DrawPut? }`, `content` the text,
+  or the local files with their small text, files before text): the shapes the file already has by kind
+  and title are restated, the nearest first, never refused, the rest made and laid out in rows, landing
+  beside the selection (centered on a click or the pointer), selected, one step, "Paste SQL". What only
+  the put can know a statement writes as a late value, and it may say which shapes it finds (Paste
+  OpenAPI's type notes: [The engineering kit](#the-engineering-kit)). A reader
+  is `.recognizing` (⌘V's, with a cheap `sniff` menus ask) or `.plain` (⌥⇧⌘V, Edit › Paste as Note:
+  StickyNotes' makes any text one note). Anything else on the pasteboard (an image, text no reader reads) is left alone. ⌘V, Edit › Paste and
   Paste are there only when something would paste, and the board shown takes shapes (`canPaste`),
   so otherwise ⌘V's key goes on, Edit › Paste is dimmed and the context menu has none; on a locked
   subboard's board nothing is pasted, and nothing refused, since there's nothing to try. Copy and
@@ -6281,7 +6875,7 @@ giving a shape back the id it had.
   Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste
   wherever the keyboard is, the table of contents' list included, except in text (a note being
   edited, a panel's field), which takes them first. Cut and Paste don't run mid-gesture; Copy does.
-- **Undo.** Cut and Paste are one step each, "Cut" and "Paste" (a duplicate's is "Duplicate", a ⌥-drag's copy and its move together), by key, menu or context menu.
+- **Undo.** Cut and Paste are one step each, "Cut" and "Paste" (a paste a reader reads is "Paste" and its name, "Paste SQL", and ⌥⇧⌘V's is "Paste as Note"; a duplicate's is "Duplicate", a ⌥-drag's copy and its move together), by key, menu or context menu.
   Undoing a cut brings the shapes back selected; undoing a paste selects what was before it, and
   redoing it brings back the same copies (the same ids, `copiedFrom` and all). Undoing a move's
   paste takes the shapes out and frees their ids (a paste after it moves them again), redoing it
@@ -6305,6 +6899,12 @@ A selection's uncopyable shapes are left out of a copy, and stay when it's cut. 
 shapes selected, ⌘C and ⌘X pass the key on, and the menu has no Cut or Copy. Everything
 else treats them as usual: they're selected, moved, deleted and erased. The rule is
 `ShapeCopyability`: at most one per kind, plus one for every kind, which a kind's own overrides.
+
+**Rows.** With rows selected inside a shape (Selection's items), ⌘C and ⌘X act on the rows, and ⌘V with rows on
+the pasteboard puts them after the last row selected, or out on their own beside the selection
+([Rows written as lines](#rows-written-as-lines)). Clipboard gives the editor its pasteboard
+(`registrar.pasteboard`, a host slot), so what another plugin writes there (the line editor's rows) is on the
+same one, and a test's is its own.
 
 ### Metadata
 
@@ -6810,6 +7410,18 @@ shape's bounds than a dot's reach, only where the shape is under the pointer), a
 on a container (its edge, its tab) a dot takes it only on its disc, while the nearest dot within
 reach still keeps its shape's dots showing as the pointer crosses the edge to it.
 
+### Ports on rows
+
+A kind whose shapes have rows (`PartedShape`) may have ports on its rows instead of its sides:
+`x.partPorts(C.self, role:)` (`registrar.partPorts(K.self, on: C.self)` for another plugin's kind). The
+row the pointer is on shows a dot just outside each end (`PortDot.part`) and a faint band, which stays on
+the row a drag from one starts at while it lasts; the drag is a `Connection` with `part`, and a connection on that channel ending on such a shape binds the row under its
+end (the arrow ports' `ArrowPartRules`). Which kinds may be at a channel's ends is the channel's data:
+`static var isOnEveryChannel: Bool { false }` keeps it off kinds with ports on every channel (a subboard),
+while a stand-in still takes it. By name, `ConnectEnd(shape, part:)`, `ConnectionRequest(fromPart:toPart:)`
+and Draw's `EdgeRequest.fromPart`/`toPart` carry rows; `registry.takesOnParts(kind, channel, as:)` and
+`partDotChannels(of:)` read the table.
+
 ### Ports at a stand-in
 
 A [stand-in](#stand-ins-forwarding) (a [reference](#references): a pill that stands for another
@@ -6896,7 +7508,7 @@ arrow.bend = loop.bend
 The loop is stored as tldraw's own properties, two precise anchors on one side and a bend, so its
 geometry is tldraw's arrow bound twice to one shape (both anchors taken as precise, clipped at the
 outline), a pure function of the arrow that a person reshapes by its handles. The release then says
-what the arrow is, as for any: Types' `connectionDrawn` replaces a type's loop with a relationship
+what the arrow is, as for any: Types' answer to the release replaces a type's loop with a relationship
 type from it to itself, an arrow into it and one out of it. Connect (⌘L) on one shape and `canvas
 draw`'s `edge "A" -> "A"` make the same loop through the connector's maker, on the right side or
 the one a script names.
@@ -6947,7 +7559,8 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   the shape's to grab.
 - **While a connection is drawn** the dots are gone, and each shape in view it could end on is
   outlined faintly, as a hovered shape is (2.5 points, the accent at 60%); the shape it would end
-  on now gets the full outline, the hint.
+  on now gets the full outline, the hint, and, ending on a row, that row is lit (the core's
+  `editor.hintedPart`, its rect from the shape's kept geometry, in the hint's color).
 - **Locked shapes keep their ports.** A connection to or from one changes an arrow, never the
   shape.
 - **What it costs.** `PortState` finds every kind's ports once, as the registry is frozen. The
@@ -6960,8 +7573,34 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 
 ### The connector: arrows
 
+An arrow's end may bind a row (`ArrowBinding.part`, arrow version 3): drawn at the middle of the row's
+side facing the other end, unclipped, kept by an arrow moved alone, stepped a row by ↑ ↓ on its ⌥Tab
+part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`). A row named on a
+binding to a shape that lists no rows (a reference pill for the table, a key to a column on another board) is
+ignored by the geometry, the pill met whole, and kept for Topology. Such an arrow
+is a level curve, a cubic (Geometry's `Cubic`) leaving each end along the way out of its side, half the way
+ahead or a C behind, and entering a shape bound as a whole square to the side it meets, or at the entry its
+kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its middle exactly by itself. An
+arrow with no row end is drawn as it always was. How a connection looks, its ends' marks (`EndMark`: a
+crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLooks` when the geometry is
+worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
+head, and Toggle Arrowhead leaves it. A marked end leaves its row on a straight stub as long as the longest mark and a
+clearance whatever its own (`ArrowStyle.levelStub`, 36), the curve starting at the stub's end, so the mark lies level
+whatever the line does after it (a C between stacked tables, a fan, rows far across), two keys at one row end lay their
+marks on each other, and keys between the same two shapes cross only where their ends' order swaps, once (in a narrow gap
+each turns at a column of its own, past every key's marks at either side, so none runs through another's circle); the line is then a `CubicChain` (Geometry's: the stubs and the curve),
+`ArrowGeometry.levelBody`. Keys fanned into one row come in level, a bar's height and a gap apart, or where the row is too
+short each one's marks a stub further out than its neighbor's, on the side its line turns away from (in a narrow gap, every
+other one's a nudge out, so no two bars stand in one column). Where the ends face each
+other neither reach passes the way between them, so the curve never swings back behind where it starts. A key passing under
+a card it isn't bound to is drawn faint across the whole of it, edge to edge, in a gray that reads on light and dark cards (`ArrowUnderCardsOverlay`, quieter through the words of a row; far out, below 15%, a key whose ends face each other is one straight line, and a C stays its curve), and lit, its light goes under the cards with it
+(the core strokes a tinted outline of a shape painted below its anchor where it is painted). Which side of its row an end
+leaves by is Connections' `PartSide`, the one rule the connector draws by and the bundles pick rows by. A row's resting port
+dot is not drawn where a connection ends along that row's side, nor over another shape's face (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
+with the channel it will be released on (`registry.connectionLook(…, channel:)`), so its marks show as it is dragged.
+
 The ports code never learns what a connection is. One plugin draws them, the connector
-(`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:begin:)`, the `Connectors`
+(`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:parts:begin:)`, the `Connectors`
 point, at most one). `K` is what connections are, and opts into `ChannelProperty`; `F` is the
 family of edges they are in Topology's graph (an `EdgeType`, which this declares, and every
 channel's type is under); `canConnect` says which shapes one
@@ -6991,7 +7630,10 @@ registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shape
                           guard let shape = editor.document[end] else { return }
                           arrow[ChannelProperty.self] = editor.channel(of: connection, endingAt: shape)
                       },
-                      finished: { editor.connectionDrawn($0) })
+                      finished: { arrow in
+                          editor.connectionMade(arrow)        // Connections' one release list
+                          editor.connectionReleased(arrow)
+                      })
 }
 registrar.arrowBindingRule { query in
     guard let channel = query.arrow[ChannelProperty.self], query.registry.declares(channel) else { return true }
@@ -7052,8 +7694,8 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
   began as a lock landed above the board, whose arrow the transaction would drop). Released bound,
   `complete` gets the arrow's record and the shape its end is bound to, in the transaction that
   finishes it, and `finished`, if given, hears of the arrow after that transaction and before the press
-  ends (so what it changes is the press's step): the connector passes `{ editor.connectionDrawn($0) }`,
-  and every way the drag ends tells Types (`editor.connectionReleased(_:)`).
+  ends (so what it changes is the press's step): the connector passes Connections' release,
+  `editor.connectionMade(_:)`, and every way the drag ends tells Types (`editor.connectionReleased(_:)`).
 - **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
   so an arrow drawn from a port, which leaves the selection alone, hints as a re-aimed one does.
 - **An arrow's label is mention text** (`Arrow.text` is a `MentionText`: a migration escapes what a
@@ -7111,20 +7753,85 @@ would draw nothing, so one moves off it by 0.05, as a dragged end moves off the 
 the shapes its two bindings name. An arrow made this way is an arrow like any other: re-aimed,
 moved and kept to its channel as the rest are.
 
-**Connect** (⌘L, `.connect`, `PortsPlugin`'s; [Connect.swift](../Sources/Connections/Connect.swift)) is a
-connection by name from the keyboard: with two shapes selected and nothing under way or edited,
+**Connect** (⌘L, `.connect`, `PortsPlugin`'s, in Insert's `ConnectSection` so the menu bar carries the key to a note being
+edited; [Connect.swift](../Sources/Connections/Connect.swift)) is a
+connection by name from the keyboard, between presses: with two shapes selected,
 `editor.connect(_:)` connects the one selected first to the other, through
 `registry.drawConnection(from:to:in:)`, the maker `canvas draw` makes an edge with, on the channel it
 picks, one step, Connect, the selection kept (a second between a pair is bent apart from the first,
-as a script's is); with one, it connects the shape to itself, the drag back onto it by keys (arrows:
-a loop on its right side). A reference pill is an end as what it stands for, as a drag reads its dots, and
+as a script's is); with one, it opens the picker below (a list without `ConnectPickerPlugin` connects the shape
+to itself at once, the drag back onto it by keys: arrows, a loop on its right side). Both are
+`editor.connect(_:to:plan:fulfil:)`, the one writer, whose step is the plan's name ("Connect") and which runs
+the release every connection has inside it (`editor.connectionMade`, below). A reference pill is an end as what it stands for, as a drag reads its dots, and
 one that stands for nothing now is none. Where the maker refuses the pair (no channel joins them, a
 note and a frame; one holds the other, a frame and a note in it) or the board takes nothing, nothing
-is put down and both shake. `ConnectMenuPlugin` adds the item
-that runs it to a right-click on two shapes (`MenuItem(command: .connect, when:)`), so the menu bar's Shape
-menu has it too, and leaves it off one shape's menu, which every right-click would carry for the rare
-loop; a list without ContextMenus leaves it out and keeps the key. PortEdgesTests'
+is put down and the shapes shake. `ConnectMenuPlugin` adds the item
+that runs it to a right-click on two shapes (`MenuItem(command: .connect, when:)`), and "Connect To…" on one while the
+picker is installed; a list without ContextMenus leaves them out and keeps the key. PortEdgesTests'
 `connectTests` hold it over fixtures, CompositionTests' `connectShippedTests` over the shipped kinds.
+
+**One release list.** A connection just made, a port's drag let go or Connect's, is given its release:
+`editor.connectionMade(_:)` asks every `ConnectionMade` answer in plugin order (`registrar.connectionMade { id, editor in … }`,
+returning `.nothing`, `.settled` or `.offers([ConnectionChoice], drawnPlain:)`); the first that settles ends it, and offers become one
+list at the connection: each plugin's rows, a rule between plugins, a rule, a gray "Plain arrow", the first highlighted;
+the connection is selected while it's open, but for one made from a row being edited (`connectionMade(_:selecting: false)`,
+⌘L's pick), where the shape edited stays selected.
+A row is the pill a pick would put on the line (`ConnectionChoice.pill`, an `AdornmentLabel`, shown as an image); an
+answer that says `drawnPlain` has the connection's channel taken off, in the release's step, only once the list opens. Connections answers first for titled channels (`Channel.title`, `tint`: the kit's writes, reads, calls):
+where two or more fit both ends, they're offered (the connection drawn plain until a pick), a pick `setChannel`, "Change Relation";
+one fits and it's the connection's at once. Types answers next with relationship types:
+
+```swift
+public struct TypeReleasePlugin: ListedPlugin {
+    public var id: PluginID { .typeRelease }
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.connectionMade { connection, editor in editor.relationshipAnswer(connection) }
+    }
+}
+```
+
+A titled channel's pill sits on its connections at the label's lead (`ConnectionPillsPlugin`, `ChannelPill`), in its tint,
+white words; the line stays ink.
+
+**⌘L's picker** (`ConnectPickerPlugin`, id `connect-picker`, after `PortsPlugin` and `MentionsPlugin`;
+[ConnectPicker.swift](../Sources/Connections/ConnectPicker.swift)) is a line under the selected shape (a card
+about no shape's content, `showsZoomedOut`) holding a one-line field with a faint `→` and a caret list under it
+(`CaretListWindow`, as Jump To and References show theirs). It ranks Mentions' catalog, so the lines, their places
+(two shapes called alike say where each is) and the recent picks are the `@` picker's, over the kinds the port
+table can join the source to (`registry.connectionChannel`), on every board of the file, and **Itself** is last while anything is listed or nothing is typed (a word that finds nothing
+leaves the list empty, so a Return there makes no loop): the loop.
+Return and Tab pick, ↑ ↓ ⌃P ⌃N and the page keys move, Escape and ⌘. give the keyboard back to the canvas with the
+selection as it was. A pick on another board is reached through a reference pill on the board shown, reused
+or made and landed as `canvas draw` lands one (`StandInRoute.placePill`; from a row, where its line from the row is clean,
+`Surroundings.landing(of:joinedFrom:of:)`: below the shape, else level with the row; a key, a line between rows, level
+with its row first, left then right, then below slid out past its mark; a pill there already reused only where its line
+from the row crosses no shape and under no label another arrow there carries, and leaves the shape as a landed one does, `joinsClean`), with the arrow, in one step; a private far
+shape is listed `will be made public` and made so in the step, since it is a person's pick.
+
+A kind that means more by a pick says so, once, in `ConnectPicks` (a keyed extension point, owner `.ports`, one
+contribution per source kind):
+
+```swift
+registrar.connectPicks(Table.self, admitting: { pick, editor in editor.document[pick.to.shape]?.kind != Enum.kind }) { pick, editor in
+    ConnectPlan(step: "Add Key Column", from: pick.from, to: pick.to) { transaction in
+        let key = AnyShapeRecord(ShapeRecord(Column(…)))       // written first, in the same step
+        transaction.insert(key)
+        return (ConnectEnd(key.id), pick.to)                    // the ends the arrow then joins
+    }
+}
+```
+
+`admitting` leaves picks out of the list; a plan that is nil refuses the pick (the source shakes, no step). With no
+contribution a pick is a plain `Connect`. No shipped kind contributes one yet; CompositionTests'
+`connectPickerShippedTests` hold the point with a fixture, and the engineering kit's table contributes one
+([the engineering kit](#the-engineering-kit): Add Key Column).
+
+Opened on a row (`picker.open(on: ConnectEnd(table, part: row), returningKeyboardTo: field)`, what LineRows does on ⌘L
+in a row being edited), the picker hangs under the row and lists rows too: Mentions' catalog holds every named
+shape's parts (`PartedShape`), and `candidates(…listingParts:)` ranks a row by its path, its shape's place and the
+shape's name before its own (`orders cust`, `orders.cust`: a dot before a letter splits a word there), a row that
+stands alone by its name as well. A pick is a `ConnectEnd`, and `ConnectPick.from.part` tells the kind it came from a
+row. The card's `returnsKeyboardTo` gives the line the keyboard back, so the shape stays edited.
 
 Ports are the part of data-canvas's that notes and subboards need to prove the API; the rest is in
 [Not built yet](#not-built-yet).
@@ -7347,7 +8054,15 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
   doubled. Anything that isn't a whole mention is text, byte for byte. The schema's definition
   (`mentions.text`, which every scope refers to) says so, for agents; it's a string without bounds,
   and the registry refuses mention text given a length or a pattern (`MentionTextFormat.checkBounds`).
-- **The value.** `runs` (`MentionRun`: `.text(String)`, `.mention(ShapeID, label:)`) are parsed
+- **A row.** `@[name](shape:UUID/row:UUID)` mentions one of a shape's rows (its part, `PartID`: a
+  table's column, an API's endpoint); its pill shows the row's live full name ("orders.customer_id",
+  an endpoint's method in its chip and its full path), dashed once the row is gone. A copy keeps the
+  row's id; a row moved to another shape is renamed where it went (`ShapeNaming.renamingParts`). A shape
+  that is all its one row (`PartName.isItsShape`, an endpoint taken out of its API) is mentioned as that row:
+  the picker and draw's `@[name]` write the row (a whole mention an agent writes too), a mention of the shape as a whole shows as the row
+  (`MentionResolution.whole`), and put back into an API either names the row there.
+- **The value.** `runs` (`MentionRun`: `.text(String)`, `.mention(PartAddress, label:)`, a shape and a
+  row or none; `.mention(id, label:)` makes a shape's) are parsed
   once, as it's made. `stored` is the string it was made from, and equality compares it, so a
   board's text, or an agent's lowercase id, writes back as it was read; text made from runs
   (`MentionText([.text("Ask "), .mention(id, label: "Ship"), …])`, what every Mentions surface
@@ -7379,11 +8094,14 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
   case, which is how an older writer's text reads back); and a look-alike, a name's `]` followed by
   `(shape` in any case, which is a mention gone wrong (Validation warns about it, below), not one
   by name. Text with no `@[` (`mayHoldMentions`) is returned as it is after one pass over
-  its bytes. `@[]` is a name with nothing in it, and for the caller to refuse. `canvas draw`
-  is its one user ([draw](#what-draw-takes-from-other-plugins)); the text a script writes comes
-  out as the text its runs would write, which MentionsTests hold by building a text's names
-  from its mentions (20,000 fuzzed texts) and against a scan from every `@[` that takes no
-  short cuts.
+  its bytes. `@[]` is a name with nothing in it, and for the caller to refuse.
+  `resolvingMentions(in:_:)` is the same pass where `resolve` may give a row as well (a
+  `PartAddress`), written after its shape's id: draw's `@["orders".customer_id]`; it is what
+  `canvas draw` calls ([draw](#what-draw-takes-from-other-plugins)), `resolvingNames` its wrapper
+  for a shape alone. The text a script writes comes out as the text its runs would write, which
+  MentionsTests hold by building a text's names from its mentions (20,000 fuzzed texts through
+  `resolvingNames`, 5,000 more of them mentioning rows through `resolvingMentions`) and against a
+  scan from every `@[` that takes no short cuts.
 - **A pill's label.** `MentionResolution.shownLabel(stored:)` is what a pill reads: the live label, else the name it
   holds, else `Deleted` or `Not available`.
 - **The migration.** A note's text became `MentionText` in its third step,
@@ -7448,7 +8166,8 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   whatever its kind. That's what lets text be measured from itself alone, where no shape is looked
   up (`MentionTextStyle.measuredString(_:width:)`, what a note's `DerivedProps`
   fits its height to): each mention a live pill by the name it holds, as wide as it's drawn while
-  its shape is called that. A missing one has no fill, a dashed outline, no symbol, and its name in
+  its shape is called that; a row's label that reads as an endpoint's (a word in capitals, a space, a
+  path) is measured with the method's chip it is drawn with. A missing one has no fill, a dashed outline, no symbol, and its name in
   italic. Its image is drawn afresh
   wherever it's drawn, never kept as a bitmap (`cacheMode` `.never`): the canvas keeps thousands
   of pills built, and a bitmap for each scale they're drawn at would come to hundreds of megabytes
@@ -8755,7 +9474,9 @@ registrar.forShapes(adopting: .titled) { titled in   // the kinds that took a ti
 `scope.findableTexts(_:…)` is for the shapes of the kinds a scope reaches (keep it to the kinds that
 opted into what's drawn: `FindableTexts` takes [scopes](#scopes), so texts for every kind with no
 scope are refused), `registrar.findableTexts(_:of:…)` for a kind another plugin registers,
-`x.findableTexts(_:…)` for a kind's own. The point (`FindableTexts`) is keyed by kind and name (two
+`x.findableTexts(_:…)` for a kind's own. A contribution whose text names the shape (`names: true`: Titles'
+title) heads the shape's row in Find's list for a hit elsewhere in it, the snippet after it faint
+("products  weight_grams int"). The point (`FindableTexts`) is keyed by kind and name (two
 "title"s that reach one kind conflict; a blank name is refused) and its owner is Find's, so a
 contribution needs `FindPlugin()` installed. Shipped, each a plugin value of its owner's own, after Find and its owner in the list, so
 a list without Find leaves them out:
@@ -8765,6 +9486,10 @@ a list without Find leaves them out:
 | Titles' `TitleFindPlugin` | each title, named or derived (`registry.title(of:)`), on the kinds that hold `TitleProperty` or derive one | the pill's whole capsule, ringed (it may cut the title short); zoomed out, the cover |
 | Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a  note's, an arrow's label), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)`. Two contributions, one a look: the placements on a shape's surface, marked, and those `overCanvas` (an arrow's label), washed |
 | Types' `FieldFindPlugin` | each value a note that is one holds, as its row shows it (a row with more in it: every text under it, a line each) | the row's value as it hugs it, the fold's words for a folded field; its `affected` is `RowBook.reached(by:)`, asked once every service has the commit |
+
+A kind whose texts are its rows gives one a row, its field the row's id (the engineering kit's
+`EngineeringFindPlugin`): `find.fieldsHit(of:)` then says which rows hold hits, and `find.whenResultsChange`
+tells a plugin that hides rows (LineRows' folds) to show them while Find is open. Results stay one a shape.
 
 ### The index, and the search off the main actor
 
@@ -8903,6 +9628,12 @@ topology.edges(ofType: .within(ArrowEdge.id))                           // every
 topology.isInside(note, subboard)                                       // on its board, in a frame there, or on a board under it
 ```
 
+**Edges at rows.** An edge keeps whole shapes at its ends and carries the row each end reaches
+(`edge.parts`, `.none` or a boxed `.some(source:target:)`; `sourcePart`, `targetPart`), part of its
+identity, so a key moved to another row is another edge. A source says them with
+`sink.emit(type, from:to:fromPart:toPart:)`, and `topology.edges(of: table, part: column, .outgoing)` is a
+row's edges.
+
 ### The shapes are the system of record
 
 An edge is carried by a shape, its **carrier**: an arrow's record (its two bound ends, and its
@@ -9040,9 +9771,15 @@ placed where they're wanted. The kind says so, and Topology does the rest; it kn
 ```swift
 x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
     .shapes(shape.props.stands)             // what its record names, on any board
+    // or .row(shape.props.shape, shape.props.row): one row of a shape (a pill for an endpoint)
     // or .provided(ForwardingKey(shape.props.question)): whatever is provided for that key
 }
 ```
+
+- **Rows.** A stand-in for a row (`.row`) stands for its shape, and an edge forwarded through it reaches that row
+  (`Edge.targetPart`), unless the edge names a part there itself: a key bound to a pill for a table with the column on
+  its binding reaches the column. So `edges(of: table, part: column)` counts keys through pills. `directPart(of:)` says
+  a stand-in's row; `makesRow:` beside `makes:` says how one is made for a row (`standIns.make(_:standingFor:row:label:)`).
 
 - **What it stands for** (`effective`, worked out from records alone): what the rule names, in
   order, each once (a name again is left out, the first kept), taking only shapes on a board the
@@ -9482,8 +10219,9 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
 - **Members inside an attribute: `[a.b.c]`.** `AttributeTest.path` holds the identifier members
   after the attribute's name (a letter or `_`, then letters, digits, `-` and `_`; a quoted name has
   none), and the printer writes them bare, `[meta.owner=Ann i]`. Only an attribute whose schema is an
-  object or any JSON has members (any other is `unknown_attribute`: "note is text, so it has no
-  members"), and the test is **untyped**: an object's members are whatever the shape holds, so each
+  object or any JSON, or a list of them, has members (any other is `unknown_attribute`: "note is text,
+  so it has no members"; "tags is a list" of text has none either), a list at the attribute searched an
+  item at a time as one on the way is (`table[columns.name="email"]`), and the test is **untyped**: an object's members are whatever the shape holds, so each
   test is typed by the JSON value found at the path, shape by shape (`PathTest`, a `.path`
   comparison). A string takes the text operators, `=` and `i`, and `~=` as a word; a number takes `=`
   and the orderings when the literal reads as a decimal number (`[a.b="30"]` is `[a.b=30]`; an
@@ -9491,7 +10229,20 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   `unsupported_operator`); a boolean takes `true` or `false`; an array takes `~=` for an item; any
   other sort of value matches nothing (`[a.b^=3]` on a number). A member that is missing, null, or
   inside something that isn't an object is no value: `[a.b]` is false, `[a.b=""]` true, and `!=`
-  is the `:not` of the test, as everywhere. Typing by the schemas of a shape's types is left for
+  is the `:not` of the test, as everywhere. One thing the schema does say: an object whose schema names
+  the member it reads as (`Properties(readsAs:)`, KindSchema's `x-canvas-reads-as`, `readsAs(_:at:)`)
+  is compared by that member where a path ends at it, so `[columns.type="uuid"]` tests a type's
+  `words`, and a list of such objects compared with no path (an equality, a text operator, `~=`;
+  never an ordering) is searched by it, an item at a time (`enum-type[values="paid"]`, an enum's
+  values read as their `text`): the engine knows no kind's meaning, the kind's schema says it.
+  `Properties(readsAs:namedBy:)` may add the member that holds a shape's id (`x-canvas-named-by`,
+  `KindSchema.namedBy(_:at:)`): the object then reads as that shape's name while it has one, in place of
+  its `readsAs` member, which a rename of that shape changes with nothing written here (a column's
+  type reads as its enum's name now; the words only where the shape is gone, outside the query's range or
+  nameless). The schema is held to its members too: where every object a path goes through is
+  closed (`additionalProperties: false`), a member it doesn't have is `unknown_attribute` with the one
+  nearest and the members (`KindSchema.unknownMember(of:at:)`: `[columns.nam="x"]`), not a quiet
+  answer of none; an object that may hold more (`fieldValues`, any JSON) is left to its plugin's warning. The canonical form stays as written. Typing by the schemas of a shape's types is left for
   later: it would make the vocabulary depend on the file, which today is built once from the
   registry and is `Sendable`.
 - **Text as a person reads it.** A string whose schema names a media type a text format reads
@@ -9746,6 +10497,7 @@ a query does without:
 | Point | Sugar | What a query gets | Without it | Shipped |
 |---|---|---|---|---|
 | `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueriesPlugin |
+| `QueryPartNames` | `registrar.queryPartNames(of:_:)` | What a kind's parts (its rows) are called, read off the record anywhere, one plugin a kind: a connection's end bound to a row says it (`QueryEnd.row`, `"row": "customer_id"`) | An end says no row | EngineeringAgentsPlugin (`table`, `enum-type`, `api`) |
 | `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueriesPlugin |
 | `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:problems:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`, and `members:`, `rowMembers:`, `absent:`; with `argument:` too, a word that takes one quoted text), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, TypeQueriesPlugin, SelectionQueriesPlugin |
 | `QueryPathChecks` | `registrar.queryPathCheck(attribute:_:)` | What the members of an object attribute can be: the first member of a path a query tests that no shape of the file can hold (`[fieldValues.stauts]`), asked on the main actor, once a path | No warning | TypeQueriesPlugin |
@@ -9753,7 +10505,7 @@ a query does without:
 | `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` (and with `reads: .file`) | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueriesPlugin |
 | `QueryEngines` | none: `QueriesPlugin`'s mark, which only Queries makes | That the app answers queries (`registry.answersQueries`), for what has a registry and no editor | `canvas query` and `query-vocabulary` answer `no_queries` | QueriesPlugin |
 
-`QueryNames` and `QueryBoardNames` take one contribution each, `QueryWords` one a word,
+`QueryNames` and `QueryBoardNames` take one contribution each, `QueryPartNames` one a kind (`query part names of table`), `QueryWords` one a word,
 `QueryPathChecks` one an attribute, `QueryAskFacts` one a tag and `QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
 word :mentions`, `query path fieldValues`, `ask fact fields`, `query text text/x-canvas-mentions`; `query engine` on queries'). The five
 registrations, whole (each plugin's words are its own nested `enum Word: String`, and
@@ -9838,7 +10590,9 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
 - **A word with a text, members and absent ids** (`queryPseudoClass(…, argument: "name", reads: .file,
   prepare: { file, text in … }, seeds:, matches:, members: ["tag"], rowMembers:, absent:)`): written
   `:drawn-by("Plans")`, exactly one quoted string (`bad_argument` for none, another sort of thing or
-  two; a word declared without an argument still refuses `:x("…")`). `prepare` is given the text,
+  two; a word declared without an argument still refuses `:x("…")`; `refusing:` says why a text
+  can't be the word's where that shows without the file, `:route("POST")` "says no path", refused as
+  `bad_argument` with the word's example, never an empty answer). `prepare` is given the text,
   and `seeds`, `matches`, `rowMembers` and `absent` see what it made; a query using the word with two
   texts prepares each on its own. `rowMembers(shape, prepared)` adds the members `members` declares
   (never a row's own key: `QueryWords.check` refuses it and the registry report names them) to each
@@ -9977,8 +10731,10 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
 - **Ranking and meaning.** `:contains` is a substring filter; ranked or semantic search would be a
   horizontal of its own.
 - **CSS with no meaning here.** Shapes have no siblings, order or columns (`+`, `~`, `:nth-child`,
-  `||`), no pseudo-elements, and a query sees no pointer (`:hover`): each is `unsupported`, never read
-  some other way.
+  `||`), no pseudo-elements but one, and a query sees no pointer (`:hover`): each is `unsupported`, never
+  read some other way. The one is `::part(<row>)`: `#<shape>::part(<row>)` names a row of a shape, and only
+  an edge word that reads one edge's end at its anchor takes it (`:edge-to`, `:edge-from`, `:starts-at`,
+  `:ends-at`, `:start-of`, `:end-of`), counting the edges whose end there is that row.
 - **Acting on what it found.** A query selects, reveals and changes nothing. Its rows' ids name the
   shapes in a later query (`#…`), and in a `draw` script a shape that has no title; a script names
   every other shape by its title.
@@ -11079,7 +11835,26 @@ Draw's placement for plugins (`Sources/Draw/Surroundings.swift`) is the solver m
 that puts a shape down, not only Moving, places it the same way: `Surroundings(on:moving:in:)`, with
 `near(_:within:)` beside a shape, `inside(_:)` in a frame, `between(_:_:growing:)` between two shapes
 and `anywhere()`, each answering a `Landing` (the board, the box, the shapes to raise it above);
-Moving keeps the glue for its `Block` and the commit. `between` is for a shape two arrows will join
+Moving keeps the glue for its `Block` and the commit. Moving keeps the arrows that would cross the edge it moves shapes over:
+an arrow bound to a shape that moves to another board and one that stays goes where its start goes, with
+the start (ending at a reference pill for the shape that stays, landed beside the start where it lands)
+or staying (ending at a pill for the shape that moved, beside its start); a pill for the same shape the board
+has already is reused where the line from the start's row to it crosses no shape (else a fresh one is put down), and so is
+the shape itself where it is there. A fresh pill for a key lands level with the start's row first, as a key's pill does; any
+other far enough out that its arrow's label (a channel's pill) shows with its line either side, and one under another far
+enough down that their labels don't touch. An end at a row keeps it, on the binding to
+the pill for its shape (a key to a column through its table's pill), or through a pill of the row's own for a row
+that stands alone. That is Draw's `CrossingArrows`
+(`init?(moving:from:to:by:label:in:)` plans from the editor, `rebind(in:)` writes before `Transaction.move` and
+`Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly; a pill
+that stays on the origin is put down by the in-or-out rule in `finish`, once the shapes have gone, so a container that
+moves cannot take it with it), which asks the registry only for the connector kind (`drawEdges`) and the pill kind
+(`standsIn`): a read-only arrow and an end no kind stands for as it is (a private shape: a move never makes a shape
+public) let go as before. tldraw leaves such an arrow unbound; this is a departure ([arrows](../.claude/rules/arrows.md)).
+Its pills land as a pick's do (the same spot, `StandInRoute.spot` and `landing`), but are not made by `placePill`: that
+one is for the board shown and a start that is on it, and a move's pill is for a board the shapes have not reached yet.
+
+`between` is for a shape two arrows will join
 to the two: in the gap the pair leaves along the axis they are further apart on, centered in it and
 on their middle across, with `room` (default `PlacingStyle.arrowRoom`, 80; a caller whose arrows carry
 names asks for more) kept clear on each side so each arrow shows a body, the two read `growing`
@@ -11180,10 +11955,11 @@ registrar.forShapes(adopting: .box) { boxes in
   commit uses them. On the board shown: `translate` (what a frame holds goes along),
   `move(_:above:)` over what it sits on that paints above it, and `settle` (the in-or-out rule: in
   the frame it's mostly over, out of the one it left, [Containers](#containers)). Onto another
-  board: `move(_:to:)` first, so an arrow bound to it lets go where it was drawn, as after a cut,
-  then `translate(_:by:on:)` there of the shapes and of what the move took along (an arrow bound
-  only to them rides along, and its free end goes as far as they do: the core says what rode,
-  `rodeAlong`, so Moving writes the rule for none of it) and `settle(_:on:)`
+  board: the arrows that cross are kept through pills (`CrossingArrows.rebind`), then `move(_:to:)`, so an
+  arrow still bound across the edge lets go where it was drawn, as after a cut, then `finish`, then `translate(_:by:on:)`
+  there of the shapes and of what the move took along (an arrow bound only to them rides along, and its free end goes
+  as far as they do: the core says what rode, `rodeAlong`, so Moving writes the rule for none of it) and `settle(_:on:)`
+  of the shapes, then of the new pills on their own, so they never decide where the shapes belong
   ([Boards in a file](#the-editor-and-the-file)). `/move-to` commits as a drop does (`Drop.commit()`),
   in the same step: then every shape moved is put in front within the place (`ContentsPlace.restack`).
   A read-only shape in the way (a locked frame it would land in, the owner of a board that takes no
@@ -11229,7 +12005,10 @@ box left out, `1 of 2`, and the places the menu lists taken and no others), and 
 contents' drops: what each takes, every landing, the step and refusals; CompositionTests'
 `movingShippedTests` type both into a note's editor in the app (the picker's list, a pick and the
 run, a subboard's board, Undo Move) and run both for notes selected, and `contentsDragShippedTests`
-drop notes' rows on a frame's, a subboard's and each other's.
+drop notes' rows on a frame's, a subboard's and each other's; `crossingTests` hold the arrows a move keeps over
+relays and links (the start moves, the end moves, a relay reused or the shape itself, a read-only arrow or a private
+end letting go, `/move-near` and a drop from a board not shown, a corral that moves and a relay it must not take along,
+several pills never changing where the shapes land, Undo exact on both boards).
 
 ## Neighbors
 
@@ -11301,7 +12080,9 @@ registrar.keyHint("⌥ Hover", "Show What Points to It", while: .pointer)
 // Mentions (MentionLightsPlugin, id `mention-lights`):
 let mention = MentionEdge.id.rawValue, keys: Modifiers = [.control, .option]
 registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, keys: keys, query: { ":edge-from(\($0), \(mention))" })
-registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, query: { ":edge-to(\($0), \(mention))" },
+// What mentions a row too (`serves: .both`): a row's selector is `#S::part(R)`, and the quote is around that row.
+registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, serves: .both,
+                        query: { ":edge-to(\($0), \(mention))" },
                         caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
 registrar.keyHint("⌃⌥ Hover", "Show Mentions", while: .pointer)
 
@@ -11337,6 +12118,11 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   query), and the panel never lists it. `caption`, if given, is a line under a listed shape's name,
   from the editor, the shape the list is of and the listed one, asked of the rows in view as each is
   drawn, so it reads what's kept, never a board (Mentions': a mentioner's text around its mention).
+  `serves` says what it's asked about: shapes (the default; hovering asks only these), rows (a row of a
+  table or an API selected as the panel's subject, its selector `#S::part(R)`: the engineering kit's
+  Calls It, Writes, Reads, Keys To and Keyed By), or both (Mentions' Mentioned By). A row's
+  Connections tab lists the lights that serve rows alone, then those that serve both
+  (`NeighborList.order`), and no Inside or Contains.
   Lights are in plugin order, and a plugin's in the
   order it gives them: a shape's first light is its first ring, so the shipped list has arrows' before
   mentions', and types' last. They are the query language's
@@ -11566,8 +12352,9 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
                        fulfilling: { record, registry in registry.makePublic(&record) },
                        calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
                        makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) },
+                       makesRow: { props, target, label in … },   // a pill for a row: ReferenceTarget(id:label:row:)
                        seats: { props, seat, context in … }) { shape, _ in   // fitted to say where its shape is (ReferenceState.place(of:at:in:))
-        if let target = shape.props.target { return .shapes([target.id]) }
+        if let target = shape.props.target { return target.row.map { .row(target.id, $0) } ?? .shapes([target.id]) }
         if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
         return nil
     }
@@ -11586,7 +12373,12 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   title, so `canvas kinds` lists it with no edges. The mode is derived, never stored: a target makes it
   direct, words or a query make it dynamic, else it's empty. `ReferenceEdits` writes it: each of `pick`,
   `find(words:query:)` and `clear` keeps one mode and refits the width to what the pill now says. The
-  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member.
+  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member; v2's (`reference.v2.json`) a mirror's `look` and `scale`; v3's (`reference.v3.json`) a target's `row`.
+- **A pill for a row** (version 3: `ReferenceTarget.row`, absent for a shape as a whole): a row that stands alone (an
+  endpoint) gets a pill of its own, which stands for its shape at that row (`Forwarding.row`), shows the row's live
+  name and lead under its shape's place line (the shape last), is missing once the row is gone from a shape that is
+  there, and follows the row when it moves to another shape (`registrar.partsMoved`). A row that doesn't stand alone
+  (a column) is reached through a pill for its table, the column on the arrow's binding.
 - **Made by name.** `makes` is how `canvas draw` makes a direct reference (`registry.standIns.make`): the
   pill's own writer, `ReferenceEdits.pick`, with the shape's id and the name its title folds to, so it's
   fitted to its label as a picked one is. An edge to a public shape on another board puts one beside the
@@ -11766,14 +12558,15 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   a layout input References provides, the original's laid-out size (`MirrorLayout.original`), and says again
   (`shapesDidChangeLayout`) whenever that may change with no commit to the mirror: a commit to the original on any
   board, the original laid out again (`EditorService.shapesDidChangeLayout`), a first match's answer. It shows a direct
-  reference's shape, or a first-match query's first match, while that's there, public and has a box; otherwise it is
+  reference's shape, or a first-match query's first match, while that's there, public and has a box (a pill for a row
+  stands for the row, which has none, so it stays a pill); otherwise it is
   laid out and drawn as its pill (a deleted original's dashed pill), and Expand (the menu's item right under Go to
   Original, `/expand`, the Shape menu; a step, "Expand Reference", its scale the original's own or less, to fit 480 by
   360) is dimmed. Collapse takes the body away. A double-click on the body opens what's there
   (`ShowingShapes`, `editor.shownShape(at:in:)`): the original's own editor laid over it at its scale
   (`editor.beginEditing(_:through:)`), so a note's words and a typed note's rows are typed into where they show, each
   keystroke written to the original on its board in a step made on the board shown; a subboard's board, one step back;
-  a note a frame holds, typed into through the frame's mirror. Return does the same; a double-click on the pill
+  a note a frame holds, typed into through the frame's mirror; a table, an enum or an API, whose rows are typed in the line editor that reaches the board shown only, is not (`Editable.editsThroughStandIn`), and a mirror of one lends its columns where it draws them, so a key through the pill meets the drawn row. Return does the same; a double-click on the pill
   re-points it, as a pill's does. Its handles scale it in proportion (`CustomSizing`), never the original. Its panel is
   its Reference tab, then the original's own tabs, each section bound to the original wherever it is (the panel's own
   rule for a stand-in, `editor.shown(through:)`, every binding reading and writing the file: [The detail panel](#the-detail-panel)),
@@ -11823,12 +12616,12 @@ The modules, one job each:
 | CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own seven, `draw`, `apply`, `rehearse`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` or `DocumentError` as the wire's `AutomationError`; `apply` draws a program's document by key on every board in one step, drawn on a rehearsal of the editor and taken in with `editor.adopt`; `rehearse` draws several scripts in turn on a copy of the file, Draw's `Rehearsal`, a turn of the main actor each; `measure` takes a script or a document), `show` and `capture`, which borrow Draw's naming (`capture` draws with the core's `BoardPicture`). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
-| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings), and `CrossingArrows`, the arrows a move of shapes to another board keeps through pills (Moving's): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
 | Drawings | platform | What a program drew, kept by name in the file (`DrawingsProperty`, Draw's `DrawingRecord`: the board its top went on and each shape it made by id, with the program's key and what it last wrote), through Draw's `DrawRecords`, which `canvas apply` and `canvas draw --drawing` write in the step that draws; nothing on the shapes. |
 | DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | platform | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
-| Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shapes typed for (a shape's text, or the shapes selected, as one block) moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
+| Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shapes typed for (a shape's text, or the shapes selected, as one block) moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape, the arrows that cross to another board kept through reference pills (Draw's `CrossingArrows`); no kind opts into it, and nothing imports it. |
 | Neighbors | platform | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Arrows' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`, Types' `TypeLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
 | Palette | core | The color math ([Palette](#palette)): a color as sRGB and OKLCH (`RGB`, `OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance: pure, it knows no canvas, registry, plugin or named color. |
 | QueryCommands | platform | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
@@ -12125,7 +12918,11 @@ against the board as the run starts:
    what its tool places (`placement.shape(at:)`), and every shape's attributes are set by the core
    (`registry.shape(_:setting:)`), so the registry builds every record, and what the kind derives
    from them (a note's height, from its text, `DerivedProps`) is the size it's
-   placed at, unless the statement gives one; given a width alone (`size: 300x`, a `Size` with no
+   placed at, unless the statement gives one; a kind whose shapes are as wide as what they hold
+   reads whole (Draw's `DrawnWhole`, conformed in an extension: the engineering kit's table, for its
+   columns' lines, and enum, for its values) is made that wide where it's narrower, never narrower,
+   when the statement makes it or sets a value of it and gives no size, as a commit of its rows
+   widens it (LineRows' `widening`); given a width alone (`size: 300x`, a `Size` with no
    height), the shape is built at that width and what the kind derives is put in step there,
    whether any property is set or not (`registry.derived(_:)`), so a note is that wide and as tall
    as its text in one run, and a kind that derives nothing keeps its height; given whole
@@ -12199,7 +12996,9 @@ language:
 
 - **`in "X"`, for X a container**, draws on the board X is on and puts the shape in X: it's kept
   within X, 40 in from each side, as `inside` keeps a box (the layout problem's `Free.holder`,
-  checked as `inside` is, `no_room` when it can't be), wherever its placements put it there; with
+  checked as `inside` is, `no_room` when it can't be, unless the shape crosses the edge only on the axis its lone
+  direction leaves free (`right of`'s centering across, `below`'s along) and fits there: it is slid along
+  that axis, keeping its side of the target, and a warning says so, `LayoutSolution.slides`), wherever its placements put it there; with
   none, and not in X already (where a restated shape stays), it's placed as `inside "X" top-left`
   places one, a clause written `in "X"`, so several make a list down from there. X must be on the
   board as the run starts (`unsupported` for one the script draws: draw it, then what's in it),
@@ -12324,14 +13123,19 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   than centered on the shape and pushed past the column. It's inserted before the arrow, in the run's
   one transaction. `StandInRoute` (public, over a registry; `kind(for:fulfilling:)`,
   `existing(for:kind:sharing:near:in:)`, `spot(beside:edgeIs:side:in:excluding:staying:)` and
-  `landing(of:at:in:avoiding:)`) is that making, for a writer that is not a script: it lands a pill
-  of its size at a spot against `Surroundings`, in the rect a run gives the same pill.
+  `landing(of:at:in:avoiding:)`, and `landing(of:at:against:in:avoiding:)` against a box planned and not on the board yet, as a
+  move brings a shape's pill beside it) is that making, for a writer that is not a script: it lands a pill
+  of its size at a spot against `Surroundings`, in the rect a run gives the same pill. Whole, for a
+  writer that picks a shape on another board: `FarVerdicts` (what a pick takes: `here`, `reads`,
+  `fulfils(needs:)`, `cannot`; made once for many shapes) and `placePill(standingFor:label:beside:edgeIs:sharing:avoiding:verdicts:in:)`,
+  which finds the board's pill or makes and lands one and answers a `PlacedPill` whose `claim` and `put`
+  write it in the caller's transaction (Types' relation rows and new relationship types, Connections' ⌘L picks).
 - **What it says.** Every stand-in is told where it sits before it's placed (`StandIns.seat`,
   `.file`: the frame that holds it, the top of the board an `in` names, else the frame of the end
   beside it, else the board), whether another shape has its shape's title or not, so a reference says
   where its shape is over the name and is as wide as that; one whose shape is right where it sits is
   as wide as its name. A writer that is not a script asks the route the same before it lands its
-  pill, `StandInRoute.seat(_:beside:in:)`: Types' row pick and a far relationship type do, so a pick
+  pill, `StandInRoute.seat(_:beside:in:)` (`placePill` does): Types' row pick, a far relationship type and a ⌘L pick do, so a pick
   and a script leave the same pill. The stand-ins beside one shape are put down together, so a
   column over a frame's edge goes in or out as one.
 - **An edge may place it** (`EdgeStatement.clauses` and `container`: placements and `in`, written on
@@ -12361,7 +13165,8 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   not for a type: an edge that writes an identity key and is not drawn yet goes into the pill the near
   shape's other arrows already run into for the far shape, and makes one if there is none
   (Sharing, above); one that writes no identity makes a pill of its own (`share:` reuses one).
-- **Deletes.** `delete edge` takes what matches, either way round for `<->`, and `delete "X"` every
+- **Deletes.** `delete edge` takes what matches, either way round for `<->` (a row at an end, `"orders".shipping_id`,
+  narrows it to the connections bound to that row there; a whole end matches any row), and `delete "X"` every
   connection bound to X; then each stand-in at the other end of one (a direct one, as matching reads
   them, never one whose answer can change) that the run leaves with no arrow at all, loose ones
   included, goes too (`standInsEmptied`): it has no title for a script to name, and it stood for its
@@ -12512,11 +13317,11 @@ Draw knows no title, port, validity, mention or group. `draw` takes each from a 
 |---|---|---|---|---|
 | `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
 | `DrawLabels` | `registrar.drawLabels { record, registry in … }` | What a shape with no title is called for the reference `draw` puts beside the shape an edge ends at on another board (the label the maker is handed): the name where it is named in words, its first line or its values | The kind's name (`Untitled sticky note`) | MentionTextsPlugin |
-| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
+| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:rows:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side, and what an edge at one of its rows carries (`rows`, none by default) (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
 | `DrawEdgeIdentities` | `registrar.drawEdgeIdentity(IsAProperty.key)` | A property of the edge kind that tells two edges of one pair apart, named by the plugin that owns it (one a key) | The pair alone: two connections of one pair are `ambiguous_edge` | TypeNamesPlugin (`is`) |
 | `DrawChecks` | `registrar.drawChecks(touched: { changes, shapes in … }, rest: "canvas query …") { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, its level: a warning, an error, or `incomplete`, that the shape still needs something; the property it's about). And `touched`: of what the run wrote (`transaction.pending`, with its shapes), the other shapes to look at, on any board; the run checks each as it found it and as it leaves it and warns of each issue it brought (`rest` is the command that lists them all, an error, a warning or what a shape still needs, said after the twentieth shape) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`); with no `touched`, a run says only what's wrong with the shapes it wrote | ValidationChecksPlugin |
 | `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds`. A list whose schema is `uniqueItems` is written with each once, the first, after its strings are written (two titles of one shape are one id) | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
-| `DrawValueWriters` | `registrar.drawValueWriter(for:write:merge:)` | The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin |
+| `DrawValueWriters` | `registrar.drawValueWriter(for:describes:write:merge:)`, `drawValueWriter(for:describes:reading:write:implies:merge:)` | `implies`, where a value says edges too: each `DrawImpliedEdge` (from a row of the shape its statement draws, to a title and maybe its row, the edge maker's attributes, and `replacesType`, the edge type the row has only one of: the board's other edges of it from the row are the old edge re-aimed, and go in the run) drawn with the script's own edges on the statement's line, an edge the script writes between the same rows being that one, a run again `unchanged` (a table's `columns:` line `→ customers.id`: a key). The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; a writer that gives `describes` (what its text says, `lines (name type …)`) takes a quoted value too, handed to `write` as a string, and `canvas kinds` shows the words before the property's own type (a blank one is a registry error); a writer that takes rows as JSON gets them as written, and joins only the members a row gives; one that takes a shorthand the stored form doesn't says what its JSON is read as before the schema checks it (`reading`: a column's `"type": "uuid"` as `{"words": "uuid"}`); then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin, EngineeringPlugin (a table's `columns`, an enum's `values`) |
 | `DrawReports` | `registrar.drawReports(members: ["is"]) { record, written, shapes, bothHeads in … }` | Each shape and edge row of the run, once every statement is in the transaction, with what its statement wrote for each property that has a value writer (nil for an `unchanged` row) and the board as the script leaves it: a `DrawShapeReport` of warnings (`DrawIssue`s, said with the statement's line) and `problems` (Queries' `ShapeProblem`: `field`, `path`, `class`, `message`) that go on the shape's row, and `members` (a `[String: JSONValue]`) that go flat beside the row's own, only the keys it declared in `members:` (the registry refuses one that is a row's own key, an edge attribute, blank or declared twice); `bothHeads` is whether the statement of a connection wrote `<->`; it is asked of each connection the run deletes too, with the record as it was (gone from `shapes`, `written` nil for a `delete edge` that names no identity key, `[:]` for any other), for its members and warnings only | No `problems`, no warnings, no members from it | FieldValuesPlugin |
 | `DrawGroups` | `registrar.drawGroups(group:ungroup:)` | For a `group` or `ungroup` statement, the shapes it names (resolved: each once, on the board the run draws on, in the order written) and the run's transaction, once every shape and edge the script draws is in it: `group` puts exactly those shapes in one group of their own, `ungroup` leaves each in none. Each writes through the transaction (a read-only shape refuses the write, and the run says `read_only`) and answers whether it changed anything, else the statement's row is `unchanged` | No groups: `group` and `ungroup` are `no_groups` | GroupDrawPlugin |
 
@@ -12545,6 +13350,7 @@ registrar.drawNames(name: { record, registry in registry.title(of: record) },
 registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                     attributes: [ChannelProperty.key.rawValue],
                     sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
+                    rows: { kind, registry in registry.drawCanName(kind) ? registry.partChannels(of: kind).map(\.rawValue) : [] },
                     ends: { record, registry in registry.connectionEnds(of: record) },
                     make: { request, existing, shapes throws(DrawError) in
                         try EdgeChannels.connection(for: request, existing: existing, in: shapes)
@@ -12560,12 +13366,14 @@ registrar.drawChecks(touched: { changes, shapes in
     }
 }
 
-// MentionTextsPlugin: in mention text, `@[Title]` is the whole mention of the shape called Title.
+// MentionTextsPlugin: in mention text, `@[Title]` is the whole mention of the shape called Title, and
+// `@["orders".customer_id]` of that row, named as a statement names one.
 registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[Title] mentions") { text, context throws(DrawError) in
     let scope = context.schema[MentionTextFormat.annotationKey]?.objectValue
-    return try MentionTextFormat.resolvingNames(in: text) { name throws(DrawError) in
+    return try MentionTextFormat.resolvingMentions(in: text) { name throws(DrawError) in
+        if let row = try context.row(written: name, admitting: admits) { return (PartAddress(row.shape.id, part: row.row.id), …) }
         let shape = try context.shape(called: name) { record in clause(context.registry.mentionAdmission(of: record, scope: scope)) }
-        return (shape.id, shape.title)
+        return (PartAddress(shape.id), shape.title)
     }
 }
 ```
@@ -13413,7 +14221,8 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   arrow, its values and the pill it empties, on whichever board, "Remove Relationship"). `FieldValues.name(of:)` is the
   record-only name by values a kind gives its `untitled:`.
 - **The release of a port's drag.** Arrows tells Types the arrow it drew is finished
-  (`ArrowConnecting.finished`, in the press): `editor.connectionDrawn(arrow)` gives an arrow between two notes
+  (`ArrowConnecting.finished`, in the press, through Connections' one release list: Types' answer is its own plugin
+  value, `TypeReleasePlugin`): `editor.relationshipAnswer(arrow)` (and `connectionDrawn`, the same with the list opened) gives an arrow between two notes
   the one relationship type that fits it, in the press's step (`Add Arrow`); opens a list of the types that
   fit at the arrow (`Add Type`, a step of its own) when several do, and selects the arrow while it is open;
   leaves it plain when none is taken (an open type, one with no end drawn, is offered by `/is-a` and never
@@ -14244,7 +15053,7 @@ it, the core or a horizontal.
 
 | Capability | For | Used by |
 |---|---|---|
-| `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape's editing frame (`editingFrame(of:in:)`, world units, looked at again as the shape or the camera changes: a box kind's box by default; a kind without one says where); writes go through `EditContext.update`. Only a box kind has an editing placement. | StickyNotes, Arrows (its label, which grows with what's typed) |
+| `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape's editing frame (`editingFrame(of:in:)`, world units, looked at again as the shape or the camera changes: a box kind's box by default; a kind without one says where); writes go through `EditContext.update`. Only a box kind has an editing placement. `editsThroughStandIn` (default true) says whether its editor reaches the shape on another board, so a mirror may be typed into: false for a kind written as lines. | StickyNotes, Arrows (its label, which grows with what's typed) |
 | `LabeledShape` (Selection's) | An `Editable` kind with a label, text on part of the shape (`labelFrame(of:in:)`, nil while it has none; an arrow's is its kept geometry's `label`, `ShapeGeometry.label`, tldraw's `isLabel` geometry): a click on the only selected shape edits it only on its label, and a drag from its label, past the threshold, is `labelDragSession`'s (the shape selected alone first, ⇧ adding it), not the selection's; a read-only shape's drag is the selection's, refused as ever. tldraw's arrow labels. | Arrows (a drag slides the label along the arrow) |
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
@@ -14254,9 +15063,10 @@ it, the core or a horizontal.
 | `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc and its heads, where its kept geometry is three points) |
 | `StrokedShape` | A kind drawn as a line, an open shape, saying how wide its line is, in world units: `lineWidth(of:in:)`. What a tinted outline of it (`Outlines.tinted`, a plugin's own colors: Neighbors' lights) covers, drawn in full: as wide on screen as the line and a point more, round, so the shape's own line and heads don't show along the middle of the outline, a stripe in a thick line at 200% and wider than a thin one at 50%. Zoomed out, where the skeleton is a point-wide line, a tint is its plain width, and the selection's and a hover's outlines stay thin whatever it says. Found once per kind (`registry.strokedShapes`), so no other kind's shape is asked; `registry.lineWidth(of:in:)` reads it, for what decorates along a line. | Arrows (3.5, `ArrowStyle.strokeWidth`); CanvasTesting's `Cable` |
-| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
+| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document, or just below it (`paintsBelowAnchor`, false by default). Several below-anchored shapes added in one commit go each under its own anchor, as a full build puts them. The anchor follows from the shape's own props and the document's order (and containment, which re-places it when a shape joins a container), since the paint order is kept until one of those changes. | Arrows (above the shapes they join; one with an end at a row, below the lower of them, so cards cover it, or above the container of the higher end when one lies after the lower, so its surface never hides the end) |
 | `LaidOutBox` | A box kind laid out larger or smaller than the box it stores, by `laidOutSize(of:in:)` over its layout inputs: the laid-out frame has the stored origin and the size the kind answers (the box's own for one that isn't finite and above zero), and everything that asks how much room the shape takes (`context.frame(of:)`) goes by it; its geometry, outline and editing frame default to it. Not a container. | the core's geometry, hit testing, settling and enclosing, snapping, selection |
 | `ShapeContaining` | Each shape of the box kind holds shapes on its board, a frame: what names it as its container (`AnyShapeRecord.container`) moves, restacks, locks and is let go with it, and nothing put down sits across its edge (`Transaction.settle`). Nothing to implement. [Containers](#containers). | CanvasTesting's `Corral` |
+| `TakesBoundShapes` | Each shape of the kind takes the shapes bound to it (`ShapeReferencing`: an arrow's ends) along. Deleting one deletes them (the delete's cascade, `Transaction.takeBound`), but a read-only one, which lets go where it's drawn as for any kind; copying one copies what is bound only to shapes copied with it (`ShapeContext.takenAlong(by:)`: Clipboard's copy, duplicate, ⌥-drag and cut). What went along is `Transaction.deletedAlong`, and a body names its step from it (`transaction.stepName`). Nothing to implement; a kind that doesn't adopt it keeps tldraw's rule (an arrow bound to a deleted shape stays, free at that end). | CanvasTesting's `Ledger` |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
 | `ShowingShapes` | Shows another shape of the file in its place, drawing it with `RenderContext.drawShape(inFile:through:standingIn:)`: `shownShape(of:in:)`, what it shows now (on any board), and `shownTransform(of:in:)`, where (from that shape's world units into its own board's). The core then finds what it shows under a point (`editor.shownShape(at:in:)`, a container's held shapes too), says where (`editor.shown(through:)`, `placement(of:through:)`), and edits it there (`editor.beginEditing(_:through:)`). | References (a mirror) |
 | `ShapeReferencing` | Props bound to other shapes: every kind whose props are adopts it, or it stays bound to a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: bound to the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape bound to it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. These are bindings, which must be on the board; a name that may outlive its shape (a mention) is a value instead, [`ShapeNaming`](#values-that-name-shapes). | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
@@ -14278,7 +15088,7 @@ the stand-in at its scale (`editor.editingFrame` is where it is on the board sho
 bounds in the shape's own units, so AppKit scales it), its `EditContext` writing the shape wherever it is
 (`update`, and `transact`'s `transaction.update(inFile:)`), in an editing step made on the board shown, so
 ⌘Z there takes it back without leaving; a read-only stand-in or shape is refused, the stand-in shaking, and
-editing ends with the stand-in as with the shape. `editor.editingStandIn` names the stand-in, which is drawn
+editing ends with the stand-in as with the shape; a kind whose editor reads and writes the board shown only says so (`Editable.editsThroughStandIn`, default true) and is never edited through one. `editor.editingStandIn` names the stand-in, which is drawn
 in full under the editor (no skeleton, no handles). Services hear editing end, however it ends (Escape, a click elsewhere,
 another shape edited, another board shown, an undo), what it wrote committed
 (`EditorService.editingDidEnd`), its step closed unless what ended it is an action still under way
@@ -14298,7 +15108,9 @@ open (a placement's "Add ...") keeps the action's name.
 frame at their origin, which `frame` says) into the part of the canvas the host leaves clear, 16 points in from its edges,
 panning the camera at once by as little as it takes, with no zoom and no undo step: the canvas
 scrolls no text of its own, so a note's editor keeps its caret in view this way as the note grows
-past the window's bottom with what's typed, or an arrow key moves the caret out of view.
+past the window's bottom with what's typed, or an arrow key moves the caret out of view. With `skippingNudges` (a pick, a step to another line; not a caret typed toward the edge), a rect wholly in that part already
+is never nudged the 16 points in by a pan under 8 (`Style.leastKeepInViewPan`): a few points would move the whole board
+and show nothing that was out of sight.
 `startPoint` is where the press that began editing was, in world units, when whatever began it said
 so (`editor.beginEditing(id, at: point, clickCount:)`), and `startClickCount` how many clicks it
 was, for the view to put its selection there as a text view would (the character pressed, or the
@@ -14333,7 +15145,8 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   another kind under its id ([Containers](#containers)), `move(_:to:)`, which takes shapes onto
   another board of the file, `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns,
   `move(_:from:to:)` off any board onto any other, `translate(_:by:on:)`, which moves them there,
-  and `move(_:above:on:)` and `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, and
+  and `move(_:above:on:)` and `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, `insert(_:on:)`, which puts one back there
+  (a key a cut took from a board that holds a pill for the table; on top, nothing held of it, a read-only board refusing it), and
   `delete(_:on:)` and `delete(inFile:)`, which delete one there, `board(containing:)`, which says where a shape is ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers),
   `setContainer(_:to:)` and `settle(_:)` (`settle(_:on:)` on another board). A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
@@ -14379,7 +15192,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   flat; none for one kept aside): what shapes placed among others keep clear of, as
   [`canvas draw`](#draw)'s obstacles.
 - **The hint** (`hintedShapeID`, a target outlined whatever the tool) always names a shape that
-  exists, and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
+  exists, and `hintedPart` (set after it, which clears it when the hint changes) lights one of its
+  parts, a row (`PartedShape`) a connection would end on, in the hint's color, while the shape's
+  geometry lists it; and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
   selected in its editing view, if that's text: the host says, `CanvasEditorDelegate`, so headless
   it's nil; [Find](#find)'s ⌘F types it; an attachment that adopts the core's `ReadsAsText`, a
   mention's pill, reads as its text in it and any other is dropped). After every transaction that
@@ -14455,7 +15270,12 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   the host's views reach on a board under the title bar's row: the path's pill
   inside a subboard, `BoardPath.coveredHeight(on:)`, which a board's window tells it from [the host's slots](#host-slots)), what
   a fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`, and `canvas
-  draw`'s `--reveal`, whose `view` is that part of it too.
+  draw`'s `--reveal`, whose `view` is that part of it too. What keeps one shape in view reads
+  `editor.clearView` (a `ClearView`): that part less the corners the host's own views cover
+  (`coveredCorners`, host API: the minimap's, bottom-left, which CanvasView reports as it lays it out),
+  and `ClearView.shift(bringing:)`, the least pan into it and out of a covered corner: a reveal by the
+  least pan, the caret kept in view (`EditContext.keepInView`), a kept view, and Draw's puts
+  (`reading(of:)`'s `covered`). A fit still fills `unobscuredViewport`.
 - **A view kept while the view settles.** The inspector comes in over the canvas's trailing edge as a
   shape is selected, covering it, so what the camera was just asked to show is kept shown for a moment
   (`Style.viewSettle`, 600 ms, on the scheduler's clock, no timer): `editor.animateCamera(toFit:
@@ -15241,7 +16061,7 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   the size its layout inputs say, larger or smaller, else its box), read before anything changes, and a container's own
   edge is always its stored box (a kind that holds shapes can't be a `LaidOutBox`). One that grows
   later, by an input changing, is not settled again: it stays where it is and may overlap a
-  neighbor or hang over an edge. Create Frame's frame goes around the laid-out frames too.
+  neighbor or hang over an edge (but for a kind that makes room as it grows: making room, below). Create Frame's frame goes around the laid-out frames too.
   Both hand back what they nudged, by how far, what that carries included (`Settlement.nudges`), for
   the glide. O(the board), at a gesture's end. `transaction.settle(ids, on: board)` is the rule on
   another board of the file, against that board as the transaction leaves it: what `move(_:to:)`
@@ -15249,6 +16069,37 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   what it lands on there, and what the transaction brought there isn't held, as what it adds isn't.
   A refusal changes nothing there, and the caller throws, dropping the move; the nudges are that
   board's, where nothing glides. On the transaction's own board it's `settle(_:)`.
+- **Making room** (`MakingRoom.swift`) is settling's one exception to "a shape that grows later
+  stays where it is", for the kinds that opt in (`MakesRoomAsItGrows`, a capability whose one
+  requirement has a default, `roomKeptBelow`: the engineering kit's table, enum and API, which keep
+  a row and a title's pill clear below them; `registry.roomKeptBelow(kind)` reads it, and draw's layouts
+  leave it below such shapes as they put them down, a put's rows and the solver's default gap below one). When a step writes such a shape taller
+  at rest (laid out without the values plugins set for it while it's handled, `setLayoutInput`: an
+  editing view's waiting line, a drag's fade, so only a write pushes; a provider answers as at rest,
+  `LayoutReading.isResting`: the width while typing nothing, a fold kept for the shape being
+  edited), each shape below it in its container (or on the board) that
+  was below its old bottom, overlaps it across (its widest, before and after), and that its new
+  bottom comes nearer than `Style.roomReach` (32 world units whatever the zoom, twice the containers'
+  gap, which clears a title's row at 84% zoom and up) moves down by as much
+  as its bottom went down (or as far as leaves the room its kind keeps below it, where the gap was
+  less), and pushes what it reaches the same way, one pass top to bottom (a shape two reach moves by
+  the larger); a shape the body placed against the growth already (`placedAgainstGrowth`: what
+  `canvas draw` solved against the grown rooms) moves only by the push of the shape above it; a body
+  that lets go of a view the layout reads live as it writes (rows dropped into a folded table unfold it) says what the shape was
+  at rest when it began (`restedAs(_:for:)`), so the push is for all it shows now. What a container holds goes with it, arrows bound to it follow. A
+  container whose members the push takes past its bottom less the gap grows to hold them the gap
+  inside, and pushes in its own container; innermost first. Where it stops the person takes over:
+  read-only shapes stay and push nothing, a read-only container doesn't grow, a shape the step put in
+  or moved is pushed as any is when the growth reaches it (and grows nothing by that put), a step
+  moves at most `Style.roomMoves` (200), shrinking pulls nothing up, and nothing moves sideways.
+  A program's document (`canvas apply`, the digest) makes no room: `Transaction.makesRoom` is off
+  for it, its plan having put every shape at the size it will have. `editor.transact` (and `transact(on:)`, and a step on
+  another board taken in) runs `transaction.makeRoom()` as the body finishes, before the commit, so
+  the growth and the moves are one step under its own name and one Undo; a body that must say what
+  moved (`canvas draw`'s `moved`) runs it first and reads `transaction.madeRoom`, and the step's own
+  run finds nothing more (each growth makes room once). O(what it reaches) on the board shown (the
+  editor's index finds the band), O(the container) in one, nothing where nothing that makes room
+  grew.
 - **A drag**, once past the drag threshold, outlines the container what it moves would go into as
   the hint (`hintedShapeID`), never a read-only one, finding the containers once and costing what
   they are on each event; its release settles what was dropped, in the press's step (a click, short
@@ -15302,6 +16153,7 @@ let card = CanvasCard(id: "tags", about: note, anchor: rowRect, view: listView, 
 editor.showCard(card)                                                       // false: its shape is drawn as a skeleton
 editor.transact(nil, coalescing: card.id) { … }                             // one step, "Change Tags", until it closes
 editor.moveCard(to: newRowRect)                                             // its row moved
+editor.setCardLabel("Fields of Tags")                                       // what VoiceOver calls it, if that changed
 editor.closeCard()                                                          // .asked
 ```
 
@@ -15382,10 +16234,13 @@ aren't changes, and make no step.
 
 **Naming.** A step takes its outermost named group's name, else its first named transaction's
 (`editor.transact("Move") { ... }`), else "Typing" for an editing step (or what its kind's
-`Editable.editingStepName` says); Edit › Undo shows it ("Undo Move"), or plain "Undo"; while the
+`Editable.editingStepName` says); a transaction's body may name its step once it sees what it did
+(`transaction.stepName`, taken in place of the transaction's own name: Delete and Cut say what went along,
+"Delete Note and 2 Arrows", `DeleteSteps`; a group's name still wins); Edit › Undo shows it ("Undo Move"), or plain "Undo"; while the
 open step has come back to where it began, Undo names, and undoes, the step before it. The core
 names placing ("Add" and the placing tool's label, "Add Note"; a container put down around shapes,
-its kind's, "Add Frame"), moving ("Move") and typing; Selection "Delete" and "Resize";
+its kind's, "Add Frame"), moving ("Move") and typing; Selection "Delete" (or what went along with it,
+"Delete Note and 2 Arrows") and "Resize";
 ContextMenus every item by its title; SlashCommands every command by its name in words ("Set
 Title"), or its `step:`; Clipboard "Cut" and "Paste"; Locking "Lock" and "Unlock"; Publishing
 "Make Public" and "Make Private"; Arrows "Add Arrow", "Move Arrow End", "Bend Arrow" and "Toggle
@@ -15513,7 +16368,8 @@ property's (`kinds` and `added`). A shape's `props` are its kind's own propertie
 the properties plugins add to its kind are beside them, in `added`, by key. What a shape doesn't
 have is left out. The camera, the selection and whether the sidebar, the details and the minimap
 show aren't in it: they're remembered per file on this Mac (a view remembered before there was a
-sidebar shows it), so panning never marks a board edited. So are the
+sidebar shows it), so panning never marks a board edited. So are the view values plugins keep
+(`editor.setViewValue`: LineRows' folds), in the view's `values`, handed back before the canvas is made. So are the
 camera on each of a file's boards and the board left open (`BoardViewMemory.View`'s `board` and
 `boards`, read with `decodeIfPresent`, so a view remembered before files had boards is the root's;
 saved for the boards the file can still show: the one shown and those above it, then those shown
@@ -15765,15 +16621,15 @@ and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:stickers in FileMenu.KitList
-keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
-topology             service TopologyIndex · edge type stands-for
-arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
+core                 tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:engineering in FileMenu.KitList
+keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⇧↩ → command insertBeside · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
+selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · overlay ItemsOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge, Pan or Step Rows · shortcut ⇧← → Nudge, Pan or Step Rows · shortcut → → Nudge, Pan or Step Rows · shortcut ⇧→ → Nudge, Pan or Step Rows · shortcut ↑ → Nudge, Pan or Step Rows · shortcut ⇧↑ → Nudge, Pan or Step Rows · shortcut ↓ → Nudge, Pan or Step Rows · shortcut ⇧↓ → Nudge, Pan or Step Rows · shortcut ⌥← → Resize or Move Rows · shortcut ⌥⇧← → Resize or Move Rows · shortcut ⌥→ → Resize or Move Rows · shortcut ⌥⇧→ → Resize or Move Rows · shortcut ⌥↑ → Resize or Move Rows · shortcut ⌥⇧↑ → Resize or Move Rows · shortcut ⌥↓ → Resize or Move Rows · shortcut ⌥⇧↓ → Resize or Move Rows · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
+topology             service TopologyIndex · edge type stands-for · stand-in lookup
+arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v3 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay · overlay ArrowUnderCardsOverlay
+sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · insert beside by default sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · paste reader Note · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · command expandReference · command collapseReference · layout input reference-mirror · ShapeFaces · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference v2 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · ShapeResizing → reference · parts resize handles → reference · ShapeOpening → reference · /expand /collapse → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · command expandReference · command collapseReference · layout input reference-mirror · ShapeFaces · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · parts moved · shape reference v3 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · ShapeResizing → reference · parts resize handles → reference · ShapeOpening → reference · /expand /collapse → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in ViewMenu.Panels · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in ViewMenu.Panels · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete
@@ -15781,7 +16637,7 @@ context-menus        service ContextMenuState · secondary-click menu · selecti
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
 slash-bar            service SlashBar · command runSlashCommand · shortcut / → command runSlashCommand · SelectionObservers
 table-of-contents    service ContentsState · host sidebar
-titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
+titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title · row zoomed out → every shape with a title pill
 mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
 mention-slash-bar    slash bar field
 board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
@@ -15800,7 +16656,7 @@ validation-contents  ContentsMarks → every shape
 mention-validation   ValidationRules → every shape naming shapes
 path-validation      service PathIndex · ValidationRules → every shape with a title
 grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
-clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
+clipboard            service ClipboardState · pasteboard · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command pasteAsNote after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌥⇧⌘V → command pasteAsNote · command duplicate after pasteAsNote in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
 locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock /unlock → every shape holding locked
 publishing           property private · property private → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PrivateChip last → every shape holding private · parts PrivateChip → every shape holding private · ContentsMarks → every shape holding private · /public /private → every shape holding private
 types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
@@ -15813,9 +16669,12 @@ color-validation     service ColorWarnings · ValidationRules → every shape ho
 color-details        ShapeDetails in Style last → every shape holding color
 type-colors          inherited color → every shape holding is
 snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
-ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
+ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · connection made · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
-arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
+connect-picker       service ConnectPickerHost · SelectionObservers
+connection-pills     adornment ChannelPill → every shape holding channel · accessibility → every shape holding channel
+arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowPartRules · ArrowBindingRules
+type-release         connection made
 language-models      service LanguageModelState
 decision-models      service Decisions
 language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
@@ -15851,10 +16710,14 @@ neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
 mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
 type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
-neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
+engineering-lights   neighbor light · neighbor light · neighbor light · neighbor light · neighbor light
+neighbor-details     service NeighborList · ShapeDetails in Connections → every shape · RowDetails in Connections → every shape with parts
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-stickers             kit stickers · shape emoji-sticker · label Sticker → emoji-sticker · tool emoji-sticker · command insert:emoji-sticker in KitShapes<StickersKit> · tool emoji-sticker-heart · command insert:emoji-sticker-heart in KitShapes<StickersKit> · tool emoji-sticker-star · command insert:emoji-sticker-star in KitShapes<StickersKit> · tool emoji-sticker-party · command insert:emoji-sticker-party in KitShapes<StickersKit> · ShapeResizing → emoji-sticker · parts resize handles → emoji-sticker · accessibility → emoji-sticker · /sticker → emoji-sticker · ShapeContextMenus in ShapeMenuGroup first → emoji-sticker · paste reader emoji
+line-rows            service LineRowsService · service RowFolds · service RowBundles · service RowCuts · layout input connection-bundle · selection units · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint Home or End in a Row First or Last Row · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · key hint ⌥⇥ on a Table or API Select Its Rows · key hint Space on an Endpoint Change the Endpoint's Method · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · RowDetails in Column first → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · keeps in step → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · RowDetails in Endpoint first → api · shape endpoint · label Endpoint → endpoint · tint → endpoint · ShapeTitles → endpoint · ContentsTitles → endpoint · mentionable → endpoint · ShapeResizing → endpoint · parts resize handles → endpoint · ContentsRows → endpoint · ShapeDetails → endpoint · accessibility → endpoint · line rows (endpoints) → endpoint · row moves (endpoints) → endpoint · items rows → endpoint · ports calls on rows → endpoint · ports writes on rows → endpoint · ports reads on rows → endpoint · connect picks → endpoint · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · command newVersion · command groupByPrefix · CanvasContextMenu in APIMenuGroup after TransformMenuGroup, RowsMenuGroup after ShapeMenuGroup · /new-version → the command bar's target · /group-by-prefix → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
+engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type · findable rows → api
+engineering-agents   query word :route("…") members routes · query part names of table · query part names of enum-type · query part names of api · query part names of endpoint · ask fact tables · ask fact apis
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as
@@ -16418,14 +17281,14 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   nothing after the colon for none; `/* count: N */`) or why it's refused (`/* reason: … */`), and
   must leave the file equal, not edited and with no undo step; a file whose first line is `<!--
   board: query-story -->` (`reference/query.md`) runs on the story file
-  (`QueryStory.document(windowed: false)`, 1440 × 900; a first line `<!-- board: <name> -->` names
+  (`QueryStory.document(windowed: false)`, 1440 × 900; a leading line `<!-- board: <name> -->` names
   the board among `skillStories`, each the board of exactly one file: `query-story` is
   `reference/query.md`'s, `reference-story` `reference/references.md`'s, `QueryReferenceStory`,
   "Services", a note, a pill that stands for it and two channel-less arrows into the pill,
   whose `via` the page shows and a test holds to what the app says), and its blocks are held to
   the design's table of every construct (`StoryQuery.table`) and its tables of words and edge
   types to `canvas query-vocabulary`; and SKILL.md's description is held to 1,024 characters.
-  `SKILL_DUMP=1` prints what each example said. So a change to either language, their messages, a
+  A page's leading lines may also say `<!-- setup: take-out-endpoint -->` (`skillSetups`), a state no statement draws made on its fresh board before its blocks run (an endpoint taken out of its API, which `reference/engineering.md`'s `:route` block finds). `SKILL_DUMP=1` prints what each example said. So a change to either language, their messages, a
   shipped kind, word or edge type changes the skill with it, or CompositionTests fails.
 - **Fuzzy matching.** FuzzyMatchingTests (TestKit alone): the matcher's tiers and passes, `TextSearch`
   (folding with offsets for `ß`, `é`, `İ`, emoji, CJK and combining marks; every exact place; each
@@ -16855,11 +17718,11 @@ Each of these adds to the design without changing what plugins are written again
   above).
 - **More of ports**, most of which data-canvas has: a channel's cardinality (at most one
   connection at an end, and a dot that stops taking more); directional reversal (a drag from a port that only takes connections, drawn the other
-  way round); ports on part of a shape (a row, a type's field); an arrow's start pinned to its
+  way round); ports on a type's field (a shape's rows have theirs, `partPorts`: [Ports on rows](#ports-on-rows)); an arrow's start pinned to its
   dot's side, and its end to the side of its shape facing it (data-canvas's `anchorToPort`; a
   precise start at a side's midpoint means nothing without it, since tldraw's clipping starts an
   arrow where it crosses its shape's edge toward the other end, whichever side that is); a
-  channel's title, and a legend of the channels; a line in an arrow's detail panel naming its
+  legend of the channels (a channel's title is built: its pill on the line, [Ports](#ports)); a line in an arrow's detail panel naming its
   channel; and rules that read connections (which Topology's index can answer: a schema's links,
   say).
 - **More of boards**: moving several selected shapes into a subboard, or up out of one, from a

@@ -145,10 +145,25 @@ private struct Pair {
         expectEqual(editor.selectedShapeIDs, [p.hub])
         expect(p.m.h.key("\u{7f}"), "Delete is heard")
         expect(editor.document[p.hub] == nil && editor.document[p.from] == nil && editor.document[p.to] == nil)
-        expectEqual(editor.undoHistory.undoName, "Delete")
+        expectEqual(editor.undoHistory.undoName, "Delete Note and 2 Arrows", "the step says what went along")
         editor.undo()
         expectEqual(editor.document, start)
         expect(editor.relationships?.endArrows(of: p.hub).count == 2)
+    },
+    test("Cut with the type selected is named for the halves it took, as Delete is: Undo Cut Note and 2 Arrows") {
+        let p = try Pair()
+        defer { p.m.close() }
+        let editor = p.editor
+        let start = editor.document
+        p.click(try p.onHalf(p.to))
+        expectEqual(editor.selectedShapeIDs, [p.hub])
+        p.m.h.hold(.command)
+        expect(p.m.h.key("x"), "⌘X is heard")
+        p.m.h.hold([])
+        expect(editor.document[p.hub] == nil && editor.document[p.from] == nil && editor.document[p.to] == nil)
+        expectEqual(editor.undoHistory.undoName, "Cut Note and 2 Arrows")
+        editor.undo()
+        expectEqual(editor.document, start)
     },
     test("a right-click on a half is the type's menu, with Straighten; on a selected half, the arrow's own") {
         let p = try Pair()

@@ -226,7 +226,6 @@ private func factsCheckPlugin(_ asked: Tally = Tally()) -> Contributor {
             "chore[meta.size=0]": [3, 4],
             #"chore[meta.owner=""]"#: [3, 4],
             "chore[meta.owner]": [1, 2],
-            "chore[meta.nope]": [],
         ], on: h)
     },
     test("with no kind named, every kind that has the attribute reads it; the others don't match, unless negated") {
@@ -281,6 +280,8 @@ private func factsCheckPlugin(_ asked: Tally = Tally()) -> Contributor {
                     hint: "A member inside an attribute is written without quotes: [facts.owner=x].", at: 5, 17),
             Refused(#"chore["meta.owner"=x]"#, .unknownAttribute, "No attribute is called meta.owner.",
                     hint: "A member inside an attribute is written without quotes: [meta.owner=x].", at: 5, 16),
+            Refused("chore[meta.nope]", .unknownAttribute, "meta has no member nope.", hint: "Its members: owner, size.", at: 5, 11),
+            Refused("chore[meta.onwer=Ann]", .unknownAttribute, "meta has no member onwer.", hint: "Did you mean owner? Its members: owner, size.", at: 5, 16),
             Refused("chore[frame.x]", .notBuilt, "frame is where the shape is; where shapes are isn't in the language yet.", at: 5, 9),
         ], on: h)
     },
@@ -326,7 +327,7 @@ private func factsCheckPlugin(_ asked: Tally = Tally()) -> Contributor {
         guard case .success(let matches)? = answers.first else { return expect(false, "\(answers)") }
         expectEqual(matches.count, 0)
         expectEqual(asked.count, 0)
-        expectEqual(try answer("chore[meta.zzz]", on: h).warnings, [], "meta has no plugin that says its members")
+        expectEqual(try answer("chore[meta.owner=Ann]", on: h).warnings, [], "meta has no plugin that says its members, and none is needed: its schema is closed")
         expectEqual(asked.count, 0)
     },
     test("one plugin says an attribute's members: a second is refused, and the report names the point") {

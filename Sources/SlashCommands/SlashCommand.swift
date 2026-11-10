@@ -385,7 +385,7 @@ final class ErasedSlashCommand {
         accepts = command.accepts
         shapes = nil
         kindsOf = nil
-        step = nil
+        step = command.step
         self.command = nil
         tries = false
         choices = nil

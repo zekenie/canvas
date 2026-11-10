@@ -106,9 +106,14 @@ public final class MentionPicker {
     /// their shapes are ranked (`MentionState.candidates`).
     public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owners: [ShapeID],
                                              kinds: Set<ShapeKind>? = nil,
-                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil, wordsRow: Bool = false) {
+                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil, listingRows: Bool = false,
+                                             wordsRow: Bool = false) {
+        // With `listingRows`, the rows of the shapes listed too (a column under its table's name, an endpoint by its own): a pick
+        // mentions the row.
         self.init(at: location, wordsRow: wordsRow) { [weak mentions] query in
-            mentions?.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits) ?? MentionCandidates()
+            guard let mentions else { return MentionCandidates() }
+            if listingRows { return mentions.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits, listingParts: { _ in true }, ownRows: .row) }
+            return mentions.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits)
         }
     }
 

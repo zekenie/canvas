@@ -62,11 +62,32 @@ extension CanvasEditor {
     /// left under the inspector. Replaces what was kept (a fit, `animateCamera(toFit:…)`); a rect with
     /// nothing in view keeps nothing new.
     public func keepInViewWhileSettling(_ rect: CGRect) {
-        let view = unobscuredViewport, camera = cameraTarget
+        // What is in view now, of the chrome as laid out: a part the inspector is about to cover is kept clear as it comes.
+        let view = laidOutViewport, camera = cameraTarget
         guard !view.isEmpty, !rect.isNull else { return }
         let shown = rect.intersection(camera.toWorld(view))
         guard !shown.isNull, shown.width > 0 || shown.height > 0 else { return }
         keptView = KeptView(rect: shown, keeping: .inView, camera: camera, until: scheduler.now + Style.viewSettle)
+    }
+
+    /// Moves the camera, as `animateCamera(to:duration:)` does, by as little as brings `rect` (world units) into the part
+    /// of the view the host leaves clear (`clearView`, as the chrome is headed: clear of the minimap's corner too), `margin`
+    /// view points in from its edges and that corner, at the zoom it has, from where the camera is headed: never centering it, so what is beside it in view stays
+    /// in view. A rect too big for that keeps its top-left corner in view. Keeps it in view while the view around it
+    /// settles, as `keepInViewWhileSettling` does. False, and nothing done, when it is in view already, before the view
+    /// has a size, or for a null rect. What bringing a shape into view by the least move goes by (Selection's
+    /// `revealIfOffscreen`).
+    @discardableResult
+    public func animateCamera(toShow rect: CGRect, margin: CGFloat, duration: Duration) -> Bool {
+        let view = clearView, camera = cameraTarget
+        guard !view.rect.isEmpty, !rect.isNull, rect.isFinite else { return false }
+        let delta = view.insetBy(margin).shift(bringing: camera.toView(rect))
+        guard delta != .zero else { return false }
+        var target = camera
+        target.pan(by: delta)
+        animateCamera(to: target, duration: duration)
+        keptView = KeptView(rect: rect, keeping: .inView, camera: target, until: scheduler.now + Style.viewSettle)
+        return true
     }
 
     /// The view's clear part changed (its size, or what the host covers of it, `coveredEdges`): a view
@@ -88,9 +109,8 @@ extension CanvasEditor {
             target = Camera(fitting: kept.rect, in: view, inset: inset, maxZoom: maxZoom)
         case .inView:
             guard session == nil else { return }
-            let margin = view.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
             var moved = kept.camera
-            moved.pan(by: Self.shift(bringing: kept.camera.toView(kept.rect), into: margin.isEmpty ? view : margin))
+            moved.pan(by: clearView.insetBy(Style.keepInViewMargin).shift(bringing: kept.camera.toView(kept.rect)))
             target = moved
         }
         guard target != kept.camera else { return }
@@ -112,28 +132,39 @@ extension CanvasEditor {
 
     /// Pans the camera at once, by as little as it takes, so `rect` (world units from the shape's
     /// editing frame's origin: an editing view's coordinates) is in the part of the view the host leaves
-    /// clear, `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
-    /// corner in view. See `EditContext.keepInView`.
-    func keepInView(_ rect: CGRect, of id: ShapeID) {
+    /// clear (`clearView`: out of the minimap's corner too), `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
+    /// corner in view. See `EditContext.keepInView`. With `skippingNudges`, a rect wholly in the clear view already is not moved the margin in by a pan
+    /// of less than `Style.leastKeepInViewPan`: nothing it shows was out of sight, and a nudge of a few points moves the board (a
+    /// caret typed toward the edge never skips: it would pan every other character, by twice as much).
+    ///
+    /// While the camera glides (a reveal of the shape just put down), it is judged where the camera is headed: in view
+    /// there, the glide goes on; otherwise the glide is sent on to where it is, never stopped where it is now, short of
+    /// what it was bringing into view.
+    func keepInView(_ rect: CGRect, of id: ShapeID, skippingNudges: Bool = false) {
         guard session == nil, let box = editingFrame(of: id) else { return }
-        let view = unobscuredViewport.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
-        guard view.width > 0, view.height > 0 else { return }
-        let delta = Self.shift(bringing: camera.toView(shownOnBoard(rect.offsetBy(dx: box.minX, dy: box.minY))), into: view)
-        guard delta != .zero else { return }
-        camera.pan(by: delta)
-    }
-
-    /// How far to move what's shown (view points) to bring `shown` inside `view`, by as little as it
-    /// takes; one too big for it along a way keeps its top or left edge in view.
-    static func shift(bringing shown: CGRect, into view: CGRect) -> CGSize {
-        /// Along one axis: `low...high` inside `min...max`.
-        func shift(_ low: CGFloat, _ high: CGFloat, into min: CGFloat, _ max: CGFloat) -> CGFloat {
-            if low < min || high - low > max - min { return min - low }
-            if high > max { return max - high }
-            return 0
+        let view = clearView.insetBy(Style.keepInViewMargin)
+        guard view.rect.width > 0, view.rect.height > 0 else { return }
+        // A shape edited through a stand-in is shown where the stand-in is.
+        let world = shownOnBoard(rect.offsetBy(dx: box.minX, dy: box.minY))
+        func needed(_ delta: CGSize, at camera: Camera) -> Bool {
+            guard delta != .zero else { return false }
+            guard skippingNudges else { return true }
+            let least = Style.leastKeepInViewPan
+            return !(abs(delta.width) < least && abs(delta.height) < least && clearView.contains(camera.toView(world)))
         }
-        return CGSize(width: shift(shown.minX, shown.maxX, into: view.minX, view.maxX),
-                      height: shift(shown.minY, shown.maxY, into: view.minY, view.maxY))
+        if let headed = cameraAnimationTarget {
+            let delta = view.shift(bringing: headed.toView(world))
+            guard needed(delta, at: headed) else { return }
+            var target = headed
+            target.pan(by: delta)
+            // What a reveal keeps while the view settles goes on to be kept from where the glide now goes.
+            if keptView?.camera == headed { keptView?.camera = target }
+            animateCamera(to: target, duration: Style.keptViewDuration)
+            return
+        }
+        let delta = view.shift(bringing: camera.toView(world))
+        guard needed(delta, at: camera) else { return }
+        camera.pan(by: delta)
     }
 
     /// Any camera change (a scroll, a pinch, a zoom command, a hand drag, a test setting it) stops

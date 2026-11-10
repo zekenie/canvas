@@ -31,6 +31,14 @@ enum MentionStyle {
     static let cornerRadius: CGFloat = 4.0 / 16
     /// The widest a pill is, unless its text is narrower: 16 em. A longer label ends in "…".
     static let maxWidth: CGFloat = 16
+    /// A row's chip lead in a live pill of a row (an endpoint's method, `PartLead.chip`), in the symbol's place: its word bold
+    /// and white at 0.6 em on the chip's color, 0.25 em in, 0.75 em tall, rounded 0.15 em, 0.25 em before the label. Its
+    /// colors are the row's, the same on every surface (as the row draws it).
+    static let chipLabelSize: CGFloat = 0.6
+    static let chipPadding: CGFloat = 0.25
+    static let chipHeight: CGFloat = 0.75
+    static let chipRadius: CGFloat = 0.15
+    static let chipGap: CGFloat = 0.25
 
     /// On a shape's surface, colors are the text's own at these strengths, since a tint on a
     /// tinted shape (yellow on a yellow note) would vanish.
@@ -91,8 +99,9 @@ enum MentionStyle {
     // MARK: What mentions a shape
 
     /// About how many characters of a mentioner's text a list of what mentions a shape quotes around
-    /// its mention.
-    static let quoteLength = 60
+    /// its mention: what a caption line of the panel's list shows before it is cut (a quote longer than the row cut the
+    /// mention itself off its end).
+    static let quoteLength = 40
     /// The symbol of a mentioner whose kind has no placing tool.
     static let unknownSymbol = "square.dashed"
     /// The canvas's context menu item, and a pill's in text.

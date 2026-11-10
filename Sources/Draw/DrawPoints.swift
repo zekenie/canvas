@@ -1,5 +1,6 @@
 import Canvas
 import CanvasRPC
+import DrawScript
 import Queries
 import Topology
 
@@ -86,6 +87,9 @@ public struct EdgeRequest: Hashable, Sendable {
     public var to: ShapeID
     public var fromSide: Side?
     public var toSide: Side?
+    /// The part of `from` it starts at (a row: `"orders".customer_id`), and of `to` it ends at; nil for the shapes as wholes.
+    public var fromPart: PartID?
+    public var toPart: PartID?
     public var bothHeads: Bool
     /// Each attribute the statement gives, by key: a word or a quoted string's text, or a JSON
     /// value's text, as written.
@@ -104,11 +108,13 @@ public struct EdgeRequest: Hashable, Sendable {
     /// (`registry.drawConnection(beside:)`); nil: the maker reads them.
     public var beside: [ShapeID]?
 
-    public init(from: ShapeID, to: ShapeID, fromSide: Side? = nil, toSide: Side? = nil, bothHeads: Bool = false,
-                attributes: [String: String] = [:], fromName: String = "", toName: String = "", written: String = "",
+    public init(from: ShapeID, to: ShapeID, fromSide: Side? = nil, toSide: Side? = nil, fromPart: PartID? = nil, toPart: PartID? = nil,
+                bothHeads: Bool = false, attributes: [String: String] = [:], fromName: String = "", toName: String = "", written: String = "",
                 fromStandsFor: [ShapeKind] = [], toStandsFor: [ShapeKind] = [], beside: [ShapeID]? = nil) {
         self.from = from
         self.to = to
+        self.fromPart = fromPart
+        self.toPart = toPart
         self.fromSide = fromSide
         self.toSide = toSide
         self.bothHeads = bothHeads
@@ -124,13 +130,16 @@ public struct EdgeRequest: Hashable, Sendable {
 
 /// What edges are, for `canvas draw`: the kind connections are (nil while nothing draws them), the
 /// attribute keys an edge takes beside `from:` and `to:`, the sides of a kind an edge may leave by
-/// and what it may carry from each (for `canvas kinds`), which shapes a connection joins, and how
-/// one is made or changed. Only the sugar makes one (`registrar.drawEdges`).
+/// and what it may carry from each, and what an edge at one of its rows may carry (for `canvas
+/// kinds`), which shapes a connection joins, and how one is made or changed. Only the sugar makes
+/// one (`registrar.drawEdges`).
 @MainActor
 public struct DrawEdging {
     let kind: @MainActor (Registry) -> ShapeKind?
     let attributes: [String]
     let sides: @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]]
+    /// What an edge at one of a kind's rows (`"orders".customer_id`) may carry, either way: none for a kind with no rows.
+    let rows: @MainActor (ShapeKind, Registry) -> [String]
     let ends: @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?
     let make: @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord
 }
@@ -274,6 +283,14 @@ public struct DrawTextShape: Hashable, Sendable {
     public let title: String
 }
 
+/// A row a text names after its shape (`"orders".customer_id`), for a text format: the shape, its record as the script starts
+/// it, and the row.
+public struct DrawTextRow {
+    public let shape: DrawTextShape
+    public let record: AnyShapeRecord
+    public let row: PartName
+}
+
 /// What a text format may ask while it writes one string: the registry, the string's schema where it
 /// is, and which shape a name stands for, found as the rest of the script finds one.
 @MainActor
@@ -303,6 +320,23 @@ public struct DrawTextContext {
     public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextShape {
         try lookup.shape(called: name, admitting: { record, _ in admits(record) })
     }
+
+    /// The row `written` names, when it's written as a script names a row after its shape's title (`"orders".customer_id`,
+    /// `"orders API"."POST /orders"`): the shape found as `shape(called:admitting:)` finds one, then its row by name as a
+    /// statement's end finds one (exactly, else folded; two of that name `ambiguous_title`, none `unknown_row` with the ones it's
+    /// like), among the rows the shape has as the script starts. Nil for text not written so, which names a shape by its title.
+    public func row(written: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextRow? {
+        guard written.drop(while: \.isWhitespace).first == "\"", let parsed = try? ShapeName.parsingRow(written), let row = parsed.row,
+              let title = parsed.name.title else { return nil }
+        let shape = try shape(called: title, admitting: admits)
+        return try lookup.row(named: row, of: shape, said: parsed.name.written)
+    }
+
+    /// A shape a name found (`shape(called:admitting:)`), as the script starts it: of its kind, its rows (`registry.parts(of:)`)
+    /// as they are before the script writes them; nil for one gone.
+    public func record(of shape: DrawTextShape) -> AnyShapeRecord? { lookup.record(of: shape) }
+    /// The same, by id.
+    public func record(of id: ShapeID) -> AnyShapeRecord? { lookup.record(of: id) }
 
     /// As above, for a rule that needs what the script writes on a shape it draws or restates: `admits`
     /// is also given the keys of the properties its statement writes, which its record, as the
@@ -420,12 +454,50 @@ extension DrawReports: KeyedExtensionPoint {
 /// How a property's value a script writes is made what the shape keeps, for a property whose owner
 /// says so: `write` turns the value as written into what it stores (names into ids: it may ask
 /// `context.shape(called:)`, as a text format does), and `merge` joins it with what the shape holds
-/// now (nil for a new shape, or one without it). Only the sugar makes one (`registrar.drawValueWriter`).
+/// now (nil for a new shape, or one without it). A writer may take text too (`describes`, what the text says, which
+/// `canvas kinds` shows before the property's own type): a quoted value is then handed to `write` as a string, where
+/// it would be refused as JSON written as text, and `write` reads it (a table's columns, a line each). Only the sugar
+/// makes one (`registrar.drawValueWriter`).
 @MainActor
 public struct DrawValueWriting {
     let key: String
+    /// What a quoted value says, for a writer that takes text (`lines (name type …)`); nil for one that takes the
+    /// property's JSON alone.
+    let describes: String?
     let write: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue
     let merge: @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue
+    /// The edges the value as written implies, from the shape its statement draws (a column's line's `→ customers.id`: a key);
+    /// nil for a writer whose values imply none.
+    let edges: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge]
+    /// Whether its values imply edges at all (`edges` answers none otherwise).
+    let impliesEdges: Bool
+    /// What JSON a script writes is read as before the property's schema checks it, for a writer that takes a shorthand the
+    /// stored form doesn't (a column's `"type": "uuid"` for `{"words": "uuid"}`); nil: as written.
+    var reading: (@MainActor (JSONValue) -> JSONValue)? = nil
+}
+
+/// An edge a value implies (`DrawValueWriting.edges`): from the shape whose statement writes the value, at the row `fromRow`
+/// (nil: the shape as a whole), to the shape called `to` (a title, found as an edge's end is), at its row `toRow`, with the edge
+/// maker's attributes (`channel: foreign-key`). The run draws it as `edge "orders".customer_id -> "customers".id channel:
+/// foreign-key` on the statement's line: an edge the script writes itself between the same rows is the same edge, drawn once,
+/// and one the board has already is `unchanged`, so a value written again draws nothing new; a value that implies none leaves
+/// the shape's edges alone.
+public struct DrawImpliedEdge: Hashable, Sendable {
+    public var fromRow: String?
+    public var to: String
+    public var toRow: String?
+    public var attributes: [String: String]
+    /// The type of edge the row has only one of, if it has: the edges of this type the board has from the row to anywhere else are
+    /// this edge before it's re-aimed, and the run deletes them, as a line typed in the app re-aims the key its column had.
+    public var replacesType: String?
+
+    public init(fromRow: String?, to: String, toRow: String?, attributes: [String: String] = [:], replacesType: String? = nil) {
+        self.fromRow = fromRow
+        self.to = to
+        self.toRow = toRow
+        self.attributes = attributes
+        self.replacesType = replacesType
+    }
 }
 
 /// What writes a property's values in `canvas draw`: at most one plugin for each property key.
@@ -441,8 +513,11 @@ extension DrawValueWriters: KeyedExtensionPoint {
 
     /// A key a script can write: not blank.
     public static func check(_ registry: Registry) throws(RegistryError) {
-        for writer in registry.contributions(to: DrawValueWriters.self).map(\.value) where writer.key.isEmpty {
-            throw .invalid(point: "DrawValueWriters", reason: "a property key can't be blank")
+        for writer in registry.contributions(to: DrawValueWriters.self).map(\.value) {
+            if writer.key.isEmpty { throw .invalid(point: "DrawValueWriters", reason: "a property key can't be blank") }
+            if writer.describes?.isEmpty == true {
+                throw .invalid(point: "DrawValueWriters", reason: "\(writer.key) takes text and says nothing of it, which canvas kinds shows")
+            }
         }
     }
 }
@@ -505,18 +580,33 @@ extension PluginRegistrar {
     /// shape holds now (`held`: nil for a new shape, or one without a value), and its result is what
     /// the shape is set to, so a script run again changes nothing. Without a writer a value replaces
     /// what the shape holds. At most one plugin writes each property.
-    public mutating func drawValueWriter(for key: PropertyKey,
+    /// `describes`, for a writer that takes text as well as the property's JSON: what the text says, which `canvas
+    /// kinds` shows as what the attribute takes (`lines (name type [null] …)`, then `or` and the property's own type),
+    /// and a quoted value reaches `write` as a string for it to read.
+    public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
-        drawValueWriter(for: key, write: write) { written, held, _ in merge(written, held) }
+        drawValueWriter(for: key, describes: describes, write: write) { written, held, _ in merge(written, held) }
+    }
+
+    /// The same for a writer whose values imply edges (`DrawImpliedEdge`): `implies` gives the edges the value as written implies,
+    /// from the shape its statement draws, which the run draws with the script's own. `reading`, for a writer that takes a
+    /// shorthand in its JSON the stored form doesn't: what the JSON is read as before the property's schema checks it.
+    public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
+                                         reading: (@MainActor (JSONValue) -> JSONValue)? = nil,
+                                         write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue,
+                                         implies: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge],
+                                         merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
+        contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: { written, held, _ in merge(written, held) },
+                                    edges: implies, impliesEdges: true, reading: reading), to: DrawValueWriters.self)
     }
 
     /// The same, `merge` handed the registry too, for a join that goes by what other plugins say (Types keeps every
     /// directive plugins hold in a schema, `registry.heldDirectives`).
-    public mutating func drawValueWriter(for key: PropertyKey,
+    public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue) {
-        contribute(DrawValueWriting(key: key.rawValue, write: write, merge: merge), to: DrawValueWriters.self)
+        contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: merge, edges: { _, _ in [] }, impliesEdges: false), to: DrawValueWriters.self)
     }
 
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a
@@ -539,8 +629,9 @@ extension PluginRegistrar {
 
     /// Makes edges for `canvas draw`: `kind` is what connections are (nil: nothing draws them now,
     /// and an edge is `no_edges`), `attributes` the keys an edge takes beside `from:` and `to:`,
-    /// `sides` which sides of a kind an edge may leave by and what it carries from each (what
-    /// `canvas kinds` lists), `ends` which shapes a connection starts and ends on (nil: not two), and
+    /// `sides` which sides of a kind an edge may leave by and what it carries from each, `rows` what an
+    /// edge at one of its rows carries (what `canvas kinds` lists; none by default), `ends` which shapes
+    /// a connection starts and ends on (nil: not two), and
     /// `make` a connection as a request asks, not inserted: new (`existing` nil), or `existing`
     /// changed (only what the request names; itself when nothing would change). It throws what it
     /// can't do, with a reason (`no_channel`, `cannot_connect`, `invalid_value`); `draw` says which
@@ -549,9 +640,10 @@ extension PluginRegistrar {
     /// most one plugin makes edges.
     public mutating func drawEdges(kind: @escaping @MainActor (Registry) -> ShapeKind?, attributes: [String] = [],
                                    sides: @escaping @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]],
+                                   rows: @escaping @MainActor (ShapeKind, Registry) -> [String] = { _, _ in [] },
                                    ends: @escaping @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?,
                                    make: @escaping @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord) {
-        contribute(DrawEdging(kind: kind, attributes: attributes, sides: sides, ends: ends, make: make), to: DrawEdges.self)
+        contribute(DrawEdging(kind: kind, attributes: attributes, sides: sides, rows: rows, ends: ends, make: make), to: DrawEdges.self)
     }
 
     /// Says that the property `key` of the edge kind tells two edges of one pair apart in `canvas draw`
@@ -631,12 +723,13 @@ extension Registry {
     /// in, either end in it. `standingFor` is what an end stands for when it is a stand-in
     /// (`EdgeRequest.fromStandsFor`, `toStandsFor`): the ends are then connected as what they stand for
     /// is. `beside` names the connections already joining the pair, for a maker that draws a second
-    /// apart from the first; nil: the maker reads them.
+    /// apart from the first; nil: the maker reads them. `parts` are the parts of the ends it joins (rows), none for whole shapes.
     @MainActor public func drawConnection(from: ShapeID, to: ShapeID, in shapes: ShapeContext,
                                           standingFor: (from: [ShapeKind], to: [ShapeKind]) = ([], []),
-                                          beside: [ShapeID]? = nil) -> AnyShapeRecord? {
+                                          beside: [ShapeID]? = nil, parts: (from: PartID?, to: PartID?) = (nil, nil)) -> AnyShapeRecord? {
         guard let edging = drawEdging, let kind = edging.kind(self) else { return nil }
-        let request = EdgeRequest(from: from, to: to, fromStandsFor: standingFor.from, toStandsFor: standingFor.to, beside: beside)
+        let request = EdgeRequest(from: from, to: to, fromPart: parts.from, toPart: parts.to, fromStandsFor: standingFor.from,
+                                  toStandsFor: standingFor.to, beside: beside)
         guard let made = try? edging.make(request, nil, shapes), made.kind == kind else { return nil }
         return made
     }

@@ -42,8 +42,34 @@ extension Drawing {
                 resized[existing.id] = placed
             }
         }
+        // A pill landed clear of the board as it was, before the run restated a shape (said after it) taller, is landed again where
+        // such a shape, or another pill landed, is in its way.
+        for index in items.indices {
+            guard let from = items[index].landedFrom, let rect = items[index].placed else { continue }
+            let near = resized[from.near]
+            let others = resized.filter { $0.key != from.near }.map(\.value)
+                + items.indices.filter { $0 != index && items[$0].landedFrom != nil }.compactMap { items[$0].placed }
+            let wanted = rect.insetBy(dx: -LayoutProblem.horizontalClearance, dy: -LayoutProblem.verticalClearance)
+            guard others.contains(where: { $0.intersects(wanted) }) || near.map({ $0.intersects(rect) }) == true,
+                  let line = context.geometry(of: from.near)?.parts.frame(from.row)?.rect,
+                  let surroundings = Surroundings(on: target.board, moving: rect.size, in: editor),
+                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: near, avoiding: others, level: from.level) else { continue }
+            items[index].exact = clean.rect.origin
+            items[index].placed = clean.rect
+        }
         let filed = ObstacleIndex(target.paintOrder(), document: document, context: context, excluding: excluded, resized: resized)
-        let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in filed.obstacles(in: area) }
+        // The pills a program's run put at spots of their own (a far pill landed where its line is clean) are in the way of what else
+        // the run places, as the board's shapes are; numbered after the board's, they are no shape, which a zone or a push names by.
+        var landed: [LayoutProblem.Obstacle] = []
+        var landedNames: [Int: String] = [:]
+        for item in items where item.exact != nil && item.moves && item.existing == nil && item.implied {
+            guard let rect = item.placed, rect.isFinite else { continue }
+            landedNames[document.shapes.count + landed.count] = subject(of: item)
+            landed.append(LayoutProblem.Obstacle(id: document.shapes.count + landed.count, rect: rect))
+        }
+        let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in
+            landed.isEmpty ? filed.obstacles(in: area) : filed.obstacles(in: area) + landed.filter { $0.rect.intersects(area) }
+        }
 
         // The boxes that move, in script order; a container among them with what it holds, which
         // goes along with it (`carried`, by place in the document: what goes where those go).
@@ -57,9 +83,12 @@ extension Drawing {
                 kinds.isEmpty ? [] : Set(document.descendants(of: existing.id, containingKinds: kinds).compactMap { document.index(of: $0) })
             } ?? []
             carried.formUnion(carries)
-            free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.room, gap: item.shape.gap,
-                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing.flatMap { context.frame(of: $0.id) }, carries: carries,
-                                           implied: item.implied))
+            var box = LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.room, gap: item.shape.gap,
+                                         overlapAllowed: item.shape.overlapAllowed, current: item.existing.flatMap { context.frame(of: $0.id) }, carries: carries,
+                                         implied: item.implied)
+            // A kind that grows as rows are typed (a table) keeps its room below it: a box placed below it lands past that.
+            box.roomBelow = registry.roomKeptBelow(item.kind)
+            free.append(box)
         }
 
         // What their placements name.
@@ -76,7 +105,9 @@ extension Drawing {
             if let at = fixedShapes[record.id] { return .fixed(at) }
             let obstacle = context.solidBounds(of: record.id) != nil ? document.index(of: record.id) : nil
             fixedShapes[record.id] = fixed.count
-            fixed.append(LayoutProblem.Fixed(rect: rect, gap: gap, obstacle: obstacle))
+            var box = LayoutProblem.Fixed(rect: rect, gap: gap, obstacle: obstacle)
+            box.roomBelow = registry.roomKeptBelow(record.kind)
+            fixed.append(box)
             fixedNames.append(named(record))
             return .fixed(fixed.count - 1)
         }
@@ -103,8 +134,9 @@ extension Drawing {
                         let them = items[other]
                         if let theirs = them.free {
                             refs.append(.free(theirs))
-                        } else if let existing = them.existing, let placed = them.placed {
-                            refs.append(fixedShape(existing, rect: placed, gap: them.shape.gap))
+                        } else if let placed = them.placed {
+                            // Where it stays, or where a program's run puts it exactly (a shape it makes, not on the board yet).
+                            refs.append(fixedShape(them.existing ?? them.record, rect: placed, gap: them.shape.gap))
                         }
                         if target.part?.isCorner == true {
                             outline = Drawing.outline(of: them.record, at: CGRect(origin: .zero, size: them.room), in: registry)
@@ -170,7 +202,7 @@ extension Drawing {
                 case .free(let box): return freeNames[box]
                 case .fixed(let box): return names[box]
                 case .obstacle(let id):
-                    guard document.shapes.indices.contains(id) else { return "a shape" }
+                    guard document.shapes.indices.contains(id) else { return landedNames[id] ?? "a shape" }
                     let record = document.shapes[id]
                     return shapeName(record) ?? Drawing.location(of: record, in: context)
                 }
@@ -189,7 +221,7 @@ extension Drawing {
             if let current = items[index].existing.flatMap({ context.frame(of: $0.id) }), Self.isNearly(rect, current) { rect = current }
             guard rect.isFinite, rect.width > 0, rect.height > 0 else { throw broken(items[index], "it was placed nowhere (\(rect))") }
             items[index].placed = rect
-            items[index].zones = solution.zones[box].map { document.shapes[$0.id].id }
+            items[index].zones = solution.zones[box].compactMap { document.shapes.indices.contains($0.id) ? document.shapes[$0.id].id : nil }
         }
         try refuseCarriedTargets()
         /// What a box was pushed past, as a row names it and as a message does.
@@ -200,6 +232,7 @@ extension Drawing {
                 let location = "\(item.kind) at \(point(CGPoint(x: item.placed!.midX, y: item.placed!.midY)))"
                 return (item.title ?? location, subject(of: item))
             case .obstacle(let id):
+                guard document.shapes.indices.contains(id) else { let name = landedNames[id] ?? "a shape"; return (name, name) }
                 let record = document.shapes[id], title = Drawing.title(of: record, names: boardNames, naming: naming, registry: registry)
                 let location = Drawing.location(of: record, in: context)
                 return (title ?? location, shapeName(record) ?? location)
@@ -237,6 +270,18 @@ extension Drawing {
                 said.append((index, push.way, nil, [past.quoted], push.placementsHold))
             }
         }
+        // A shape slid along the axis its placement leaves free, to stay inside what holds it, says so.
+        for slide in solution.slides {
+            guard let index = itemOf[slide.box] else { continue }
+            let how = switch slide.way {
+            case .right: "right"
+            case .left: "left"
+            case .below: "down"
+            default: "up"
+            }
+            notes.append(DrawWarning(line: items[index].statement.line,
+                                     "\(subject(of: items[index])) was slid \(how) to stay inside \(pushed(slide.inside).quoted)"))
+        }
         // What each shape went past each way: its own pushes first, then what it went along past,
         // with the shapes it went with in script order.
         struct Way: Hashable { var item: Int, way: Direction }
@@ -262,6 +307,7 @@ extension Drawing {
             guard let box = item.free, let placed = item.placed else { continue }
             for zone in solution.zones[box] {
                 guard Self.overlaps(zone.rect, placed, by: Self.overhang), !zone.rect.insetBy(dx: -Self.overhang, dy: -Self.overhang).contains(placed) else { continue }
+                guard document.shapes.indices.contains(zone.id) else { continue }
                 let record = document.shapes[zone.id]
                 if registry.isContainer(record) { continue }
                 notes.append(DrawWarning(line: item.statement.line,
@@ -310,6 +356,38 @@ extension Drawing {
                                               "\(subject(of: item)) was resized where it is, and now overlaps \(named(first)) — place it to move it clear"))
                 }
             }
+        }
+        landPillsByTheirLines()
+    }
+
+    /// A pill the solver put beside the shape it is joined from, at one of its rows (a key's, a call's: an edge naming no side), in a
+    /// run that places shapes of its own, is landed again once they are placed: where its line from the row is clean, among them
+    /// (`Surroundings.landing(of:joinedFrom:of:)`), as an editor's pick lands one. The shape it is joined from may be one the run
+    /// places (a pasted table): its row is read from the shape as it will be. Where nowhere is clean, it stays where the solver put it.
+    private mutating func landPillsByTheirLines() {
+        let registry = registry, context = target.shapes
+        var itemOf: [ShapeID: Int] = [:]
+        for index in items.indices where items[index].existing == nil { itemOf[items[index].record.id] = index }
+        for index in items.indices {
+            guard items[index].exact == nil, let from = items[index].landedFrom, let rect = items[index].placed else { continue }
+            let bounds: CGRect, line: CGRect
+            if let near = itemOf[from.near] {
+                guard let placed = items[near].placed else { continue }
+                // The shape alone, where its record (as it will be) says it is.
+                let alone = ShapeContext(document: CanvasDocument(shapes: [items[near].record]), registry: registry, camera: context.camera)
+                guard let row = alone.geometry(of: from.near)?.parts.frame(from.row)?.rect else { continue }
+                (line, bounds) = (row, placed)
+            } else {
+                guard let row = context.geometry(of: from.near)?.parts.frame(from.row)?.rect, let near = context.geometry(of: from.near)?.bounds else { continue }
+                (line, bounds) = (row, near)
+            }
+            let others = items.indices.filter { $0 != index && $0 != itemOf[from.near] }.compactMap { items[$0].placed }
+            guard let surroundings = Surroundings(on: target.board, moving: rect.size, in: editor),
+                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: bounds, avoiding: others, level: from.level) else { continue }
+            items[index].placed = clean.rect
+            items[index].zones = clean.above
+            items[index].record.box = CGRect(origin: CGPoint(x: clean.rect.minX - items[index].roomOffset.x, y: clean.rect.minY - items[index].roomOffset.y),
+                                             size: items[index].size)
         }
     }
 

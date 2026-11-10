@@ -1,5 +1,7 @@
 import Adornments
+import AppKit
 import Canvas
+import Clipboard
 import Colors
 import Connections
 import ContextMenus
@@ -15,11 +17,14 @@ import Titles
 import Topology
 import Types
 
+/// The pasteboard the notes' Clipboard reads: one for the whole run (a list is made on every access), never the user's.
+@MainActor private let notesPasteboard = NSPasteboard.withUniqueName()
+
 /// The plugins a note stands on, as StickyNotesTests have them, for the tests of a note's relation rows over real
 /// arrows (`noteRelationRowsTests`, `noteRelationFreshTests`, `notePillTests`), which add Arrows' plugins: they
 /// are here and not in StickyNotesTests, since a test of a note may not import Arrows.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ClipboardPlugin(pasteboard: notesPasteboard), AdornmentsPlugin(), DetailPanelPlugin(),
      ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin(),
      LanguageRulesPlugin()]
 }

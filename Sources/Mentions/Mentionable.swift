@@ -87,14 +87,19 @@ public struct MentionAppearance: Hashable, Sendable {
     public var detail: String
     /// The symbol's color on neutral surfaces; nil for none. A dynamic color follows light and dark.
     public var tint: NSColor?
+    /// For a row's (`PartName`), what leads it as the row draws it (an endpoint's method in its chip, `POST`), which a pill for
+    /// the row draws before its name; none for a shape's.
+    public var lead: PartLead
 
-    public init(label: String, isPlaceholder: Bool = false, systemImage: String, kindName: String, detail: String, tint: NSColor? = nil) {
+    public init(label: String, isPlaceholder: Bool = false, systemImage: String, kindName: String, detail: String, tint: NSColor? = nil,
+                lead: PartLead = .none) {
         self.label = label
         self.isPlaceholder = isPlaceholder
         self.systemImage = systemImage
         self.kindName = kindName
         self.detail = detail
         self.tint = tint
+        self.lead = lead
     }
 }
 
@@ -247,12 +252,62 @@ extension Registry {
                                  tint: shapeTint ?? contribution.tint?(shape) ?? defaults.tint)
     }
 
-    /// What a mention of `target` shows now: live, with its appearance, when `lookup` finds it and
-    /// it can be mentioned; unavailable when it finds it and it can't (kept aside, or of a kind
-    /// that isn't mentionable); missing when it doesn't.
+    /// What a mention of `target` shows now: live, with its appearance (a shape that is all its one row as that row:
+    /// `MentionResolution.whole`), when `lookup` finds it and it can be mentioned; unavailable when it finds it and it can't
+    /// (kept aside, or of a kind that isn't mentionable); missing when it doesn't.
     public func mentionResolution(of target: ShapeID, lookup: (ShapeID) -> AnyShapeRecord?) -> MentionResolution {
         guard let record = lookup(target) else { return .missing }
-        return mentionAppearance(of: record).map { .live($0) } ?? .unavailable
+        return MentionResolution.whole(record, shape: mentionAppearance(of: record), in: self)
+    }
+
+    /// What a mention of a row, or of a shape as a whole (part nil), shows now, as `mentionResolution(of:lookup:)` has the shape:
+    /// a row of a shape `lookup` finds is live while the shape has it (`MentionResolution.row`), missing once it doesn't.
+    public func mentionResolution(of target: PartAddress, lookup: (ShapeID) -> AnyShapeRecord?) -> MentionResolution {
+        guard let part = target.part else { return mentionResolution(of: target.shape, lookup: lookup) }
+        guard let record = lookup(target.shape) else { return .missing }
+        return MentionResolution.row(part, of: record, shape: mentionAppearance(of: record), in: self)
+    }
+}
+
+extension MentionResolution {
+    /// What a mention of row `part` of `record` shows, given how the shape shows (`shape`, nil when it can't be mentioned): live
+    /// with the row's appearance (`MentionAppearance.row`) while the shape has the row; missing once it hasn't (the row deleted,
+    /// or moved away: its pill dashed, by the name it holds); unavailable with the shape.
+    @MainActor
+    public static func row(_ part: PartID, of record: AnyShapeRecord, shape: MentionAppearance?, in registry: Registry) -> MentionResolution {
+        guard let shape else { return .unavailable }
+        guard let row = registry.parts(of: record)?.first(where: { $0.id == part }) else { return .missing }
+        return .live(MentionAppearance.row(row, of: shape))
+    }
+}
+
+extension MentionResolution {
+    /// What a mention of `record` as a whole shows, given how the shape shows (`shape`, nil when it can't be mentioned): a shape
+    /// that is all its one row (`PartName.isItsShape`: an endpoint taken out of its API) as that row, as a mention of the row
+    /// shows (`MentionAppearance.row`: its method in its chip and its path), so a mention of it looks one way, however it was
+    /// written and wherever the endpoint is; any other as itself; unavailable with no appearance.
+    @MainActor
+    public static func whole(_ record: AnyShapeRecord, shape: MentionAppearance?, in registry: Registry) -> MentionResolution {
+        whole(shape: shape, parts: shape != nil && registry.isAllItsOneRow(record.kind) ? registry.parts(of: record) : nil)
+    }
+
+    /// The same, given the shape's parts (its rows) read already.
+    static func whole(shape: MentionAppearance?, parts: [PartName]?) -> MentionResolution {
+        guard let shape else { return .unavailable }
+        if let parts, parts.count == 1, parts[0].isItsShape { return .live(MentionAppearance.row(parts[0], of: shape)) }
+        return .live(shape)
+    }
+}
+
+extension MentionAppearance {
+    /// How a row shows where it's mentioned: by its full name, an endpoint's method and full path ("POST /orders/{id}/refunds"),
+    /// and a row that doesn't stand alone with its shape's name before it ("orders.customer_id", as draw names one and the picker
+    /// finds one); its lead (a method's chip) before the name, else its lead's symbol, else its shape's; its kind word
+    /// ("Endpoint") its kind's name; in its shape's tint.
+    public static func row(_ part: PartName, of shape: MentionAppearance) -> MentionAppearance {
+        let symbol: String = if case .symbol(let name) = part.lead { name } else { shape.systemImage }
+        return MentionAppearance(label: part.standsAlone ? part.name : shape.label + "." + part.name, systemImage: symbol,
+                                 kindName: part.kindWord, detail: part.kindWord, tint: shape.tint, lead: part.lead)
     }
 }
 

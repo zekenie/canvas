@@ -3,6 +3,7 @@ import Canvas
 import ContextMenus
 import Geometry
 import Keyboard
+import LineRows
 import Selection
 
 /// Cut, copy and paste, as a plugin: ⌘X, ⌘C and ⌘V (registered with Keyboard), Edit › Cut, Copy
@@ -13,7 +14,7 @@ import Selection
 /// what a cut took puts the shapes themselves back, on whatever board, under the ids they had
 /// (those the file doesn't use), so what names them (a mention) names them again. Every kind is
 /// copyable unless it opts out (`shape.uncopyable()`). This app's shapes paste, and text another app put
-/// there that a plugin's reader turns into shapes (`registrar.pasteReader`); anything else on the
+/// there that a plugin's reader turns into shapes (`registrar.pasteReader`, PasteReaders.swift); anything else on the
 /// pasteboard (an image, text no reader reads) is left alone. ⇧⌘V (Edit › Paste at Pointer) pastes
 /// centered on the pointer while it's over the canvas. Edit › Copy as Image (⇧⌘C) is the window's:
 /// this plugin says what it draws, the file a copy of the selection (or the board) would be
@@ -32,6 +33,9 @@ extension CanvasCommand {
     public static let paste: CanvasCommand = "paste"
     /// Edit › Paste at Pointer (⇧⌘V): Paste, landing centered on the pointer while it's over the canvas.
     public static let pasteAtPointer: CanvasCommand = "pasteAtPointer"
+    /// Edit › Paste as Note (⌥⇧⌘V): what a plain reader reads of the pasteboard (any text, or a text file's), put down beside
+    /// the selection.
+    public static let pasteAsNote: CanvasCommand = "pasteAsNote"
     /// Edit › Duplicate (⌘D): the shapes copied beside themselves, without the pasteboard.
     public static let duplicate: CanvasCommand = "duplicate"
 }
@@ -60,39 +64,6 @@ extension ShapeRegistrar {
     /// Copyable only while `isCopyable` says so (a stamp that's sealed, say).
     public mutating func copyable(when isCopyable: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool) {
         contribute({ $0.typed(as: Definition.Props.self).map(isCopyable) ?? false }, to: ShapeCopyability.self)
-    }
-}
-
-// MARK: Reading what another app put there
-
-/// What turns text another app put on the pasteboard into shapes ⌘V puts down (`registrar.pasteReader`):
-/// asked in plugin order, only when the pasteboard holds none of this app's shapes, and the first that reads
-/// the text is the paste. A kit switches them: a reader whose plugin's kit is off in the file is never asked.
-public enum PasteReaders {}
-
-extension PasteReaders: ExtensionPoint, KitSwitched {
-    public typealias Contribution = PasteReader
-    public static var owner: PluginID { .clipboard }
-    public static func summary(of reader: PasteReader, for _: ShapeTarget) -> String { "paste reader \(reader.name)" }
-}
-
-/// A reader of text on the pasteboard (`registrar.pasteReader`).
-public struct PasteReader {
-    /// What it reads, for the registry's report ("emoji").
-    public let name: String
-    let read: @MainActor (String, CanvasEditor) -> CanvasFile?
-}
-
-extension PluginRegistrar {
-    /// Reads text another app put on the pasteboard into shapes: `read` is handed the text and the editor, and
-    /// gives back what to put down as a file (its root's shapes, back to front, with the boards they own and
-    /// what containers among them hold), anywhere, or nil for text it doesn't read. ⌘V puts its shapes down
-    /// as it puts down this app's own, as new shapes, never copies: centered in the view (on the pointer for
-    /// Paste at Pointer, on the click for a context menu's Paste), settled where they land, selected, in one
-    /// Paste step. Asked as the pasteboard changes, so keep it cheap; only when the pasteboard holds none of this
-    /// app's shapes, after the readers before it in plugin order, and never while the plugin's kit is off.
-    public mutating func pasteReader(_ name: String, _ read: @escaping @MainActor (_ text: String, _ editor: CanvasEditor) -> CanvasFile?) {
-        contribute(PasteReader(name: name, read: read), to: PasteReaders.self)
     }
 }
 
@@ -127,6 +98,10 @@ extension AnyShapeRecord {
 public enum ClipboardStyle {
     /// How far a duplicate lands from what it copies, down and right, in view points.
     public static let duplicateOffset: CGFloat = 16
+    /// What a paste that changed nothing says (a schema pasted again as it is): no step.
+    static let nothingChanged = "Nothing changed"
+    /// What a paste says that changed shapes it found none of (only what is bound to them).
+    static let updated = "Updated"
 }
 
 // MARK: The context menu
@@ -152,15 +127,25 @@ public struct ClipboardPlugin: OutwardPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         let pasteboard = pasteboard
         registrar.service { ClipboardState(editor: $0, pasteboard: pasteboard) }
+        // The editor's pasteboard: what another plugin writes and reads goes there too (rows, from the line editor while a row is
+        // typed in, as from the canvas).
+        registrar.pasteboard { _ in pasteboard }
         // ⌘X, ⌘C and ⌘V on the canvas, Edit › Cut, Copy and Paste (AppKit's own items, which text
         // answers first; the board's window runs these where nothing else took them) and the context
         // menu's items do one thing, on the shapes they're for: some can be copied. Paste lands where
         // ⌘V's rule says (where it was copied from, if that's in view), or, from a context menu,
         // centered on its click.
+        // With rows selected inside the shape (Selection's items), a key or the menu bar cuts and copies them, not the shape.
         registrar.command(.cut, title: "Cut", answering: .cut, shortcut: KeyChord("x", .command), runs: .betweenPresses,
-                          isEnabled: { $0.editor.canCopy($0.shapes) }) { $0.editor.cut($0.shapes) }
+                          isEnabled: { $0.editor.canCopy($0.shapes) }) { subject in
+            if subject.editor.cutSelectedRows(for: subject) { return }
+            subject.editor.cut(subject.shapes)
+        }
         registrar.command(.copy, title: "Copy", answering: .copy, shortcut: KeyChord("c", .command),
-                          isEnabled: { $0.editor.canCopy($0.shapes) }) { _ = $0.editor.copy($0.shapes) }
+                          isEnabled: { $0.editor.canCopy($0.shapes) }) { subject in
+            if subject.editor.copySelectedRows(for: subject) { return }
+            _ = subject.editor.copy(subject.shapes)
+        }
         registrar.command(.paste, title: "Paste", answering: .paste, shortcut: KeyChord("v", .command), runs: .betweenPresses,
                           isEnabled: { $0.editor.canPaste }) { subject in
             if let point = subject.point { subject.editor.paste(centeredAt: point) } else { subject.editor.paste() }
@@ -174,7 +159,12 @@ public struct ClipboardPlugin: OutwardPlugin {
         // ⌘D and Edit › Duplicate copy the shapes beside themselves without the pasteboard, on a board
         // that takes shapes; ⌥ held on a drag of the selection (Selection's `copiesOnDrag`) carries copies
         // in place of the shapes.
-        registrar.command(.duplicate, title: "Duplicate", in: EditMenu.CutCopyPaste.self, placed: .after(.pasteAtPointer), shortcut: KeyChord("d", .command), runs: .whenIdle,
+        // ⌥⇧⌘V asks only the plain readers (StickyNotes' makes a note of any text), beside the selection; text being edited
+        // keeps the key.
+        registrar.command(.pasteAsNote, title: "Paste as Note", in: EditMenu.CutCopyPaste.self, placed: .after(.pasteAtPointer),
+                          shortcut: KeyChord("v", [.command, .option, .shift]), runs: .whenIdle,
+                          isEnabled: { $0.editor.canPasteAsNote }) { $0.editor.pasteAsNote() }
+        registrar.command(.duplicate, title: "Duplicate", in: EditMenu.CutCopyPaste.self, placed: .after(.pasteAsNote), shortcut: KeyChord("d", .command), runs: .whenIdle,
                           isEnabled: { !$0.editor.isBoardReadOnly && $0.editor.canCopy($0.shapes) }) { $0.editor.duplicateBeside($0.shapes) }
         registrar.copiesOnDrag { editor, ids in editor.duplicate(ids) }
         // In every context menu, on shapes and on empty canvas, while the command can act on the menu's

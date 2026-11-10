@@ -1,0 +1,81 @@
+{
+  "deprecated" : true,
+  "endpoints" : [
+    {
+      "authScope" : "",
+      "body" : {
+        "words" : "NewOrder"
+      },
+      "deprecated" : false,
+      "id" : "0A91A0E0-0000-4000-8000-000000000001",
+      "method" : "POST",
+      "name" : "",
+      "parameters" : [
+
+      ],
+      "path" : "/health",
+      "responses" : [
+
+      ],
+      "summary" : "",
+      "unread" : ""
+    },
+    {
+      "header" : "/orders",
+      "id" : "0A91A0E0-0000-4000-8000-000000000002"
+    },
+    {
+      "authScope" : "orders:write",
+      "body" : {
+        "shape" : "0A91A0E0-0000-4000-8000-0000000000B1",
+        "words" : "NewRefund"
+      },
+      "deprecated" : true,
+      "id" : "0A91A0E0-0000-4000-8000-000000000003",
+      "method" : "POST",
+      "name" : "createRefund",
+      "parameters" : [
+        {
+          "name" : "id",
+          "type" : "uuid"
+        }
+      ],
+      "path" : "/{id}/refunds",
+      "responses" : [
+        {
+          "status" : "201",
+          "type" : {
+            "shape" : "0A91A0E0-0000-4000-8000-0000000000B2",
+            "words" : "Refund"
+          }
+        },
+        {
+          "status" : "404"
+        },
+        {
+          "status" : "409",
+          "type" : {
+            "words" : "Problem"
+          }
+        }
+      ],
+      "summary" : "Refund part or all of a paid order.",
+      "unread" : "idempotent"
+    }
+  ],
+  "frame" : [
+    [
+      0,
+      0
+    ],
+    [
+      420,
+      126
+    ]
+  ],
+  "server" : {
+    "auth" : "bearer",
+    "host" : "api.shop.dev/v1"
+  },
+  "version" : "1.4.0"
+}

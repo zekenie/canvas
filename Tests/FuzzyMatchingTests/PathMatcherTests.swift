@@ -20,6 +20,16 @@ private let skip = PathRanking.skipPenalty, leafWeight = PathRanking.leafWeight
         expectEqual(PathMatcher("alpha alpha").match(path: ["Alpha"]), nil, "one segment can't hold a piece twice over")
     },
 
+    test("splitting dots: a dot before a letter splits a piece, as `orders.cust` is `orders cust`; any other dot stays, and none splits without it") {
+        expectEqual(PathMatcher("orders.cust", splittingDots: true).pieces, ["orders", "cust"])
+        expectEqual(PathMatcher("shop orders.cust", splittingDots: true).pieces, ["shop", "orders", "cust"])
+        expectEqual(PathMatcher("v1.2 orders.", splittingDots: true).pieces, ["v1.2", "orders."], "a digit after it, or nothing")
+        expectEqual(PathMatcher(".cust", splittingDots: true).pieces, [".cust"], "nothing before it")
+        expectEqual(PathMatcher("orders.cust").pieces, ["orders.cust"])
+        let match = try require(PathMatcher("orders.cust", splittingDots: true).match(path: ["orders", "customer_id"]))
+        expectEqual(match.matched, [[0..<6], [0..<4]])
+    },
+
     test("what's above the first piece isn't skipped, only unmentioned") {
         let match = try require(PathMatcher("beta gamma").match(path: ["Root", "Alpha", "Beta", "Gamma"]))
         expectEqual(match.matched, [[], [], [0..<4], [0..<5]])

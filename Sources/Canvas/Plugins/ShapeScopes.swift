@@ -50,6 +50,9 @@ extension ShapeCapability {
     /// The kinds whose shapes can hold names of shapes (`registry.namingKinds`: in their own props,
     /// or in an added property they opt into).
     public static let namingShapes = ShapeCapability("naming shapes") { $0.registry.namingKinds.contains($0.kind) }
+
+    /// The kinds whose shapes have parts (`PartedShape`: a table's columns, an API's endpoints).
+    public static let parts = ShapeCapability("with parts") { $0.registry.partedKinds.contains($0.kind) }
 }
 
 /// A kind as the registry has it, for what decides by kind (a capability's test, a channel's rule):

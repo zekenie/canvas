@@ -107,9 +107,9 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
     /// (`shown`), with the point between its ends, from `SelectionStyle.resizeSideReach` inside it to as far past
     /// the outline drawn `outline` off it, the nearer of two; nil off every side.
     @MainActor
-    static func side(of box: CGRect, at point: CGPoint, outline: CGFloat) -> ResizeHandle? {
+    static func side(of box: CGRect, at point: CGPoint, outline: CGFloat, axes: SizeAxes = .both) -> ResizeHandle? {
         let reach = SelectionStyle.resizeSideReach
-        return shown(on: box).filter { $0.x == 0 || $0.y == 0 }.compactMap { side -> (side: ResizeHandle, off: CGFloat)? in
+        return shown(on: box, axes: axes).filter { $0.x == 0 || $0.y == 0 }.compactMap { side -> (side: ResizeHandle, off: CGFloat)? in
             let edge = side.point(on: box)
             // How far out past the side the point is (inside, below zero), and whether it's between the side's ends.
             let out = side.x != 0 ? (point.x - edge.x) * side.x : (point.y - edge.y) * side.y
@@ -133,14 +133,27 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// The cursor over it for a shape resized along `axes` (`CustomSizing.resizedAxes`): a corner of one whose height is its own
+    /// (its rows') resizes its width alone, so its cursor is a side's, left or right, never the diagonal that says the height
+    /// follows too (review U9-E7).
+    func cursor(axes: SizeAxes) -> CanvasCursor {
+        guard x != 0, y != 0 else { return cursor }
+        if axes == .width { return .resize(x < 0 ? .left : .right) }
+        if axes == .height { return .resize(y < 0 ? .top : .bottom) }
+        return cursor
+    }
+
     /// The handles that show on a box, in view points: none on a box under
     /// `SelectionStyle.resizeHandleRoom` either way, whose corners' handles would leave none of it
     /// to press, and a side's only on a side at least twice that long, clear of the corners'.
+    /// `axes`: the ways a resize gives the shape its size; one whose height is its own (its rows') is resized by its corners
+    /// alone, no handle at a side's middle, where a row's line ends and its mark is drawn (UX walk 3 tables-3).
     @MainActor
-    static func shown(on box: CGRect) -> [ResizeHandle] {
+    static func shown(on box: CGRect, axes: SizeAxes = .both) -> [ResizeHandle] {
         let room = SelectionStyle.resizeHandleRoom
         guard box.width >= room, box.height >= room else { return [] }
         return allCases.filter { handle in
+            if axes != .both, handle.x == 0 || handle.y == 0 { return false }
             if handle.x == 0 { return box.width >= 2 * room }       // the top's and the bottom's
             if handle.y == 0 { return box.height >= 2 * room }      // the left's and the right's
             return true
@@ -235,6 +248,8 @@ final class ResizingSession {
     private let room: CGRect?
     /// What changes the box the pointer gives (`registrar.resizeAdjuster`), asked as the drag began.
     private let adjuster: (any ResizeAdjuster)?
+    /// The ways its kind gives it a size (`CustomSizing.resizedAxes`).
+    private let axes: SizeAxes
     /// The last drag event's pointer, to resize again from when held keys change.
     private var last: Pointer?
 
@@ -249,6 +264,7 @@ final class ResizingSession {
         self.origin = origin
         start = box
         before = record
+        axes = editor.registry.resizedAxes(of: record)
         self.minimum = minimum
         self.room = room
         adjuster = editor.resizeAdjuster(for: ResizeStart(id: shapeID, box: box, minimum: minimum, room: room))
@@ -266,7 +282,9 @@ final class ResizingSession {
     /// the room whatever it says), as the shape takes it.
     private func resize(to pointer: Pointer, in editor: CanvasEditor) {
         last = pointer
-        let keepingProportions = pointer.modifiers.contains(.shift), fromCenter = pointer.modifiers.contains(.option)
+        // ⇧ keeps proportions only of a shape that takes both of its sizes from the drag (one resized by its width alone has no
+        // height to keep).
+        let keepingProportions = pointer.modifiers.contains(.shift) && axes == .both, fromCenter = pointer.modifiers.contains(.option)
         var box = handle.resizing(start, by: pointer.world - origin, keepingProportions: keepingProportions,
                                   fromCenter: fromCenter, minimum: minimum)
         if let room { box = box.intersection(room) }
@@ -282,7 +300,7 @@ final class ResizingSession {
 }
 
 extension ResizingSession: Session {
-    func cursor(in editor: CanvasEditor) -> CanvasCursor? { handle.cursor }
+    func cursor(in editor: CanvasEditor) -> CanvasCursor? { handle.cursor(axes: axes) }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) { resize(to: pointer, in: editor) }
 
@@ -376,11 +394,12 @@ extension CanvasEditor {
 
     /// The side of the only selected shape's box a press at a view point takes, as a drag of that side's handle:
     /// anywhere along a side whose handle shows, from just inside it to just past the outline drawn off it
-    /// (`ResizeHandle.side`). Nil off them, and where the shape has no resize handles (`visibleHandles`).
+    /// (`ResizeHandle.side`). Nil off them, and where the shape has no resize handles (`visibleHandles`): one whose items are
+    /// selected has none showing, so a press along its side is the shape's.
     func resizeSide(atViewPoint point: CGPoint) -> ResizeHandle? {
-        guard let id = selection, id != editingShapeID, id != editingStandIn, let record = document[id], let box = resizeFrame(of: record),
+        guard let id = selection, id != editingShapeID, id != editingStandIn, selectedItems == nil, let record = document[id], let box = resizeFrame(of: record),
               !isReadOnly(id) else { return nil }
-        return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap)
+        return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap, axes: registry.resizedAxes(of: record))
     }
 
     /// The only selected shape's resize handles as parts (`ResizeHandle.parts`): those shown on its frame, as
@@ -388,7 +407,7 @@ extension CanvasEditor {
     func resizeHandleParts(of shape: AnyShapeRecord) -> [ShapePart] {
         guard selection == shape.id, editingShapeID != shape.id, editingStandIn != shape.id, !isReadOnly(shape.id), let box = resizeFrame(of: shape) else { return [] }
         let id = shape.id, radius = SelectionStyle.handleRadius / camera.zoom
-        return ResizeHandle.shown(on: camera.toView(box)).map { handle in
+        return ResizeHandle.shown(on: camera.toView(box), axes: registry.resizedAxes(of: shape)).map { handle in
             let point = handle.point(on: box)
             return ShapePart(id: handle, title: handle.title, role: .handle,
                              rect: CGRect(x: point.x - radius, y: point.y - radius, width: 2 * radius, height: 2 * radius),

@@ -16,17 +16,32 @@ public struct ArrowBody: Sendable {
     public let end: CGPoint
     /// Nil for a straight body.
     public let arc: Arc?
+    /// A level arrow's curve, measured by its length (so a fraction along it is by length, as an arc's is); nil for any other.
+    public let curve: ChainMeasure?
 
     public init(start: CGPoint, end: CGPoint, arc: Arc?) {
         self.start = start
         self.end = end
         self.arc = arc
+        curve = nil
     }
 
-    public var length: CGFloat { arc?.length ?? start.distance(to: end) }
+    /// A level arrow's visible body: its stubs and its curve.
+    public init(curve: CubicChain) {
+        start = curve.start
+        end = curve.end
+        arc = nil
+        self.curve = curve.measured()
+    }
+
+    /// A level curve with no stubs.
+    public init(curve: Cubic) { self.init(curve: CubicChain(curve)) }
+
+    public var length: CGFloat { curve?.length ?? arc?.length ?? start.distance(to: end) }
 
     /// The point `fraction` of the way along it (tldraw's `interpolateAlongEdge`).
     public func point(at fraction: CGFloat) -> CGPoint {
+        if let curve { return curve.point(atFraction: fraction) }
         if let arc { return arc.point(at: fraction) }
         return start + (end - start) * fraction
     }
@@ -34,6 +49,7 @@ public struct ArrowBody: Sendable {
     /// How far along it the point of it nearest to `point` is, as a fraction (tldraw's
     /// `uninterpolateAlongEdge`): 0 at its start, 1 at its end.
     public func fraction(nearest point: CGPoint) -> CGFloat {
+        if let curve { return curve.fraction(nearest: point) }
         if let arc {
             if let t = arc.parameter(of: point) { return t }
             return point.distance(to: arc.point(at: 0)) <= point.distance(to: arc.point(at: 1)) ? 0 : 1
@@ -45,6 +61,10 @@ public struct ArrowBody: Sendable {
 
     /// Where it crosses a closed polygon's edges, as fractions along it.
     func crossings(of polygon: [CGPoint]) -> [CGFloat] {
+        if let curve {
+            let length = curve.length
+            return length > 0 ? curve.chain.intersections(withPolygon: polygon).map { curve.length(at: $0) / length } : []
+        }
         if let arc { return intersections(of: arc, withPolygon: polygon) }
         return intersections(ofSegmentFrom: start, to: end, withPolygon: polygon)
     }
@@ -56,6 +76,7 @@ extension ArrowGeometry {
         switch path {
         case .straight: ArrowBody(start: start, end: end, arc: nil)
         case .curved(let arc, let startT, let endT): ArrowBody(start: start, end: end, arc: arc.trimmed(from: startT, to: endT))
+        case .level(let cubic, let startT, let endT): ArrowBody(curve: levelLine ?? CubicChain(cubic.trimmed(from: startT, to: endT)))
         }
     }
 }
@@ -220,9 +241,13 @@ enum ArrowLabels {
 
     /// The label of a shape as its context lays it out: the names its mentions show now, and the lead Adornments says
     /// the arrow has.
-    static func laid(of shape: ShapeRecord<Arrow>, on geometry: ArrowGeometry, in context: ShapeContext, editing: Bool = false) -> Laid? {
-        laid(of: shape.props, on: geometry, names: context.mentionNames(of: shape.id), editing: editing,
-             lead: context.layoutInput(AdornmentLead.faces, of: shape)?.sizes)
+    /// `position`: where along the body it goes in place of the arrow's own (a fanned arrow's, slid toward its other end).
+    static func laid(of shape: ShapeRecord<Arrow>, on geometry: ArrowGeometry, in context: ShapeContext, editing: Bool = false,
+                     position: CGFloat? = nil) -> Laid? {
+        var arrow = shape.props
+        if let position { arrow.labelPosition = position }
+        return laid(of: arrow, on: geometry, names: context.mentionNames(of: shape.id), editing: editing,
+                    lead: context.layoutInput(AdornmentLead.faces, of: shape)?.sizes)
     }
 
     /// The label as a shape's kept geometry has it: nil for none.

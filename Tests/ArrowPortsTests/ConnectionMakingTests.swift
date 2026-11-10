@@ -8,6 +8,7 @@ import Keyboard
 import Selection
 import TableOfContents
 import TestKit
+import Types
 
 // Arrows made and changed without a drag, through the connector (`registry.connection`), as a
 // command that connects shapes by name makes them: bound at both ends, each at the center or at the
@@ -288,7 +289,7 @@ let sideMiddles: [(side: PortSide, anchor: CGPoint)] = [(.top, CGPoint(x: 0.5, y
         expect(board.registry.arrowMayBind(wired, .end, to: b, in: shapes))
         expect(!board.registry.arrowMayBind(wired, .end, to: c, in: shapes), "the disc doesn't take the wire")
         expect(board.registry.arrowMayBind(plain, .end, to: c, in: shapes))
-        let noRules = try Registry(plugins: PortBoard.plugins().filter { ![PluginID.ports, .arrowPorts, "channels"].contains($0.id) })
+        let noRules = try Registry(plugins: PortBoard.plugins().filter { ![PluginID.ports, .arrowPorts, .typeRelease, "channels"].contains($0.id) })
         expect(noRules.arrowMayBind(wired, .end, to: c, in: shapes))
     },
 ])

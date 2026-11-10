@@ -39,6 +39,8 @@ public struct SelectionSlashCommand {
     let name: String
     let argument: String?
     let waiting: String?
+    /// The undo step one that runs at once makes, where its name ("Table") isn't what a person would call it ("Add Table").
+    let step: String?
     let isOffered: @MainActor (SlashTarget, CanvasEditor) -> Bool
     let accepts: @MainActor (SlashArguments) -> Bool
     let action: Action
@@ -56,14 +58,15 @@ public struct SelectionSlashCommand {
                 when isOffered: @escaping @MainActor (SlashTarget, CanvasEditor) -> Bool = { _, _ in true },
                 accepts: (@MainActor (SlashArguments) -> Bool)? = nil,
                 answer: @escaping @MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Task<SlashAnswer, Never>) {
-        self.init(name, argument: argument, waiting: waiting, when: isOffered, accepts: accepts, action: .answer(answer))
+        self.init(name, argument: argument, waiting: waiting, step: nil, when: isOffered, accepts: accepts, action: .answer(answer))
     }
 
-    private init(_ name: String, argument: String?, waiting: String?, when isOffered: @escaping @MainActor (SlashTarget, CanvasEditor) -> Bool,
+    private init(_ name: String, argument: String?, waiting: String?, step: String?, when isOffered: @escaping @MainActor (SlashTarget, CanvasEditor) -> Bool,
                  accepts: (@MainActor (SlashArguments) -> Bool)?, action: Action) {
         self.name = name
         self.argument = argument
         self.waiting = waiting
+        self.step = step
         self.isOffered = isOffered
         let takesArgument = argument != nil
         self.accepts = accepts ?? { takesArgument ? !$0.isEmpty : $0.isEmpty }
@@ -71,14 +74,15 @@ public struct SelectionSlashCommand {
     }
 
     /// A command that runs at once, with the target, what was typed and the editor, as a shape's command
-    /// runs: the bar closes first, and what it commits is one undo step named for it. `argument` and
+    /// runs: the bar closes first, and what it commits is one undo step named for it, or `step` where the
+    /// command's name isn't what a person calls what it does (`/table`'s "Add Table"). `argument` and
     /// `accepts` as for one that answers later. Static, so its closure never collides with the other form's
     /// in a trailing closure.
-    public static func atOnce(_ name: String, argument: String? = nil,
+    public static func atOnce(_ name: String, argument: String? = nil, step: String? = nil,
                               when isOffered: @escaping @MainActor (SlashTarget, CanvasEditor) -> Bool = { _, _ in true },
                               accepts: (@MainActor (SlashArguments) -> Bool)? = nil,
                               run: @escaping @MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Void) -> SelectionSlashCommand {
-        SelectionSlashCommand(name, argument: argument, waiting: nil, when: isOffered, accepts: accepts, action: .run(run))
+        SelectionSlashCommand(name, argument: argument, waiting: nil, step: step, when: isOffered, accepts: accepts, action: .run(run))
     }
 }
 

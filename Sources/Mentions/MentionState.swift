@@ -35,6 +35,12 @@ public final class MentionState {
 
     /// How each shape that's mentioned (anywhere in the file) or observed shows now.
     @ObservationIgnored var resolutions: [ShapeID: MentionResolution] = [:]
+    /// How each row that's mentioned or observed shows now, by its shape: resolved again with its shape, so a commit costs the
+    /// rows of the shapes it changed. A row's shape is always among `resolutions` too (a mention of a row is an edge into it).
+    @ObservationIgnored var rowResolutions: [ShapeID: [PartID: MentionResolution]] = [:]
+    /// The rows text views observe (`observe(_:rows:_:)`), each as many times as it's observed: kept resolved though nothing
+    /// mentions them yet (a pill just picked, before its text is written).
+    @ObservationIgnored private var observedRows: [PartAddress: Int] = [:]
     /// The kinds that lay out by the names their mentions show (`registrar.mentionLayout`), and the
     /// shapes of them given names other than the ones their text holds (`MentionLayout.names`).
     @ObservationIgnored lazy var layoutKinds: Set<ShapeKind> = Set(registry.kinds.filter {
@@ -52,6 +58,9 @@ public final class MentionState {
     /// match; the shapes it gives no name (the "Untitled …" placeholder) are in the catalog's side
     /// table, read only by `candidates(…listingUnnamed: true)`.
     @ObservationIgnored private var catalog = MentionCatalog()
+    /// The rows of the catalog's named shapes (`PartedShape`'s parts), read with their shapes' entries: what a list that asks for
+    /// rows ranks besides the shapes (`candidates(…listingParts:)`).
+    @ObservationIgnored private var partCatalog = MentionPartCatalog()
     /// The containment tree's names, for the path a query of several words is matched along and the place a
     /// list says for a shape (Boards' `ShapePaths`): read as a query or a list goes through a container,
     /// let go of by the commit that changes it.
@@ -97,9 +106,15 @@ public final class MentionState {
     /// The editor's slash commands, if it has them: what a mention text view hosts for its shape.
     var slashCommandState: SlashCommandState? { editor.service(SlashCommandState.self) }
 
-    /// Resolves every shape that's mentioned anywhere in the file.
+    /// Resolves every shape and row that's mentioned anywhere in the file.
     private func trackMentioned() {
-        for edge in topology?.edges(ofType: mentionEdges) ?? [] { track(edge.target) }
+        var rows: [ShapeID: Set<PartID>] = [:]
+        for edge in topology?.edges(ofType: mentionEdges) ?? [] {
+            track(edge.target)
+            if let part = edge.targetPart { rows[edge.target, default: []].insert(part) }
+        }
+        // A shape's rows read once for all the rows of it that are mentioned, not once for each.
+        for (shape, parts) in rows { trackRows(parts, of: shape) }
     }
 
     /// Lays out every shape that mentions anything, as the names show now: what a file put in place
@@ -116,6 +131,12 @@ public final class MentionState {
     /// order (a board's in its order, each board where its owner is, depth first). `target` needn't
     /// be anywhere.
     public func mentioners(of target: ShapeID) -> [ShapeID] {
+        ordered(mentionerSet(of: target), shown: editor.document, in: editor.file)
+    }
+
+    /// The shapes that mention a row (`target.part`), each once, in `mentioners(of:)`'s order; for a shape as a whole (part
+    /// nil), those that mention it or any of its rows, as `mentioners(of:)` says.
+    public func mentioners(of target: PartAddress) -> [ShapeID] {
         ordered(mentionerSet(of: target), shown: editor.document, in: editor.file)
     }
 
@@ -146,10 +167,23 @@ public final class MentionState {
         return place.reversed()
     }
 
-    /// The shapes whose mention text mentions `target`, in no order.
+    /// The shapes whose mention text mentions `target` (or one of its rows), in no order.
     private func mentionerSet(of target: ShapeID) -> Set<ShapeID> {
         guard let topology else { return [] }
         return Set(topology.edges(of: target, .incoming, types: mentionEdges).lazy.map(\.carrier))
+    }
+
+    /// The shapes whose mention text mentions the row (its shape, or any of its rows, for a shape as a whole), in no order.
+    private func mentionerSet(of target: PartAddress) -> Set<ShapeID> {
+        guard let part = target.part else { return mentionerSet(of: target.shape) }
+        guard let topology else { return [] }
+        return Set(topology.edges(of: target.shape, .incoming, types: mentionEdges).lazy.filter { $0.targetPart == part }.map(\.carrier))
+    }
+
+    /// The rows of `shape` that some text mentions.
+    private func mentionedRows(of shape: ShapeID) -> Set<PartID> {
+        guard let topology else { return [] }
+        return Set(topology.edges(of: shape, .incoming, types: mentionEdges).compactMap(\.targetPart))
     }
 
     /// Whether any shape's mention text mentions `target`, anywhere in the file, its own included:
@@ -175,12 +209,19 @@ public final class MentionState {
         topology?.hasEdges(of: target, .incoming, types: mentionEdges) { $0.carrier != target } ?? false
     }
 
-    /// The shapes whose mention text mentions any of `targets`, but the targets themselves (their
-    /// mentions of themselves), each once, in no order.
-    private func mentionersOfAny(_ targets: [ShapeID]) -> Set<ShapeID> {
+    /// Whether another shape mentions the row (`isMentioned(_:)` for a shape as a whole): the row's own shape's text doesn't count.
+    public func isMentioned(_ target: PartAddress) -> Bool {
+        guard let part = target.part else { return isMentioned(target.shape) }
+        return topology?.hasEdges(of: target.shape, .incoming, types: mentionEdges) { $0.carrier != target.shape && $0.targetPart == part } ?? false
+    }
+
+    /// The shapes whose mention text mentions any of `targets` (a row's, only that row; a shape's, it or its rows), but the
+    /// targets' own shapes (their mentions of themselves), each once, in no order.
+    private func mentionersOfAny(_ targets: [PartAddress]) -> Set<ShapeID> {
         var found: Set<ShapeID> = []
         for target in targets {
-            for edge in topology?.edges(of: target, .incoming, types: mentionEdges) ?? [] where edge.carrier != target {
+            for edge in topology?.edges(of: target.shape, .incoming, types: mentionEdges) ?? []
+            where edge.carrier != target.shape && (target.part == nil || edge.targetPart == target.part) {
                 found.insert(edge.carrier)
             }
         }
@@ -194,10 +235,15 @@ public final class MentionState {
     /// in text being edited, going ends the editing that menu's view is part of. Nothing, if nothing
     /// mentions them.
     public func showWhatMentions(_ targets: [ShapeID]) {
+        showWhatMentions(targets.map { PartAddress($0) })
+    }
+
+    /// `showWhatMentions(_:)` of rows, or shapes (part nil): what mentions a row is what mentions that row.
+    public func showWhatMentions(_ targets: [PartAddress]) {
         _ = editor.scheduler.schedule(after: .zero) { [weak self] in self?.goToMentioners(of: targets) }
     }
 
-    private func goToMentioners(of targets: [ShapeID]) {
+    private func goToMentioners(of targets: [PartAddress]) {
         editor.endEditing()                                     // what the text saves as it closes, indexed first
         let mentioners = ordered(mentionersOfAny(targets), shown: editor.document, in: editor.file)
         guard !mentioners.isEmpty else { return }
@@ -210,6 +256,12 @@ public final class MentionState {
     /// light). Nil for a shape that isn't in the file, or whose text doesn't mention it (a pointer,
     /// which is no text). It reads the mentioner's record without observing the file.
     public func quote(of mentioner: ShapeID, around target: ShapeID) -> String? {
+        quote(of: mentioner, around: PartAddress(target))
+    }
+
+    /// The quote around a mentioner's first mention of a row (`target.part`); of a shape as a whole, its first mention of the
+    /// shape or one of its rows.
+    public func quote(of mentioner: ShapeID, around target: PartAddress) -> String? {
         editor.withoutObservingDocument {
             (editor.document[mentioner] ?? editor.file.record(mentioner)).flatMap { quote(of: $0, around: target) }
         }
@@ -217,7 +269,7 @@ public final class MentionState {
 
     /// The quote around a mentioner's first mention of `target`: in the first of its texts that
     /// mentions it, wherever the shape keeps it.
-    private func quote(of record: AnyShapeRecord, around target: ShapeID) -> String? {
+    private func quote(of record: AnyShapeRecord, around target: PartAddress) -> String? {
         guard !record.isOpaque else { return nil }
         var quote: String?
         record.forEachNamingValue(in: registry) { _, value in
@@ -227,9 +279,7 @@ public final class MentionState {
                 var runs: [MentionRun] = []
                 text.forEachMentionRun { runs.append($0) }
                 // Every shape the file mentions is tracked, so its name is kept.
-                quote = MentionQuote.quote(runs, around: target, length: MentionStyle.quoteLength) {
-                    (resolutions[$0] ?? resolve($0)).appearance?.label
-                }
+                quote = MentionQuote.quote(runs, around: target, length: MentionStyle.quoteLength) { kept(of: $0).appearance?.label }
             }
         }
         return quote
@@ -243,16 +293,47 @@ public final class MentionState {
         return resolve(elsewhere: target, in: editor.file)
     }
 
+    /// What a mention of a row shows now: its shape's row, by its live full name (an endpoint's method and full path; a column
+    /// with its table's name, "orders.customer_id"), wherever the shape is; missing when the shape is there and the row isn't;
+    /// as its shape's otherwise. A shape as a whole (part nil): `resolve(_:)`.
+    public func resolve(_ target: PartAddress) -> MentionResolution {
+        guard let part = target.part else { return resolve(target.shape) }
+        let record = editor.document[target.shape] ?? (editor.file.board(containing: target.shape) != nil ? editor.shape(inFile: target.shape) : nil)
+        guard let record else { return editor.file.board(containing: target.shape) == nil ? .missing : .unavailable }
+        return MentionResolution.row(part, of: record, shape: appearance(of: record), in: registry)
+    }
+
+    /// What mentions of these rows of `shape` show now: the shape looked up, and its rows read, once for them all.
+    private func resolveRows(_ parts: [PartID], of shape: ShapeID) -> [PartID: MentionResolution] {
+        let record = editor.document[shape] ?? (editor.file.board(containing: shape) != nil ? editor.shape(inFile: shape) : nil)
+        guard let record else {
+            let gone: MentionResolution = editor.file.board(containing: shape) == nil ? .missing : .unavailable
+            return Dictionary(uniqueKeysWithValues: parts.map { ($0, gone) })
+        }
+        guard let appearance = appearance(of: record) else { return Dictionary(uniqueKeysWithValues: parts.map { ($0, .unavailable) }) }
+        var names: [PartID: PartName] = [:]
+        for part in registry.parts(of: record) ?? [] where names[part.id] == nil { names[part.id] = part }
+        return Dictionary(uniqueKeysWithValues: parts.map { part in
+            (part, names[part].map { .live(MentionAppearance.row($0, of: appearance)) } ?? .missing)
+        })
+    }
+
+    /// What a mention of `target` shows, as kept where it's tracked (every shape and row the file mentions), else resolved now.
+    func kept(of target: PartAddress) -> MentionResolution {
+        if let part = target.part { return rowResolutions[target.shape]?[part] ?? resolve(target) }
+        return resolutions[target.shape] ?? resolve(target.shape)
+    }
+
     /// What a mention of a shape that isn't on the board shown shows, in the file as it is.
     private func resolve(elsewhere target: ShapeID, in file: CanvasFile) -> MentionResolution {
         guard file.board(containing: target) != nil else { return .missing }
         return editor.shape(inFile: target).map(resolve) ?? .unavailable
     }
 
-    /// What a mention of a shape shows, found (nil: missing).
+    /// What a mention of a shape shows, found (nil: missing): a shape that is all its one row as that row (`MentionResolution.whole`).
     private func resolve(_ record: AnyShapeRecord?) -> MentionResolution {
         guard let record else { return .missing }
-        return appearance(of: record).map { .live($0) } ?? .unavailable
+        return MentionResolution.whole(record, shape: appearance(of: record), in: registry)
     }
 
     /// Whether `target` is on the board shown: what hovering it can outline.
@@ -270,7 +351,7 @@ public final class MentionState {
     /// they share what the state keeps, which the next change to it (a rename, a shape mentioned
     /// anew) copies once while they're held. They're as of the last commit the state heard: every
     /// commit, but to a service hearing one.
-    public var labels: MentionLabels { MentionLabels(resolutions) }
+    public var labels: MentionLabels { MentionLabels(resolutions, rows: rowResolutions) }
 
     /// A target's revision: +1 each time what a mention of it shows changes. Reading it observes
     /// only that target, so a SwiftUI view of a pill redraws when its own target changes.
@@ -283,15 +364,22 @@ public final class MentionState {
     private subscript(revision target: ShapeID) -> Int { revisions[target] ?? 0 }
 
     /// Calls `changed` with those of `targets` whose resolution a commit changed, once per commit,
-    /// as it hears it (an AppKit view's pills: it updates their images, and transacts nothing).
-    /// Until the observation is cancelled, or let go of.
-    public func observe(_ targets: Set<ShapeID>, _ changed: @escaping @MainActor (Set<ShapeID>) -> Void) -> MentionObservation {
+    /// as it hears it (an AppKit view's pills: it updates their images, and transacts nothing): a
+    /// shape is changed when it or one of its rows `rows` names (a row's pill: its shape is among
+    /// `targets`) shows otherwise. Until the observation is cancelled, or let go of.
+    public func observe(_ targets: Set<ShapeID>, rows: Set<PartAddress> = [], _ changed: @escaping @MainActor (Set<ShapeID>) -> Void) -> MentionObservation {
         let key = nextObservation
         nextObservation += 1
-        observations[key] = Observer(targets: targets, changed: changed)
+        let rows = rows.filter { $0.part != nil }
+        let targets = targets.union(rows.map(\.shape))
+        observations[key] = Observer(targets: targets, rows: rows, changed: changed)
         for target in targets {
             observersByTarget[target, default: []].insert(key)
             track(target)
+        }
+        for row in rows {
+            observedRows[row, default: 0] += 1
+            trackRow(row)
         }
         return MentionObservation(state: self, key: key)
     }
@@ -299,11 +387,16 @@ public final class MentionState {
     /// Ends an observation: its closure isn't called again.
     fileprivate func cancel(_ key: Int) {
         guard let observer = observations.removeValue(forKey: key) else { return }
+        for row in observer.rows {
+            observedRows[row, default: 1] -= 1
+            if observedRows[row] == 0 { observedRows[row] = nil }
+        }
         for target in observer.targets {
             observersByTarget[target]?.remove(key)
             if observersByTarget[target]?.isEmpty == true { observersByTarget[target] = nil }
             untrackIfUnused(target)
         }
+        for row in observer.rows { untrackRowIfUnused(row) }
     }
 
     /// The mentioners whose rows a commit may change without changing them: those of the targets
@@ -358,6 +451,12 @@ public final class MentionState {
     /// ends editing, goes to it or into it; ⌘[ comes back): a click inside the text being edited is
     /// still being tracked by the view that going ends.
     public func follow(_ target: ShapeID) {
+        follow(PartAddress(target))
+    }
+
+    /// Follows a mention of a row (`target.part`): goes to its shape and selects the row there, as an item of its shape; a shape
+    /// as a whole, as `follow(_:)` does.
+    public func follow(_ target: PartAddress) {
         _ = editor.scheduler.schedule(after: .zero) { [weak editor] in editor?.followMention(of: target) }
     }
 
@@ -389,9 +488,11 @@ public final class MentionState {
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?,
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             listingUnnamed: Bool = false,
-                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
+                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil,
+                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil,
+                                            ownRows: OwnRows = .both) -> MentionCandidates {
         candidates(matching: query, in: scope, for: owner.map { [$0] } ?? [], kinds: kinds, among: among, listingUnnamed: listingUnnamed,
-                   admitting: rule)
+                   admitting: rule, listingParts: parts, ownRows: ownRows)
     }
 
     /// What the `@` picker lists for `query` in text of `scope`, for `owners`: the text's shape, which
@@ -443,10 +544,21 @@ public final class MentionState {
     /// the notes that fit a relationship row asks, since a note with nothing in it fits and is
     /// pickable; `@`, `/move-to` and the reference list do not, and nothing they cost moves. A shape
     /// handed in `among` is of the catalog, or an unnamed one.
+    ///
+    /// `listingParts`, if given, lists the rows of the shapes it would list too (`PartedShape`'s parts, a table's columns), those
+    /// the rule admits, as candidates of their own (`MentionCandidate.part`), for a typed query only: a row that stands alone (an
+    /// endpoint) by its name, in the name's band, and every row by its path, its shape's containers and the shape's own name
+    /// before its name, in the path's band (`orders cust`). The query's words split at a dot followed by a letter too
+    /// (`orders.cust`), for shapes as for rows. A row that doesn't stand alone is never matched by its name alone: a column is
+    /// listed under its table's name, so `id` doesn't list every table's.
+    ///
+    /// `ownRows` says what lists a shape that is all its one row is (an endpoint taken out of its API: `PartName.isItsShape`).
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owners: [ShapeID],
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             listingUnnamed: Bool = false,
-                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
+                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil,
+                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil,
+                                            ownRows: OwnRows = .both) -> MentionCandidates {
         refreshStale()
         let document = editor.document, file = editor.file, registry = registry
         let admitsAll = S.self == AnyMentionable.self
@@ -500,9 +612,21 @@ public final class MentionState {
         }
 
         let q = FuzzyMatcher.Query(query)
+        /// The slot of the row a shape that is all its one row is listed as (`ownRows` `.row`, where `parts` takes the row); nil for
+        /// a shape listed as itself.
+        func ownRow(of id: ShapeID) -> Int? {
+            guard ownRows == .row, let parts, let own = partCatalog.rows(of: id).first(where: { $0.part.isItsShape }),
+                  parts(PartAddress(id, part: own.part.id)) else { return nil }
+            return partCatalog.slot(of: id, part: own.part.id)
+        }
         guard !q.isEmpty else {
+            // Listed as each is listed for a query: a shape that is all its one row as that row, where the list takes it so.
+            let none = PathMatcher(query, splittingDots: true)
+            func listed(_ id: ShapeID) -> MentionCandidate {
+                ownRow(of: id).map { partCandidate($0, band: .name, q, none) } ?? candidate(id, matched: [])
+            }
             let recentShown = Array(recent.lazy.filter { (self.catalog.contains($0) || (listingUnnamed && self.catalog.unnamed[$0] != nil)) && listable($0) }
-                .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
+                .prefix(MentionRanking.recentShown)).map(listed)
             var taken = Set(recentShown.map(\.id))
             taken.formUnion(owners)
             // A command's kinds are few shapes, each somewhere it can go: every one, as many as a query lists.
@@ -523,7 +647,7 @@ public final class MentionState {
                 nearby += unnamedInOrder(unnamedIds, excluding: taken.union(nearby), admits: listable, distance: distance,
                                          limit: room - nearby.count)
             }
-            return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
+            return MentionCandidates(recent: recentShown, nearby: nearby.map(listed), matches: [])
         }
 
         // A shape named by its own text (a note's first line) holds the `@query` being typed in its
@@ -545,7 +669,7 @@ public final class MentionState {
         var tierFound = 0
         // Words before the last may name the containers a shape is inside (`byPath`); a query of one word
         // is its name's alone, as ever.
-        let matcher = PathMatcher(query)
+        let matcher = PathMatcher(query, splittingDots: parts != nil)
         let byPath = matcher.pieceCount > 1
         /// A member's slot in the catalog, member for member (its entry may have gone since: nil).
         let memberSlots = members?.map { catalog.slot(of: $0) }
@@ -650,7 +774,7 @@ public final class MentionState {
             }
             ranked.sort { isWorse($1, $0) }
         }
-        var matches = ranked.prefix(MentionRanking.maxMatches).map { found in
+        func shapeCandidate(_ found: Found) -> MentionCandidate {
             let id = entries[found.slot].id
             let label = catalog.appearances[found.slot].label
             if found.band == .path {
@@ -660,6 +784,39 @@ public final class MentionState {
                 return candidate(id, matched: match?.matched.last ?? [], containersMatched: match.map { Array($0.matched.dropLast()) } ?? [])
             }
             return candidate(id, matched: FuzzyMatcher.match(q, in: FuzzyMatcher.Label(label))?.matched ?? [])
+        }
+        var matches: [MentionCandidate]
+        if let parts {
+            // The rows found, in among the shapes by band and score: a band's shapes and rows ranked together.
+            let rows = partMatches(q, matcher, listable: listable, admitting: parts, leavingOut: leavesOut ? leftOut : [])
+            var merged: [(band: MatchBand, score: Int, length: Int, make: () -> MentionCandidate)] = []
+            var listed: Set<ShapeID> = []
+            for found in ranked.prefix(MentionRanking.maxMatches) {
+                let id = entries[found.slot].id
+                // A shape that is all its row is (an endpoint taken out of an API) is listed once, with `ownRows`: as the row where
+                // the list takes it at its row (found by the shape's name, the row is what is listed, the name in its place).
+                if let slot = ownRow(of: id) {
+                    merged.append((found.band, found.score, entries[found.slot].labelLength, { self.partCandidate(slot, band: found.band == .path ? .path : .name, q, matcher) }))
+                } else {
+                    merged.append((found.band, found.score, entries[found.slot].labelLength, { shapeCandidate(found) }))
+                }
+                listed.insert(id)
+            }
+            // The row of such a shape found with it is the one listed in the shape's place, or the shape is (`.both` lists both).
+            for row in rows where !(ownRows != .both && listed.contains(partCatalog.entries[row.slot].shape) && partCatalog.isItsOwnRow(row.slot)) {
+                merged.append((row.band, row.score, partCatalog.entries[row.slot].labelLength, { self.partCandidate(row.slot, band: row.band, q, matcher) }))
+            }
+            // Stable: within a band and score, the shorter name, then shapes before rows as each list had them.
+            let order = merged.indices.sorted { a, b in
+                let x = merged[a], y = merged[b]
+                if x.band != y.band { return x.band < y.band }
+                if x.score != y.score { return x.score > y.score }
+                if x.length != y.length { return x.length < y.length }
+                return a < b
+            }
+            matches = order.prefix(MentionRanking.maxMatches).map { merged[$0].make() }
+        } else {
+            matches = ranked.prefix(MentionRanking.maxMatches).map(shapeCandidate)
         }
         // The unnamed, by their placeholder label alone (one match a label), after the named. The typo's tier is
         // tried as the named are: only when the other tiers found fewer than `typoPassBelow` shapes, named and
@@ -681,6 +838,115 @@ public final class MentionState {
             }
         }
         return MentionCandidates(recent: [], nearby: [], matches: matches, forgave: forgave, words: matcher.pieceCount)
+    }
+
+    /// The rows a typed query finds (`candidates(…listingParts:)`), best first, as many as a list shows: a row that stands alone by
+    /// its name, in the name's band; every row by its path (its shape's containers, then the shape's own name, then its name; at
+    /// least one word placed before its name), in the path's band. Only the rows of shapes the list would list (`listable`), but
+    /// those left out, and that `rule` admits. Two linear passes over the rows' keys, and a path row a shape.
+    private func partMatches(_ q: FuzzyMatcher.Query, _ matcher: PathMatcher, listable: (ShapeID) -> Bool, admitting rule: (PartAddress) -> Bool,
+                             leavingOut leftOut: Set<ShapeID>) -> [(slot: Int, score: Int, band: MatchBand)] {
+        let rows = partCatalog.entries
+        guard !rows.isEmpty else { return [] }
+        var shapeListed: [ShapeID: Bool] = [:]
+        func admits(_ slot: Int) -> Bool {
+            let entry = rows[slot]
+            if leftOut.contains(entry.shape) { return false }
+            let listed: Bool
+            if let known = shapeListed[entry.shape] {
+                listed = known
+            } else {
+                listed = catalog.contains(entry.shape) && listable(entry.shape)
+                shapeListed[entry.shape] = listed
+            }
+            return listed && rule(PartAddress(entry.shape, part: entry.part.id))
+        }
+        var found: [Int: (score: Int, band: MatchBand)] = [:]
+        // Those that stand alone, by their names.
+        if rows.contains(where: \.part.standsAlone) {
+            q.withView { view in
+                partCatalog.keys.withUnsafeBufferPointer { keys in
+                    _ = FuzzyMatcher.ranking(view, count: rows.count, wantSpans: false, label: { slot in
+                        let entry = rows[slot]
+                        guard entry.part.standsAlone, admits(slot) else { return nil }
+                        return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
+                    }) { slot, score, _ in found[slot] = (score, .name) }
+                }
+            }
+        }
+        // Every row by its path: the last word in its name, the words before along its shape's path, through the shape's own name.
+        if matcher.pieceCount > 1 {
+            var named: [Int] = []
+            FuzzyMatcher.Query(matcher.pieces[matcher.pieceCount - 1]).withView { view in
+                partCatalog.keys.withUnsafeBufferPointer { keys in
+                    _ = FuzzyMatcher.ranking(view, count: rows.count, wantSpans: false, label: { slot in
+                        guard admits(slot) else { return nil }
+                        let entry = rows[slot]
+                        return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
+                    }) { slot, _, _ in named.append(slot) }
+                }
+            }
+            var chains: [ShapeID: PathMatcher.Row] = [:]
+            let root = matcher.rootRow
+            var last: (shape: ShapeID, row: PathMatcher.Row, isUsable: Bool)?
+            for slot in named {
+                let entry = rows[slot]
+                if last?.shape != entry.shape {
+                    let row = paths.row(after: entry.shape, matcher, root: root, memo: &chains)
+                    last = (entry.shape, row, row.best.dropFirst().contains { $0 != PathMatcher.Row.unreachable })
+                }
+                guard let known = last, known.isUsable else { continue }
+                let score = partCatalog.keys.withUnsafeBufferPointer { keys in
+                    matcher.leafScore(after: known.row, keys: UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count]), placingAtLeast: 1)
+                }
+                guard let score, found[slot] == nil else { continue }
+                found[slot] = (score, .path)
+            }
+        }
+        let ranked = found.map { (slot: $0.key, score: $0.value.score, band: $0.value.band) }.sorted { a, b in
+            if a.band != b.band { return a.band < b.band }
+            if a.score != b.score { return a.score > b.score }
+            if rows[a.slot].labelLength != rows[b.slot].labelLength { return rows[a.slot].labelLength < rows[b.slot].labelLength }
+            return a.slot < b.slot
+        }
+        return Array(ranked.prefix(MentionRanking.maxMatches))
+    }
+
+    /// A row as a list shows it (`MentionCandidate.part`): its name, its lead's symbol (else its shape's), its kind word, and where it is,
+    /// its shape's place and then the shape's own name; the characters a path's words took in each.
+    private func partCandidate(_ slot: Int, band: MatchBand, _ q: FuzzyMatcher.Query, _ matcher: PathMatcher) -> MentionCandidate {
+        let entry = partCatalog.entries[slot]
+        let shape = catalog.anyAppearance(of: entry.shape)
+        let symbol: String = if case .symbol(let name) = entry.part.lead { name } else { shape?.systemImage ?? "" }
+        let appearance = MentionAppearance(label: entry.part.name, systemImage: symbol, kindName: entry.part.kindWord, detail: entry.part.kindWord,
+                                           tint: shape?.tint)
+        var matched: [Range<Int>] = [], along: [[Range<Int>]] = []
+        let owner = paths.node(entry.shape).name
+        if band == .path {
+            let names = paths.containers(of: entry.shape).map { paths.node($0).name.title ?? "" } + [owner.title ?? shape?.label ?? "", entry.part.name]
+            if let match = matcher.match(path: names, placingAtLeast: 1) {
+                matched = match.matched.last ?? []
+                along = Array(match.matched.dropLast())
+            }
+        } else {
+            matched = FuzzyMatcher.match(q, in: FuzzyMatcher.Label(entry.part.name))?.matched ?? []
+        }
+        let containers = containersShown(of: entry.shape) + [(owner, paths.containers(of: entry.shape).count)]
+        var lit = containers.map { along.indices.contains($0.index) ? along[$0.index] : [] }
+        // A row that is all its shape, found by its shape's name (an endpoint taken out of its API: "createRef"), lights that name, the
+        // one place the letters are.
+        if band != .path, entry.part.isItsShape, !lit.isEmpty, matched.isEmpty {
+            lit[lit.count - 1] = FuzzyMatcher.match(q, in: FuzzyMatcher.Label(owner.title ?? shape?.label ?? ""))?.matched ?? []
+        }
+        let place = MentionPlace(names: containers.map(\.name), matched: lit)
+        return MentionCandidate(id: entry.shape, appearance: appearance, isReadOnly: isReadOnly(entry.shape), matched: matched, place: place,
+                                part: entry.part)
+    }
+
+    /// The rows the catalog holds of a shape, in its order (tests: the catalog's upkeep).
+    public func listedParts(of shape: ShapeID) -> [PartName] {
+        refreshStale()
+        return partCatalog.rows(of: shape).map(\.part)
     }
 
     /// The shapes in the catalog on the board shown nearest `origin` that can be listed, up to
@@ -840,6 +1106,7 @@ public final class MentionState {
     private func follow(_ change: TopologyChange) {
         guard let topology else { return }
         for id in change.touched(types: mentionEdges, in: topology.types) {
+            followRows(of: id)
             guard observersByTarget[id] == nil else { continue }
             let isTracked = resolutions[id] != nil
             let isMentioned = isMentionedAnywhere(id)
@@ -851,8 +1118,25 @@ public final class MentionState {
         }
     }
 
-    /// Resolves a tracked target again, noting it in `changed` if what it shows changed.
+    /// The rows of `shape` tracked again after a change to the mentions into it: those mentioned, and those observed.
+    private func followRows(of shape: ShapeID) {
+        let mentioned = mentionedRows(of: shape)
+        var rows = rowResolutions[shape] ?? [:]
+        for part in rows.keys where !mentioned.contains(part) && observedRows[PartAddress(shape, part: part)] == nil { rows[part] = nil }
+        let fresh = mentioned.filter { rows[$0] == nil }
+        if !fresh.isEmpty { rows.merge(resolveRows(Array(fresh), of: shape)) { _, new in new } }
+        rowResolutions[shape] = rows.isEmpty ? nil : rows
+    }
+
+    /// Resolves a tracked target again, and its tracked rows, noting it in `changed` if what it or one of them shows changed.
     private func resolveAgain(_ id: ShapeID, into changed: inout Set<ShapeID>) {
+        if let rows = rowResolutions[id] {
+            let now = resolveRows(Array(rows.keys), of: id)
+            if now != rows {
+                rowResolutions[id] = now
+                changed.insert(id)
+            }
+        }
         guard let before = resolutions[id] else { return }
         let now = resolve(id)
         if now != before {
@@ -886,12 +1170,33 @@ public final class MentionState {
         if observersByTarget[target] == nil, !isMentionedAnywhere(target) { resolutions[target] = nil }
     }
 
+    /// Resolves a row, kept with its shape's (which is tracked too).
+    private func trackRow(_ target: PartAddress) {
+        guard let part = target.part else { return track(target.shape) }
+        trackRows([part], of: target.shape)
+    }
+
+    /// Resolves rows of one shape, those not yet kept, with its parts read once.
+    private func trackRows(_ parts: Set<PartID>, of shape: ShapeID) {
+        track(shape)
+        let fresh = parts.filter { rowResolutions[shape]?[$0] == nil }
+        guard !fresh.isEmpty else { return }
+        rowResolutions[shape, default: [:]].merge(resolveRows(Array(fresh), of: shape)) { _, new in new }
+    }
+
+    private func untrackRowIfUnused(_ target: PartAddress) {
+        guard let part = target.part, observedRows[target] == nil, !mentionedRows(of: target.shape).contains(part) else { return }
+        rowResolutions[target.shape]?[part] = nil
+        if rowResolutions[target.shape]?.isEmpty == true { rowResolutions[target.shape] = nil }
+    }
+
     // MARK: The catalog
 
     /// Reads the catalog afresh: every mentionable shape on every board the editor can show
     /// (`editor.showableBoards`).
     private func readCatalog() {
         catalog = MentionCatalog()
+        partCatalog = MentionPartCatalog()
         paths.forgetAll()
         memberSets = [:]
         stale = []
@@ -934,6 +1239,8 @@ public final class MentionState {
         entriesRead += 1
         #endif
         catalog.set(record.id, appearance, on: board, recentRank: recent.firstIndex(of: record.id) ?? -1)
+        // Its rows with it: read again only where their names changed.
+        partCatalog.set(record.id, parts: registry.parts(of: record) ?? [])
         for members in memberSets.values { members.set(record.id, admitted: members.admits(record, registry)) }
     }
 
@@ -941,6 +1248,7 @@ public final class MentionState {
     private func removeEntry(_ id: ShapeID) {
         catalog.removeUnnamed(id)
         catalog.remove(id)
+        partCatalog.remove(id)
         for members in memberSets.values { members.remove(id) }
     }
 
@@ -1004,9 +1312,13 @@ extension MentionState: EditorService {
         lastAffected = []
         guard change.isFileReplaced else { return }
         resolutions = [:]
+        rowResolutions = [:]
         forgetLayout(of: Array(laidOutByNames))
         trackMentioned()
         for target in observersByTarget.keys { track(target) }
+        var observed: [ShapeID: Set<PartID>] = [:]
+        for row in observedRows.keys { if let part = row.part { observed[row.shape, default: []].insert(part) } }
+        for (shape, parts) in observed { trackRows(parts, of: shape) }
         readCatalog()
         layOutMentioners()
     }
@@ -1021,6 +1333,15 @@ extension CanvasEditor {
     func followMention(of target: ShapeID) {
         let following = file.record(target).flatMap { registry.mentionContribution(for: $0.kind) }?.following
         if following == .opens { goInto(target) } else { goTo([target]) }
+    }
+
+    /// Follows a mention of a row: to its shape (`goTo`, its board shown first), the row then selected as an item of it (Selection's
+    /// `selectItems`); a row that's gone, the shape alone. A shape as a whole, as `followMention(of:)` for its id.
+    func followMention(of target: PartAddress) {
+        guard let part = target.part else { return followMention(of: target.shape) }
+        goTo([target.shape])
+        guard document[target.shape] != nil, registry.parts(of: document[target.shape]!)?.contains(where: { $0.id == part }) == true else { return }
+        selectItems([AnyHashable(part)], of: target.shape)
     }
 }
 
@@ -1057,6 +1378,7 @@ public final class MentionObservation {
 @MainActor
 private struct Observer {
     let targets: Set<ShapeID>
+    let rows: Set<PartAddress>
     let changed: @MainActor (Set<ShapeID>) -> Void
 }
 
@@ -1068,16 +1390,24 @@ public struct MentionCandidate: Hashable, Sendable {
     public let appearance: MentionAppearance
     public let isReadOnly: Bool
     public let matched: [Range<Int>]
-    /// Where the shape is, from the board shown (`MentionState.place(ofShape:)`): nil on the board shown, in no container.
+    /// Where the shape is, from the board shown (`MentionState.place(ofShape:)`): nil on the board shown, in no container. For a
+    /// row, the place of its shape and the shape's own name.
     public let place: MentionPlace?
+    /// The row of the shape it is, for a list that asks for rows (`candidates(…listingParts:)`): its `appearance` is the row's
+    /// (its name, its kind word); nil for the shape as a whole.
+    public let part: PartName?
 
-    public init(id: ShapeID, appearance: MentionAppearance, isReadOnly: Bool, matched: [Range<Int>], place: MentionPlace? = nil) {
+    public init(id: ShapeID, appearance: MentionAppearance, isReadOnly: Bool, matched: [Range<Int>], place: MentionPlace? = nil, part: PartName? = nil) {
         self.id = id
         self.appearance = appearance
         self.isReadOnly = isReadOnly
         self.matched = matched
         self.place = place
+        self.part = part
     }
+
+    /// What it is: its shape, and its row if it is one.
+    public var address: PartAddress { PartAddress(id, part: part?.id) }
 }
 
 /// What the picker lists: for an empty query, recent picks and nearby shapes; for any other, the
@@ -1144,6 +1474,13 @@ private final class ScopeMembers {
         }
         ids.removeLast()
     }
+}
+
+/// What a list that names shapes and rows lists of a shape that is all its one row is (`PartName.isItsShape`, an endpoint taken out
+/// of its API): `.both` the shape and the row, `.row` the row, found by the shape's name too (the `@` picker's, so a mention keeps
+/// one address and one look as the endpoint is taken out and put back; ⌘L's, as the shape is no end of a connection and its row is).
+public enum OwnRows: Sendable {
+    case both, row
 }
 
 /// Where a query of several words ranks a match: by its name (a tier from a substring up), by its path (a word or more in the

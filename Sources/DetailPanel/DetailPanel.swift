@@ -340,8 +340,9 @@ extension DetailTabID {
         let statusTabs = registry.contributions(to: DetailStatuses.self).compactMap { contribution in
             contribution.value.tab.map { (tab: $0, plugin: contribution.pluginID) }
         }
+        let rowTabs = registry.contributions(to: RowDetails.self).map { (tab: $0.value.tab, plugin: $0.pluginID) }
         var first: [String: (tab: DetailTabID, plugin: PluginID)] = [:]
-        for (tab, plugin) in sectionTabs + statusTabs {
+        for (tab, plugin) in sectionTabs + statusTabs + rowTabs {
             guard let seen = first[tab.title] else {
                 first[tab.title] = (tab, plugin)
                 continue
@@ -351,7 +352,7 @@ extension DetailTabID {
                                + "(from \(plugin)) are both tabs titled \"\(tab.title)\"; share one, or retitle one")
             }
         }
-        if let cycle = OrderRule.cycle(from: (sectionTabs + statusTabs).map(\.tab.anchor)) {
+        if let cycle = OrderRule.cycle(from: (sectionTabs + statusTabs + rowTabs).map(\.tab.anchor)) {
             throw .invalid(point: point, reason: "tabs placed beside each other in a circle: \(cycle)")
         }
     }

@@ -293,13 +293,14 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         expectEqual(value, "2 fields")
         expectEqual(inherited[0].tick, FieldFixtures.personID)
     },
-    test("a long name is cut and the kind is whole; the name column is at most 45% of the rows' width") {
+    test("a long name is cut and the kind is whole; the name column is the row less the widest kind's words (more than its 45% share where the kinds are short)") {
         let b = try Bench()
         let long = "averyveryveryverylongfieldnamethatneverseemstoend"
         let id = b.add((ShapeID(), "Long", "Words", #"{"type": "object", "properties": {"\#(long)": {"type": "string"}, "b": {"type": "string"}}}"#), at: CGPoint(x: 40, y: 40))
         let rows = b.book.rows(of: id)
         let block = try require(b.book.rowsRect(of: id))
-        expectEqual(rows[0].nameRect.width, TypesStyle.nameShare * block.width)
+        expect(rows[0].nameRect.width > TypesStyle.nameShare * block.width && rows[0].nameRect.width < block.width - TypesStyle.nameGap,
+               "past its share, short of the kind: \(rows[0].nameRect.width) of \(block.width)")
         expectEqual(rows[1].nameRect.width, rows[0].nameRect.width, "one column")
         let drawn = b.draw()
         let gap = CGRect(x: rows[0].nameRect.maxX, y: rows[0].rect.minY, width: TypesStyle.nameGap - 1, height: rows[0].rect.height)

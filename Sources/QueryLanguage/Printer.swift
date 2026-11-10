@@ -51,8 +51,11 @@ enum Printer {
     }
 
     static func compound(_ compound: Compound) -> String {
-        (compound.head.map(head) ?? "") + compound.filters.map(filter).joined()
+        (compound.head.map(head) ?? "") + compound.filters.map(filter).joined() + (compound.part.map(part) ?? "")
     }
+
+    /// `::part(<row>)`, its id in capitals.
+    static func part(_ part: PartSelector) -> String { "::part(" + part.id.uuidString + ")" }
 
     static func head(_ head: Head) -> String {
         switch head {

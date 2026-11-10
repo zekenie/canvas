@@ -138,7 +138,7 @@ extension PluginRegistrar {
     ///   take (Go › Enclosing Group, Enclosing Frame, Enclosing Board); `title` stays its name wherever
     ///   it's listed.
     /// - `isChecked`: whether its menu bar item is checked now, for a command that turns something on
-    ///   and off (File ▸ Kits ▸ Stickers); nil, and its item is never checked.
+    ///   and off (File ▸ Kits ▸ Engineering); nil, and its item is never checked.
     /// - `isEnabled`: its rule, whether it can act on its subject (`CommandSubject`: the selection from
     ///   a key or the menu bar, a context menu's shapes and click): one rule, which dims its items and
     ///   lets its keys pass while it says no. By default, always. A command a context menu runs reads
@@ -397,7 +397,7 @@ extension CanvasEditor {
     }
 
     /// Whether the menu item that runs the command is checked now, for a command that turns something on
-    /// and off (`registrar.command(…isChecked:…)`: File ▸ Kits ▸ Stickers); nil for one whose item is never
+    /// and off (`registrar.command(…isChecked:…)`: File ▸ Kits ▸ Engineering); nil for one whose item is never
     /// checked, or that no plugin claims in this file. The window asks as it validates the item.
     public func isChecked(_ command: CanvasCommand) -> Bool? {
         registration(of: command)?.isChecked?(self)

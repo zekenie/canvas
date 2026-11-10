@@ -69,7 +69,56 @@ extension CanvasEditor {
                                        customSkeletons: customSkeletons)
             }
         }
-        for record in paintOrder(in: drawn) { drawShape(record, in: shapes) }
+        // A shape painted just below its anchor (a key, under the cards it joins) has a tinted outline (a hover's light) drawn where
+        // it is painted, just after it, so the cards above it cover its light as they cover it, and the light never strikes through
+        // their words (UX walk 2 structure-4); its own plugin may draw what is covered faint over them.
+        let (asked, hint) = outlinesAndHint
+        var outlines = asked
+        let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
+        var beneath: [ShapeID: [TintedOutlines]] = [:]
+        // The set read once a frame, never once a lit shape (each ask brings the paint list up to date), and nothing walked on a
+        // board with no shape painted below its anchor.
+        let belowAnchor = outlines.tinted.isEmpty ? [] : shapeIndex.belowAnchor(in: shapes)
+        if !belowAnchor.isEmpty {
+            for index in outlines.tinted.indices {
+                let group = outlines.tinted[index]
+                let under = group.shapes.filter { belowAnchor.contains($0) }
+                guard !under.isEmpty else { continue }
+                for id in under { beneath[id, default: []].append(group) }
+                let lifted = Set(under)
+                outlines.tinted[index].shapes.removeAll { lifted.contains($0) }
+            }
+        }
+        let lifted = liftedWhileEdited(in: shapes)
+        // The shape edited, painted above what its widening overlaps: a margin round it, as far out as its outline stands and is
+        // stroked, is left unpainted by those shapes, so no sliver of what it covers shows between its edge and its ring, and what
+        // is under them (a database's surface, the canvas) shows there as it is (UX walk 3 tables-new-1; a fill of the canvas's
+        // colour was a grey halo inside a database, review U9-C2). A container is the surface and a shape anchored to another
+        // (a key bound to the edited table) is drawn to it, so both are left whole.
+        var hole: CGRect?
+        if let lifted {
+            let margin = (outlineStandoff + Style.indicatorWidth) / zoom
+            hole = lifted.frame.insetBy(dx: -margin, dy: -margin)
+        }
+        let everywhere = drawn.insetBy(dx: -1_000_000, dy: -1_000_000)
+        for record in paintOrder(in: drawn) {
+            if let hole, record.id != lifted?.id, !registry.isContainer(record), !(registry.definition(for: record.kind) is any PaintOrderAnchored),
+               let frame = shapes.frame(of: record), frame.intersects(hole) {
+                context.saveGState()
+                context.addRect(everywhere)
+                context.addRect(hole)
+                context.clip(using: .evenOdd)
+                drawShape(record, in: shapes)
+                context.restoreGState()
+                continue
+            }
+            drawShape(record, in: shapes)
+            for group in beneath[record.id] ?? [] {
+                strokeOutlines(of: [record.id], rects: [], in: group.color, width: Style.tintedIndicatorWidth,
+                               outset: CGFloat(max(group.ring, 0)) * Style.tintedRingPitch, around: drawn,
+                               skeletonPixel: skeletons ? ink.pixel : nil, context: context, shapes: shapes, tinted: tinted)
+            }
+        }
         previews.endFrame()
         if previews.isPending, nextPreviewFrame == nil {
             nextPreviewFrame = scheduler.schedule(after: .zero) { [weak self] in
@@ -77,9 +126,8 @@ extension CanvasEditor {
                 self?.setNeedsDisplay()
             }
         }
-        let (outlines, hint) = outlinesAndHint
-        let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
         drawOutlines(outlines, hint: hint, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
+        if let hint, let part = hintedPart { drawHintedPart(part, of: hint, in: context, shapes: shapes) }
         // The shapes waiting to be placed (`placeLater`), faint, over the board's and its outlines, under what
         // overlays draw (which decorate them too): a context over them alone, so each has its geometry, laid out
         // as shapes of the file where they'd land.
@@ -88,6 +136,13 @@ extension CanvasEditor {
         if !pending.isEmpty {
             Self.drawingPending(in: context) {
                 for record in pending { drawShape(record, in: pendingContext) }
+            }
+        }
+        // A drag's ghosts (`Session.ghosts`), nearly opaque, bare: no overlay decorates them.
+        if let ghosts = session?.ghosts, !ghosts.isEmpty {
+            let ghostContext = shapes.layingOut(with: ghosts).over(CanvasDocument(shapes: ghosts))
+            Self.drawingPending(in: context, opacity: Style.ghostOpacity) {
+                for record in ghosts { drawShape(record, in: ghostContext) }
             }
         }
         let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world, drawsSkeletons: skeletons,
@@ -235,6 +290,27 @@ extension CanvasEditor {
         return (outlines, hint)
     }
 
+    /// The hinted shape's lit part (`hintedPart`: the row a connection would end on), from its kept geometry: its rect a little
+    /// inside, rounded, filled faintly and stroked in the hint's color, as the shape's outline is (`Style.hintedPart…`), where
+    /// the shape is drawn. Nothing for a part the geometry doesn't list, or one it shows none of.
+    private func drawHintedPart(_ part: PartID, of id: ShapeID, in context: CGContext, shapes: ShapeContext) {
+        guard let frame = shapes.geometry(of: id)?.parts.frame(part), frame.isShown else { return }
+        let zoom = camera.zoom, offset = drawingOffset(of: id)
+        let inset = Style.hintedPartInset / zoom, radius = Style.hintedPartRadius / zoom
+        let rect = frame.rect.offsetBy(dx: offset.x / zoom, dy: offset.y / zoom).insetBy(dx: inset, dy: inset)
+        guard rect.width > 0, rect.height > 0 else { return }
+        let path = CGPath(roundedRect: rect, cornerWidth: min(radius, rect.width / 2), cornerHeight: min(radius, rect.height / 2), transform: nil)
+        context.saveGState()
+        context.addPath(path)
+        context.setFillColor(Style.accent.withAlphaComponent(Style.hintedPartFillOpacity).cgColor)
+        context.fillPath()
+        context.addPath(path)
+        context.setStrokeColor(Style.accent.cgColor)
+        context.setLineWidth(Style.hintedPartWidth / zoom)
+        context.strokePath()
+        context.restoreGState()
+    }
+
     /// The faint outlines less those outlined in full (and the hint, which is), with no set of all of those (⌘A's is every
     /// shape): each of a few (a hover) is looked for among them, which compares ids, cheaper than
     /// hashing them; more, in one pass over them.
@@ -279,11 +355,11 @@ extension CanvasEditor {
     /// long ago, or a mark that isn't current), or a shape that could be anywhere changed.
     @_spi(Host) public func damage(since mark: DamageMark) -> CGRect { shapeIndex.damage(since: mark, in: shapeContext) }
 
-    /// Draws as shapes waiting to be placed are drawn: at `Style.pendingOpacity`, as one layer, so
-    /// what overlaps within it (a shape and its shadow) isn't darkened twice.
-    static func drawingPending(in context: CGContext, _ draw: () -> Void) {
+    /// Draws as shapes waiting to be placed are drawn: at `Style.pendingOpacity` (a drag's ghosts at their own), as one
+    /// layer, so what overlaps within it (a shape and its shadow) isn't darkened twice.
+    static func drawingPending(in context: CGContext, opacity: CGFloat = Style.pendingOpacity, _ draw: () -> Void) {
         context.saveGState()
-        context.setAlpha(Style.pendingOpacity)
+        context.setAlpha(opacity)
         context.beginTransparencyLayer(auxiliaryInfo: nil)
         draw()
         context.endTransparencyLayer()

@@ -77,10 +77,33 @@ public struct DrawResult: Encodable, Sendable {
     /// What settling nudged into or out of containers, by how far (world units), for the glide;
     /// never said.
     var nudges: [ShapeID: CGPoint] = [:]
+    /// The shapes the run's growth pushed down to make room below what grew (`Transaction.makeRoom()`), top to bottom:
+    /// said only when there are some, so an agent sees its layout change.
+    var moved: [DrawMoved] = []
 
     enum CodingKeys: String, CodingKey {
-        case changes, warnings, dryRun, on
+        case changes, warnings, dryRun, on, moved
     }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(changes, forKey: .changes)
+        try container.encode(warnings, forKey: .warnings)
+        try container.encodeIfPresent(dryRun, forKey: .dryRun)
+        try container.encodeIfPresent(on, forKey: .on)
+        if !moved.isEmpty { try container.encode(moved, forKey: .moved) }
+    }
+}
+
+/// A shape a run moved down to make room below a shape it grew (a table given columns): its kind, its title (none for a
+/// shape without one), its id, where it is now ([[x, y], [width, height]], world units, as a row's `at`) and how far down
+/// it went.
+struct DrawMoved: Encodable, Sendable {
+    var kind: String
+    var title: String?
+    var id: String
+    var at: CGRect?
+    var down: CGFloat
 }
 
 /// A board a run drew on: `root`, or the id of the shape that holds it, as `boards`' `shows`; that
@@ -293,6 +316,27 @@ struct DrawOptions {
     var program = false
     /// The drawing a real run joins (`draw --drawing`): what it names is kept in the drawing's record, in its step.
     var drawing: String?
+    /// How a title finds its shape: a script's `.refusing` (none or several is an error), a put's `.nearest` (`put`).
+    var naming = Naming.refusing
+    /// Whether the run is an agent's change (what acts on a person's edits leaves it be): a script's, not a put's.
+    var byAgent = true
+    /// Whether what the run grows makes room below it (`Transaction.makeRoom()`): not a document's (`canvas apply`, and the digest
+    /// through it), whose plan puts every shape where it goes at the size it will have.
+    var makesRoom = true
+    /// The undo step the run makes (`DrawStyle.stepName`, "Draw"), as its caller names it.
+    var step = "Draw"
+    /// Edges a put's statement implies besides what its values' writers say (`DrawPut.edges`), by the statement's line, each
+    /// to a far shape named by a key (`keys`): drawn as a writer's implied edges are.
+    var implied: [Int: [DrawImpliedEdge]] = [:]
+
+    enum Naming {
+        /// A title that names none, or several, is refused (`ambiguous_title`): a script, which an agent types.
+        case refusing
+        /// A title that names several finds the first of them, in the order the board lists them (a text's too, as a column's
+        /// type names an enum); `put` finds the nearest itself (`PutFinding`) and names it by its id, so this is only the fallback
+        /// for a name it left a title. An edge a value implies that can't be drawn is left out, never refused.
+        case nearest
+    }
 }
 
 @MainActor
@@ -304,6 +348,13 @@ func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, program:
     } catch {
         throw collected(error.errors.map { DrawError($0) })
     }
+    return try draw(parsed: script, dryRun: dryRun, reveal: shouldReveal, program: program, options: options, in: editor)
+}
+
+/// As `draw`, of a script already read: a program's values, never text (`put`).
+@MainActor
+func draw(parsed script: Script, dryRun: Bool, reveal shouldReveal: Bool, program: String, options: DrawOptions,
+          in editor: CanvasEditor) throws(DrawError) -> DrawResult {
     var (board, names) = try Drawing.board(for: script, in: editor, pinned: options.board)
     let shown = board == editor.board
     if shown {
@@ -360,9 +411,10 @@ func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, program:
 @MainActor
 private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, dryRun: Bool, joining name: String? = nil) throws(DrawError) -> DrawResult {
     do {
-        let result = try editor.transact(on: drawing.target.board, DrawStyle.stepName) { transaction in
+        let result = try editor.transact(on: drawing.target.board, drawing.options.step) { transaction in
             // An agent's change, not the person's: what acts on a person's edits leaves it be.
-            transaction.byAgent = true
+            transaction.byAgent = drawing.options.byAgent
+            transaction.makesRoom = drawing.options.makesRoom
             let result = try drawing.apply(to: &transaction, reveals: reveals)
             if !dryRun, let name, let records = editor.registry.drawRecording {
                 join(name, result, on: drawing.target.board, records: records, file: editor.file, registry: editor.registry, in: &transaction)
@@ -374,7 +426,7 @@ private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, d
                     if row.did == .created { row.id = nil }
                     return row
                 }
-                throw DryRun(result: DrawResult(changes: rows, warnings: result.warnings, dryRun: true))
+                throw DryRun(result: DrawResult(changes: rows, warnings: result.warnings, dryRun: true, moved: result.moved))
             }
             return result
         }

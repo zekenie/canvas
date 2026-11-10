@@ -77,27 +77,27 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
 
 @MainActor let pillTests = Suite("Pills", [
     test("a live pill is 17 points tall for 16-point text, its bottom half a point above the descender; symbol then label") {
-        let pill = MentionAttachment(target: idA, storedLabel: "Old", resolution: live("Groceries"), style: note)
+        let pill = MentionAttachment(target: PartAddress(idA), storedLabel: "Old", resolution: live("Groceries"), style: note)
         expectEqual(pill.bounds.height, 17)
         expectClose(pill.bounds.minY, note.font.descender + 0.5, within: 0.001)
         expectEqual(pill.bounds.minX, 0)
         expectEqual(pill.shownLabel, "Groceries")
         expectEqual(pill.writtenLabel, "Groceries")
         expectEqual(pill.help, nil)
-        let missing = MentionAttachment(target: idA, storedLabel: "Groceries", resolution: .missing, style: note)
+        let missing = MentionAttachment(target: PartAddress(idA), storedLabel: "Groceries", resolution: .missing, style: note)
         expect(pill.bounds.width - missing.bounds.width > 10, "the symbol takes room: \(pill.bounds.width) vs \(missing.bounds.width)")
         expectEqual(missing.bounds.height, 17)
-        let small = MentionAttachment(target: idA, storedLabel: "", resolution: live("Groceries"), style: neutral)
+        let small = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("Groceries"), style: neutral)
         expectEqual(small.bounds.height, (13 * 17.0 / 16).rounded())
     },
 
     test("no wider than 16 em, or the text it's in; a longer label is cut") {
         let long = String(repeating: "Very long name ", count: 10)
-        let pill = MentionAttachment(target: idA, storedLabel: "", resolution: live(long), style: note)
+        let pill = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live(long), style: note)
         expectEqual(pill.bounds.width, 256)
-        let narrow = MentionAttachment(target: idA, storedLabel: "", resolution: live(long), style: note, width: 100)
+        let narrow = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live(long), style: note, width: 100)
         expectEqual(narrow.bounds.width, 100)
-        let short = MentionAttachment(target: idA, storedLabel: "", resolution: live("A"), style: note, width: 100)
+        let short = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("A"), style: note, width: 100)
         expect(short.bounds.width < 40, "\(short.bounds.width)")
     },
 
@@ -105,11 +105,11 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
         // 9 to 18 points wide at 0.7 em, and one that isn't a symbol.
         let symbols = ["rectangle.fill", "note.text", "square.dashed", "curlybraces", "ellipsis.curlybraces", "no.such.symbol"]
         for style in [note, neutral] {
-            let widths = symbols.map { MentionAttachment(target: idA, storedLabel: "", resolution: live("Groceries", symbol: $0), style: style).bounds.width }
+            let widths = symbols.map { MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("Groceries", symbol: $0), style: style).bounds.width }
             expectEqual(Set(widths).count, 1, "\(widths)")
         }
         // 0.3 em at each end, the slot's em, and 0.2 em before the label: 28.8 at 16.
-        let wide = MentionAttachment(target: idA, storedLabel: "", resolution: live("", symbol: "ellipsis.curlybraces"), style: note)
+        let wide = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("", symbol: "ellipsis.curlybraces"), style: note)
         expectEqual(wide.bounds.width, 29)
         let rep = draw(wide)
         expect(anyPixel(rep, in: CGRect(x: 5, y: 0, width: 15, height: wide.bounds.height)) { $0[0] < 160 }, "the symbol, in its slot")
@@ -128,7 +128,7 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
             expectEqual(measured.string, drawn.string)
             expectEqual(pills(in: measured).map(\.bounds), pills(in: drawn).map(\.bounds))
             expectEqual(pills(in: measured).map(\.shownLabel), ["Groceries", "Milk", "Food"])
-            expectEqual(pills(in: measured).map(\.target), [idA, idB, idA])
+            expectEqual(pills(in: measured).map(\.target.shape), [idA, idB, idA])
             let missing = style.attributedString(text, width: 200) { _ in .missing }
             expect(zip(pills(in: missing), pills(in: measured)).allSatisfy { $0.bounds.width < $1.bounds.width }, "no symbol")
         }
@@ -145,19 +145,19 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
     },
 
     test("missing and unavailable: the name held, or what's wrong when it holds none, and a tooltip") {
-        let missing = MentionAttachment(target: idA, storedLabel: "Groceries", resolution: .missing, style: note)
+        let missing = MentionAttachment(target: PartAddress(idA), storedLabel: "Groceries", resolution: .missing, style: note)
         expectEqual(missing.shownLabel, "Groceries")
         expectEqual(missing.writtenLabel, "Groceries")
         expectEqual(missing.help, "Deleted")
-        let unavailable = MentionAttachment(target: idA, storedLabel: "", resolution: .unavailable, style: note)
+        let unavailable = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: .unavailable, style: note)
         expectEqual(unavailable.shownLabel, "Not available")
         expectEqual(unavailable.writtenLabel, "")
         expectEqual(unavailable.help, "Not available")
-        expectEqual(MentionAttachment(target: idA, storedLabel: "", resolution: .missing, style: note).shownLabel, "Deleted")
+        expectEqual(MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: .missing, style: note).shownLabel, "Deleted")
     },
 
     test("update: a new look makes a new image and bounds; the same look keeps them") {
-        let pill = MentionAttachment(target: idA, storedLabel: "G", resolution: live("Groceries"), style: note)
+        let pill = MentionAttachment(target: PartAddress(idA), storedLabel: "G", resolution: live("Groceries"), style: note)
         let image = pill.image
         pill.update(live("Groceries"))
         expect(pill.image === image)
@@ -170,12 +170,12 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
     },
 
     test("colors: on a shape, the text's color at 10%; missing, no fill; selected, the selection's; on a neutral surface, the tint") {
-        let pill = MentionAttachment(target: idA, storedLabel: "", resolution: live("Groceries"), style: note)
+        let pill = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("Groceries"), style: note)
         let padding = CGPoint(x: pill.bounds.width - 3, y: pill.bounds.height / 2)
         let fill = pixel(draw(pill), at: padding)
         expect((215...245).contains(fill[0]) && fill[0] == fill[2], "a light gray fill: \(fill)")
         expect(darkest(draw(pill)) < 100, "the label, in the text's color")
-        let missing = MentionAttachment(target: idA, storedLabel: "Groceries", resolution: .missing, style: note)
+        let missing = MentionAttachment(target: PartAddress(idA), storedLabel: "Groceries", resolution: .missing, style: note)
         expect(pixel(draw(missing), at: CGPoint(x: missing.bounds.width - 3, y: missing.bounds.height / 2))[0] > 250, "no fill")
         expect(anyPixel(draw(missing), in: CGRect(x: 0, y: 0, width: 1, height: missing.bounds.height)) { $0[0] < 230 }, "a dashed outline")
         // The name it holds is all that's left of what was mentioned: at about two thirds of the
@@ -185,30 +185,30 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
         pill.isSelected = true
         let selected = pixel(draw(pill), at: padding)
         expect(selected[2] > selected[0], "the selection's blue: \(selected)")
-        let tinted = MentionAttachment(target: idA, storedLabel: "", resolution: live("Groceries", symbol: "circle.fill", tint: .systemRed),
+        let tinted = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("Groceries", symbol: "circle.fill", tint: .systemRed),
                                        style: neutral)
         expect(anyPixel(draw(tinted), in: CGRect(x: 0, y: 0, width: 16, height: tinted.bounds.height)) { $0[0] > 180 && $0[1] < 120 },
                "a red symbol")
-        let untinted = MentionAttachment(target: idA, storedLabel: "", resolution: live("Groceries", symbol: "circle.fill"), style: note)
+        let untinted = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("Groceries", symbol: "circle.fill"), style: note)
         expect(!anyPixel(draw(untinted), in: CGRect(x: 0, y: 0, width: 16, height: untinted.bounds.height)) { $0[0] > 180 && $0[1] < 120 },
                "monochrome on a shape")
     },
 
     test("below 25% zoom only the fill draws") {
-        let pill = MentionAttachment(target: idA, storedLabel: "", resolution: live("Groceries"), style: note)
+        let pill = MentionAttachment(target: PartAddress(idA), storedLabel: "", resolution: live("Groceries"), style: note)
         expect(darkest(draw(pill, scale: 1)) < 120)
         expect(darkest(draw(pill, scale: 0.2)) > 200, "\(darkest(draw(pill, scale: 0.2)))")
     },
 
     test("mention text as an attributed string: text with the style's attributes, each mention one pill; and back, canonically") {
         let text = MentionText(stored: "Ask @[Groceries](shape:\(idA.rawValue.uuidString.lowercased())) and @[Gone](shape:\(idB)) now")
-        let string = note.attributedString(text) { $0 == idA ? live("Food") : .missing }
+        let string = note.attributedString(text) { $0.shape == idA ? live("Food") : .missing }
         expectEqual(string.string, "Ask \u{FFFC} and \u{FFFC} now")
         var pills: [MentionAttachment] = []
         string.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, _, _ in
             if let pill = value as? MentionAttachment { pills.append(pill) }
         }
-        expectEqual(pills.map(\.target), [idA, idB])
+        expectEqual(pills.map(\.target.shape), [idA, idB])
         expectEqual(pills.map(\.shownLabel), ["Food", "Gone"])
         expectEqual(string.attribute(.toolTip, at: 10, effectiveRange: nil) as? String, "Deleted")
         expect(string.attribute(.toolTip, at: 4, effectiveRange: nil) == nil)
@@ -250,7 +250,7 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
             let pills = MentionText([.text("First line\nAsk "), .mention(idA, label: ""), .text(" now\nThird "), .mention(idB, label: "Gone"),
                                      .text("\nlast")])
             let a = style.attributedString(words) { _ in .missing }
-            let b = style.attributedString(pills) { $0 == idA ? live("Groceries") : .missing }
+            let b = style.attributedString(pills) { $0.shape == idA ? live("Groceries") : .missing }
             expectEqual(drawnHeight(b, width: 400), drawnHeight(a, width: 400))
             expectEqual(editedHeight(b, width: 400), editedHeight(a, width: 400))
             expect(drawnHeight(a, width: 400) > 3 * 18, "four lines")

@@ -242,7 +242,7 @@ private let viewSize = CGSize(width: 320, height: 200)
         try board.place(on: editor)
         editor.camera = Camera(zoom: 0.3)
         let pill = try require(editor.mentionPills(of: board.note).first, "the note's pill")
-        expectEqual(pill.target, board.subboard)
+        expectEqual(pill.target.shape, board.subboard)
         var time: TimeInterval = 1
         /// A click (or a double-click's second) at the pill's middle, `after` seconds after the last.
         @MainActor func click(clicks: Int = 1, after: TimeInterval = 1) {

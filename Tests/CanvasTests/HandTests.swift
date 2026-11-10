@@ -220,6 +220,72 @@ import TestKit
         expectEqual(h.editor.camera, Camera())
         expectEqual(h.editor.unobscuredViewport, CGRect(x: 240, y: 0, width: 660, height: 800), "the clear part, between the sheets")
     },
+    test("a rect is brought into the view the chrome will leave (coveredEdgesAhead) by the least pan: never centered, nothing when it is in view, and the part in view now is kept as the pane comes") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+        let rect = CGRect(x: 1000, y: 300, width: 150, height: 100)
+        expect(!h.editor.animateCamera(toShow: rect, margin: 16, duration: .milliseconds(200)), "in view: nothing to do")
+        expectEqual(h.editor.cameraTarget, Camera())
+        // The inspector the selection will show covers the trailing 300 points: the clear view is 900 wide, before it slides in.
+        h.editor.coveredEdgesAhead = { CoveredEdges(right: 300) }
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 0, y: 0, width: 900, height: 800))
+        expect(h.editor.animateCamera(toShow: rect, margin: 16, duration: .milliseconds(200)), "past the clear view's edge")
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 266, y: 0)), "its right edge a margin in from the clear view's: the least pan, not a centering")
+        h.wait(250)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 266, y: 0)))
+        // The pane slides in as headed: what was brought into view stays where it is.
+        h.editor.coveredEdges = CoveredEdges(right: 300)
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 266, y: 0)))
+        // Above the clear view's top edge: only the vertical pan.
+        h.editor.coveredEdgesAhead = nil
+        h.editor.coveredEdges = CoveredEdges()
+        h.editor.camera = Camera()
+        expect(h.editor.animateCamera(toShow: CGRect(x: 100, y: -300, width: 100, height: 100), margin: 16, duration: .milliseconds(200)))
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 0, y: -316)))
+        // A rect too big keeps its top-left corner in view; a null one does nothing.
+        h.editor.camera = Camera()
+        expect(h.editor.animateCamera(toShow: CGRect(x: 1500, y: 1000, width: 3000, height: 3000), margin: 16, duration: .milliseconds(200)))
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 1484, y: 984)))
+        expect(!h.editor.animateCamera(toShow: .null, margin: 16, duration: .milliseconds(200)))
+    },
+    test("a rect is kept out of the corner the host covers (the minimap): the least pan out of it, up or across, and the clear view says it (UX walk 4 firstminute-4-1)") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+        h.editor.coveredCorners = CoveredCorners(bottomLeft: CGSize(width: 212, height: 162))
+        expectEqual(h.editor.clearView, ClearView(rect: CGRect(x: 0, y: 0, width: 1200, height: 800), covered: [CGRect(x: 0, y: 638, width: 212, height: 162)]))
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 0, y: 0, width: 1200, height: 800), "a fit still fills the view: a corner is no edge")
+        expect(!h.editor.animateCamera(toShow: CGRect(x: 20, y: 100, width: 100, height: 50), margin: 16, duration: .milliseconds(200)), "clear of it: nothing to do")
+        // In the corner: up past its top (128) is shorter than across past its side (208).
+        expect(h.editor.animateCamera(toShow: CGRect(x: 20, y: 700, width: 100, height: 50), margin: 16, duration: .milliseconds(200)))
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 0, y: 128)))
+        // Too tall to go over it: across.
+        let view = ClearView(rect: CGRect(x: 0, y: 0, width: 1200, height: 800), covered: [CGRect(x: 0, y: 638, width: 212, height: 162)])
+        expectEqual(view.shift(bringing: CGRect(x: 20, y: 100, width: 100, height: 650)), CGSize(width: 192, height: 0))
+        expect(!view.contains(CGRect(x: 20, y: 700, width: 10, height: 10)))
+        expect(view.contains(CGRect(x: 220, y: 700, width: 10, height: 10)))
+        // A rehearsal carries the corner, so what is laid out on one keeps out of it too.
+        expectEqual(h.editor.rehearsal().clearView.covered, h.editor.clearView.covered)
+        // Nothing covered (the minimap hidden): none.
+        h.editor.camera = Camera()
+        h.editor.coveredCorners = CoveredCorners()
+        expectEqual(h.editor.clearView.covered, [])
+    },
+    test("a rect panned exactly onto the clear view's edge is in it, whatever floating point left of the pan; a box no pan can take out of the corner is as in as it can be (UX walk 4 review)") {
+        let clear = ClearView(rect: CGRect(x: 0.37, y: 0.11, width: 913.3, height: 611.7), covered: [CGRect(x: 0.37, y: 450.11, width: 212.9, height: 161.7)])
+        for i in 0..<400 {
+            let step = Double(i) * 0.1731
+            for shown in [CGRect(x: -50 + step, y: 30.3 + step, width: 100.7, height: 40.3), CGRect(x: 900.1 + step, y: -20 + step, width: 100.7, height: 40.3),
+                          CGRect(x: 300.7 + step, y: 700.3 - step, width: 100.7, height: 40.3)] {
+                let pan = clear.shift(bringing: shown)
+                expect(clear.contains(shown.offsetBy(dx: pan.width, dy: pan.height)), "\(shown) panned by \(pan) is in")
+            }
+        }
+        // Too big to be clear of the corner anywhere in the rect: nothing to move, so in.
+        let big = CGRect(x: 0.37, y: 0.11, width: 910, height: 608)
+        expectEqual(clear.shift(bringing: big), .zero)
+        expect(clear.contains(big), "no pan takes it out of the corner: as in view as it gets")
+        expect(!clear.contains(big.offsetBy(dx: 40, dy: 0)), "off the right edge")
+    },
     test("services hear each move a kept view makes, from where the camera was headed to where it goes; nothing when it moves nothing") {
         let log = KeptViews()
         let h = try EditorHarness(plugins: [Contributor(id: "kept") { r in r.service { _ in KeptViewListener(log: log) } }])

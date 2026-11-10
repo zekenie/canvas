@@ -15,7 +15,9 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: registry)
-        let sections = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, autosaveName: nil).sections
+        // Every kit on: the keys of the kits' plugins are listed too (a file with a kit off lists none of its).
+        let kitsOn = Set(registry.kits.map(\.id))
+        let sections = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, kits: { kitsOn }, autosaveName: nil).sections
         let listed = sections.flatMap { $0.rows.flatMap(\.keys) }
         expectEqual(listed.count, Set(listed).count, "no key twice: \(listed)")
         for row in sections.flatMap(\.rows) { expect(!row.title.isEmpty && !row.keys.isEmpty, "\(row)") }
@@ -33,6 +35,13 @@ import TestKit
         for hint in registry.keyboardHelp where hint.place == .pointer || hint.place == .text {
             expect(hint.keys.allSatisfy(listed.contains), "\(hint.title) is listed")
         }
+        let rowTitles: Set = ["Next Row; on an Empty Row, Finish", "Move the Row", "Delete the Row", "New Shape Beside It"]
+        let rowHints = registry.keyboardHelp.filter { rowTitles.contains($0.title) }
+        expectEqual(rowHints.count, 4, "the hints of a row, the engineering kit's")
+        let rowKeys = rowHints.flatMap(\.keys)
+        expect(rowKeys.allSatisfy(listed.contains), "a row's keys, with the engineering kit on")
+        let bare = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, kits: { [] }, autosaveName: nil).sections.flatMap { $0.rows.flatMap(\.keys) }
+        expect(rowKeys.allSatisfy { !bare.contains($0) }, "and none with it off, as in a new file")
     },
     test("each key is filed where a person looks for it: a tool's under Tools, a command's with the menu item that runs it, the rest under the canvas, the pointer and text") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -48,6 +57,7 @@ import TestKit
         expectEqual(row("Tools", "Note"), ["N"])
         expectEqual(row("Edit", "Delete"), ["⌫", "⌦"], "Delete's keys with its item, which has none of its own")
         expectEqual(row("Edit", "Undo"), ["⌘Z"])
+        expectEqual(row("Insert", "Connect"), ["⌘L"], "⌘L is filed with the Insert item that runs it, which a note's words reach it by")
         expectEqual(row("Edit", "Find Previous"), ["⇧⌘G"], "a submenu's items in its menu")
         expectEqual(row("Go", "Open Selection"), ["⌘↓", "↩", "⌤", "⌥↩"], "Return and Enter open the selection too, and Return with ⌥ (what waiting shapes are laid out by)")
         expectEqual(row("Go", "Back"), ["⌘[", "⌃-"], "the Mac's key, then VS Code's, which a hidden item of Go answers and no row lists twice")
@@ -67,6 +77,7 @@ import TestKit
         expectEqual(row("View", "Focus Next Pane"), ["F6"])
         expectEqual(row("View", "Focus Previous Pane"), ["⇧F6"])
         expectEqual(row("Edit", "Paste at Pointer"), ["⇧⌘V"], "Clipboard's command, with the item that runs it")
+        expectEqual(row("Edit", "Paste as Note"), ["⌥⇧⌘V"], "Clipboard's command, with the item that runs it")
         expectEqual(row("Edit", "Copy as Image"), ["⇧⌘C"], "the window's own item, its key from the menu bar")
         expectEqual(row("Canvas", "Tool Lock"), ["Q"], "a key that runs no command, under the canvas")
         expectEqual(row("Canvas", "Run a Command"), ["/"], "the command bar's: no menu item runs it")
@@ -78,13 +89,14 @@ import TestKit
         expectEqual(row("Arrange", "Send to Back"), ["["])
         expectEqual(row("Canvas", "Lock or Unlock"), ["⇧L"], "no menu bar item runs it (the Shape menu is empty here, and its items run no command a key finds): the canvas's")
         expectEqual(row("Canvas", "Create Frame"), ["⇧⌘F"])
-        expectEqual(row("Canvas", "Nudge or Pan"), ["←↑→↓", "⇧←↑→↓"])
-        expectEqual(row("Canvas", "Resize"), ["⌥←↑→↓", "⌥⇧←↑→↓"])
+        expectEqual(row("Canvas", "Nudge, Pan or Step Rows"), ["←↑→↓", "⇧←↑→↓"])
+        expectEqual(row("Canvas", "Resize or Move Rows"), ["⌥←↑→↓", "⌥⇧←↑→↓"])
         expectEqual(row("Canvas", "Page Up"), ["⇞"], "a command with no menu item: the canvas's")
         expectEqual(row("Canvas", "Page Down"), ["⇟"])
         expectEqual(row("Canvas", "Start of Board"), ["↖"])
         expectEqual(row("Canvas", "End of Board"), ["↘"])
-        expectEqual(row("Insert", "Note"), ["⇧↩"], "Insert › Note's key, filed with its item")
+        expectEqual(row("Insert", "New Shape Beside"), ["⇧↩"], "Insert › New Shape Beside's key, filed with its item")
+        expectEqual(row("Insert", "Note"), nil, "Insert › Note has no key of its own")
         expectEqual(row("Canvas", "Cancel"), ["⎋", "⌘."])
         expectEqual(row("Canvas", "Next Shape"), ["⇥"])
         expectEqual(row("Canvas", "Previous Shape"), ["⇧⇥"])

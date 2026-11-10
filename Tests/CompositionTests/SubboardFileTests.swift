@@ -19,14 +19,14 @@ import Titles
 
 /// A file of three boards, each inside the last: the root, subboard S's ("Plans"), and, inside
 /// that, untitled subboard T's; on each, two notes and an arrow bound from one to the other. The
-/// ids are fixed, so it's the file `Fixtures/files/nested-sized.v4.json` was written from, once
-/// notes kept a height they're given (`sticky-note` 4, none given one), though none of its notes or
-/// arrows mentions anything, and `nested-described.v4.json` (`subboard` 1, each description empty),
+/// ids are fixed, so it's the file `Fixtures/files/nested-rows.v4.json` was written from, once an
+/// arrow's end could be bound to a row (`arrow` 3, none bound to one), though none of its notes or
+/// arrows mentions anything, and `nested-sized.v4.json` (`arrow` 2), `nested-described.v4.json` (`subboard` 1, each description empty),
 /// `nested-arrows-mention.v4.json` (`arrow` 2), `nested-mentions.v4.json` (`sticky-note` 3,
 /// `arrow` 1) and `nested.v4.json`, from before. With `acrossBoards`, the root's first note mentions
 /// T's first (by the name "Old inside") and T's second mentions the root's second ("Old root"), two
-/// boards apart each way: `Fixtures/files/nested-sized-across.v4.json`, and
-/// `nested-described-across.v4.json`, `nested-arrows-mention-across.v4.json` and
+/// boards apart each way: `Fixtures/files/nested-rows-across.v4.json`, and
+/// `nested-sized-across.v4.json`, `nested-described-across.v4.json`, `nested-arrows-mention-across.v4.json` and
 /// `nested-mentions-across.v4.json` from before.
 struct NestedFile {
     var acrossBoards = false
@@ -69,11 +69,21 @@ struct NestedFile {
 
     /// The fixture: the file as this app wrote it.
     static var fixture: Data {
-        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-sized.v4.json")) }
+        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-rows.v4.json")) }
     }
 
     /// The file with mentions across its boards, as this app wrote it.
     static var acrossFixture: Data {
+        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-rows-across.v4.json")) }
+    }
+
+    /// The file as it was written before an arrow's end could be bound to a row (`arrow` 2).
+    static var beforeRowsFixture: Data {
+        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-sized.v4.json")) }
+    }
+
+    /// The file with mentions across its boards, from before an arrow's end could be bound to a row.
+    static var acrossBeforeRowsFixture: Data {
         get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-sized-across.v4.json")) }
     }
 
@@ -184,6 +194,18 @@ struct NestedFile {
         expectEqual(loaded.file, registry.fillingDefaults(NestedFile().file))
         expect(loaded.report.isEmpty, "\(loaded.report)")
         expectEqual(try codec.encode(loaded.file), try NestedFile.fixture)
+    },
+    test("the nested files from before an arrow's end could be bound to a row read, each arrow's ends as they were") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        for (older, today, nest) in [(try NestedFile.beforeRowsFixture, try NestedFile.fixture, NestedFile()),
+                                     (try NestedFile.acrossBeforeRowsFixture, try NestedFile.acrossFixture, NestedFile(acrossBoards: true))] {
+            let loaded = try codec.decode(older)
+            expectEqual(loaded.file, registry.fillingDefaults(nest.file))
+            expect(loaded.report.isEmpty, "\(loaded.report)")
+            expectEqual(loaded.file.record(nest.arrow(on: 1))?.typed(as: Arrow.self)?.props.start.binding?.part, nil)
+            expectEqual(try codec.encode(loaded.file), today)
+        }
     },
     test("the nested files from before notes kept a height they're given read, each note given none") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

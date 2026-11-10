@@ -2,6 +2,8 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import DetailPanel
+import Engineering
+import LineRows
 @_spi(Host) import CanvasUI
 import Foundation
 import Locking
@@ -87,7 +89,9 @@ extension SampleBoardWindow {
         }
         for exception in KeyMeanings.exceptions {
             expect(!exception.reason.isEmpty, "\(exception.id) gives no reason")
-            expect(exception.keys.allSatisfy { withExceptions.contains($0) }, "the exception \(exception.id) is for keys whose rows name no exception in the principle")
+            // A key held with a modifier (⌥↑) is its key's row's: the row says the exceptions of its key, whatever is held.
+            expect(exception.keys.allSatisfy { key in withExceptions.contains { $0.key == key.key } },
+                   "the exception \(exception.id) is for keys whose rows name no exception in the principle")
         }
         for row in KeyMeanings.canonical where row.meaning != .filter { expect(!row.chords.isEmpty, "\(row.keys) has no chord to press") }
     },
@@ -275,5 +279,126 @@ extension SampleBoardWindow {
             }
             rowsBefore = w.rows
         })
+    },
+    test("a table's rows selected on the canvas: from the second of three each key means what the table says, the rows a column; Tab the next table, Space the Hand") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw("""
+            table "customers" columns: "id uuid pk\\nemail text unique\\nname text"
+            table "orders" right of "customers" columns: "id uuid pk"
+            """)
+        let table = try require(editor.document.shapes.first { $0[TitleProperty.self] == "customers" }?.typed(as: DatabaseTable.self))
+        let start = editor.file
+        let names = ["id", "email", "name"]
+        let walk = KeyWalk(w.window, editor: editor, readers: [.custom("rows") { window in
+            guard let selection = editor.selectedItems, editor.editingShapeID == nil, window.firstResponder === w.canvas else { return nil }
+            let said = selection.ids.compactMap { id in table.props.columns.first { AnyHashable($0.id) == id }?.name }.joined(separator: "+")
+            return Focus.of(window, surface: "rows", element: said)
+        }, .canvas(w.canvas, editor: editor, names: [table.id: "customers"], part: { editor.focusedPart?.title })], settle: .runLoop)
+        walk.pending = meaningsPending
+        let surface = KeySurface("A table's rows on the canvas", axes: .vertical, overrides: [
+            .init(.tab, [.shallower], exception: "canvas-tab"), .init(.backTab, [.shallower], exception: "canvas-tab"),
+            .init(.space, [.acted, .none], exception: "canvas-space"),
+        ])
+        walk.expectMeanings(of: surface, stops: names.map { "rows/\($0)" }, at: 1, depth: { _ in
+            editor.editingShapeID != nil ? 4 : editor.hasFocusedPart ? 3 : editor.selectedItems != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1
+        }, reset: {
+            editor.endEditing()
+            while editor.file != start, editor.canUndo { editor.undo() }
+            editor.selection = nil
+            editor.selectItems([AnyHashable(table.props.columns[1].id)], of: table.id)
+            w.window.makeFirstResponder(w.canvas)
+            w.window.settle()
+        })
+    },
+    test("an API's closed header selected on the canvas: → opens it and ← closes it (item-outline-arrows), the rest as a table's rows; ⌥Tab reaches it from the API") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "shop API" endpoints: "GET /health\n/purchases\nGET /purchases/{id}\nPOST /purchases\n/customers\nGET /customers/{id}"
+            api "admin API" right of "shop API" endpoints: "GET /users"
+            """#)
+        let api = try require(editor.document.shapes.first { $0[TitleProperty.self] == "shop API" }?.typed(as: API.self))
+        editor.rowFolds?.fold([api.id])
+        w.window.settle()
+        let start = editor.file
+        let names: [AnyHashable: String] = Dictionary(uniqueKeysWithValues: api.props.endpoints.map { row in
+            (AnyHashable(row.id), row.header?.prefix ?? row.endpoint?.path ?? "?")
+        })
+        let shown = editor.shapeItems(of: api.id).map { names[$0.id] ?? "?" }
+        expectEqual(shown, ["/health", "/purchases", "/customers"], "folded: the endpoint under no header, then each header closed")
+        let purchases = try require(api.props.endpoints.first { $0.header?.prefix == "/purchases" }).id
+        let closed = { @MainActor in editor.rowFolds?.fold(of: api.id)?.closed.contains(purchases) == true }
+        let walk = KeyWalk(w.window, editor: editor, readers: [.custom("rows") { window in
+            guard let selection = editor.selectedItems, editor.editingShapeID == nil, window.firstResponder === w.canvas else { return nil }
+            return Focus.of(window, surface: "rows", element: selection.ids.map { names[$0] ?? "?" }.joined(separator: "+"))
+        }, .canvas(w.canvas, editor: editor, names: [api.id: "shop API"], part: { editor.focusedPart?.title })], settle: .runLoop)
+        walk.pending = meaningsPending
+        let reset = { @MainActor in
+            editor.endEditing()
+            while editor.file != start, editor.canUndo { editor.undo() }
+            editor.rowFolds?.fold([api.id])
+            editor.selection = nil
+            editor.selectedShapeIDs = [api.id]
+            w.window.makeFirstResponder(w.canvas)
+            walk.driver.send(.optionTab)
+            walk.driver.send(.down)
+            w.window.settle()
+        }
+        reset()
+        expectEqual(walk.focus.id, "rows//purchases", "⌥Tab into the API's rows, ↓ to the closed header")
+        let surface = KeySurface("An API's closed header on the canvas", axes: .vertical, overrides: [
+            .init(.tab, [.shallower], exception: "canvas-tab"), .init(.backTab, [.shallower], exception: "canvas-tab"),
+            .init(.space, [.acted, .none], exception: "canvas-space"),
+            .init(.right, [.acted], exception: "item-outline-arrows"), .init(.left, [.none], exception: "item-outline-arrows"),
+        ])
+        walk.expectMeanings(of: surface, stops: shown.map { "rows/\($0)" }, at: 1, depth: { _ in
+            editor.editingShapeID != nil ? 4 : editor.hasFocusedPart ? 3 : editor.selectedItems != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1
+        }, acted: { !closed() }, reset: reset)
+    },
+    test("a table's row being typed in: every key means what the table says, but Return (line-return), on a row of a table of three; ⌘↓ into its card") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        var record = ShapeRecord(DatabaseTable(frame: CGRect(x: 200, y: 200, width: 300, height: 100),
+                                               columns: ["id uuid pk", "email text unique", "name text"].compactMap { ColumnGrammar.read($0) }))
+        record[TitleProperty.self] = "customers"
+        let table = AnyShapeRecord(record)
+        editor.transact { $0.insert(table) }
+        editor.undoHistory.seal()
+        let start = editor.file
+        let walk = KeyWalk(w.window, editor: editor, readers: [.custom("row") { window in
+            guard let view = w.lineRows, editor.editingShapeID != nil, let responder = window.firstResponder as? NSView, responder.isDescendant(of: view) else { return nil }
+            let name: String = switch view.focus {
+            case .title: "title"
+            case .fixed: "fixed"
+            case .waiting: "waiting"
+            case .row(_): view.line(of: view.focus).flatMap { ColumnGrammar.read($0)?.name } ?? "?"
+            }
+            return Focus.of(window, surface: "row", element: name)
+        }, .canvas(w.canvas, editor: editor, names: [table.id: "customers"])], settle: .runLoop)
+        walk.pending = meaningsPending
+        let reset = { @MainActor in
+            editor.closeCard()
+            editor.endEditing()
+            while editor.file != start, editor.canUndo { editor.undo() }
+            editor.selectedShapeIDs = [table.id]
+            editor.beginEditing(table.id)
+            w.window.settle()
+            w.lineRows?.go(to: .row(record.props.columns[1].id))
+            w.window.settle()
+        }
+        reset()
+        let surface = KeySurface("A table's row", axes: .vertical, overrides: [
+            .init(.return, [.forward, .elsewhere, .acted], exception: "line-return"),
+        ])
+        walk.expectMeanings(of: surface, stops: ["row/title", "row/id", "row/email", "row/name", "row/waiting"], at: 2,
+                            depth: { _ in editor.card != nil ? 3 : editor.editingShapeID != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1 },
+                            reset: reset)
     },
 ])

@@ -29,6 +29,9 @@ public struct Registry {
     /// let go, and what a plugin that follows bindings asks (`record.boundShapes(in:)`), so only
     /// these are walked. Not the kinds that only name shapes (`namingKinds`).
     public let referencingKinds: Set<ShapeKind>
+    /// Kinds whose shapes take the shapes bound to them along when they are deleted or copied
+    /// (`TakesBoundShapes`).
+    public let takingBoundKinds: Set<ShapeKind>
     /// Kinds whose shapes can hold names of shapes (`ShapeNaming`): in their own props, or in an
     /// added property they opt into. A copy renames the names of these kinds' shapes, and a plugin
     /// that follows names walks only these (`record.forEachNamingValue`); no other shape holds one.
@@ -38,6 +41,17 @@ public struct Registry {
     /// Kinds whose shapes contain shapes on their own board (`ShapeContaining`: a frame). Without
     /// one, nothing is in a container, and the core does nothing of containment (Containment.swift).
     public let containingKinds: Set<ShapeKind>
+    /// Kinds whose shapes make room below them as they grow (`MakesRoomAsItGrows`): what `Transaction.makeRoom()`
+    /// looks for among what a step changed. Without one, it does nothing.
+    public let roomMakingKinds: Set<ShapeKind>
+
+    /// The room a shape of `kind` keeps clear below it as it grows (`MakesRoomAsItGrows.roomKeptBelow`), world units: what a
+    /// layout that puts such shapes down leaves below each (draw's placing, a paste's grid), so the first row typed into one covers
+    /// nothing below it before any push. None for a kind that doesn't make room.
+    public func roomKeptBelow(_ kind: ShapeKind) -> CGFloat {
+        guard roomMakingKinds.contains(kind) else { return 0 }
+        return (definition(for: kind) as? any MakesRoomAsItGrows)?.roomKeptBelow ?? 0
+    }
     /// Kinds that draw a skeleton of their own (`CustomSkeleton`), found once: a frame zoomed out
     /// asks for every shape it draws.
     let customSkeletons: [ShapeKind: any CustomSkeleton]
@@ -51,6 +65,8 @@ public struct Registry {
     let showingShapes: [ShapeKind: any ShowingShapes]
     /// Kinds laid out at another size than their box (`LaidOutBox`), found once: every shape's frame asks.
     let laidOutBoxes: [ShapeKind: any LaidOutBox]
+    /// The kinds whose shapes have parts (`PartedShape`), with their definitions.
+    let partedDefinitions: [ShapeKind: any PartedShape]
     /// Kinds whose shapes take a frame they're given their own way (`CustomSizing`), found once.
     let customSizings: [ShapeKind: any CustomSizing]
     /// What provides each layout input (`registrar.layoutInput`), by the key's name, found once: a
@@ -114,9 +130,12 @@ public struct Registry {
             return (shape.kind, shape.definition)
         }, uniquingKeysWith: { first, _ in first })
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
+        takingBoundKinds = Set(definitions.filter { $0.value is any TakesBoundShapes }.keys)
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
         containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
+        roomMakingKinds = Set(definitions.filter { $0.value is any MakesRoomAsItGrows }.keys)
         laidOutBoxes = definitions.compactMapValues { $0 as? any LaidOutBox }
+        partedDefinitions = definitions.compactMapValues { $0 as? any PartedShape }
         // A container's edge is its box: what it holds is judged by it, and a resize edits it.
         if let kind = laidOutBoxes.keys.filter(containingKinds.contains).min(by: { $0.rawValue < $1.rawValue }) {
             throw .invalid(point: "Shapes", reason: "\(kind) holds shapes, so it can't be laid out past its box")
@@ -355,6 +374,33 @@ public struct Registry {
     /// Whether a kind's shapes may be laid out at another size than their box (`LaidOutBox`).
     public func isLaidOutBox(_ kind: ShapeKind) -> Bool { laidOutBoxes[kind] != nil }
 
+    /// The kinds whose shapes have parts (`PartedShape`): their rows.
+    public var partedKinds: Set<ShapeKind> { Set(partedDefinitions.keys) }
+
+    /// Whether a kind's shapes have parts (`PartedShape`), a look-up.
+    public func isParted(_ kind: ShapeKind) -> Bool { partedDefinitions[kind] != nil }
+
+    /// Whether every shape of a kind is all its one row (`PartedShape.isAllItsOneRow`), a look-up.
+    public func isAllItsOneRow(_ kind: ShapeKind) -> Bool { partedDefinitions[kind]?.isAllItsOneRow == true }
+
+    /// A shape's parts, in reading order, as its kind says them (`PartedShape.parts(of:)`): each one's id, name,
+    /// kind word, lead and whether it stands alone. Nil for a shape of a kind with no parts (or none installed).
+    public func parts(of shape: AnyShapeRecord) -> [PartName]? {
+        partedDefinitions[shape.kind]?.erasedParts(of: shape)
+    }
+
+    /// Whether `part` of `shape` is no part that only heads rows (a path prefix: `PartName.isConnectable`). True for a part the
+    /// shape doesn't list, which a binding through a pill names (the row of the shape it stands for).
+    public func isConnectable(part: PartID, of shape: AnyShapeRecord) -> Bool {
+        parts(of: shape)?.first { $0.id == part }?.isConnectable ?? true
+    }
+
+    /// `shape` with these parts taken out (`PartedShape.removing(_:from:)`), keeping its metadata; nil when its kind has
+    /// no parts, doesn't take them out by id, or it has none of them. The writer then hands them to `removeParts`.
+    public func removing(_ parts: Set<PartID>, from shape: AnyShapeRecord) -> AnyShapeRecord? {
+        partedDefinitions[shape.kind]?.erasedRemoving(parts, from: shape)
+    }
+
     /// Whether a kind's shapes take a frame they're given their own way (`CustomSizing`).
     public func takesFramesItsOwnWay(_ kind: ShapeKind) -> Bool { customSizings[kind] != nil }
 
@@ -367,6 +413,11 @@ public struct Registry {
         var record = record
         if let sizing = customSizings[record.kind] { sizing.erasedSize(&record, to: frame, giving: axes, in: context) } else { record.box = frame }
         return record
+    }
+
+    /// The ways a resize by hand gives a shape its size (`CustomSizing.resizedAxes`): both for a kind that doesn't say.
+    public func resizedAxes(of record: AnyShapeRecord) -> SizeAxes {
+        customSizings[record.kind].map { $0.erasedResizedAxes(of: record) } ?? .both
     }
 
     /// Whether a shape is resized by hand as far as its kind says (`CustomSizing.isResizable`): true for a kind that
@@ -489,6 +540,15 @@ public struct Registry {
     /// plugin claimed (`registrar.defaultTool`), else the Hand.
     public var defaultTool: ToolID { contributions(to: CorePoints.DefaultTool.self).first?.value ?? .hand }
 
+    /// The tool ⇧↩ falls back on when the selection is no one kind a tool places (`registrar.insertsBesideByDefault`);
+    /// nil when no plugin claimed one.
+    public var insertsBesideByDefault: ToolID? { contributions(to: CorePoints.InsertBesideByDefault.self).first?.value }
+
+    /// The tool that places a kind's shapes (the first, if several do); nil for a kind no tool places.
+    public func placingTool(for kind: ShapeKind) -> ToolID? {
+        contributions(to: CorePoints.Tools.self).lazy.first { $0.value.placement?.kind == kind }?.value.descriptor.id
+    }
+
     /// What the kind's tool places (the first tool's, if several place it): its size and its
     /// props. Nil for a kind no tool places (an arrow), or one a tool draws instead (a line).
     public func placement(for kind: ShapeKind) -> Placement? {
@@ -528,6 +588,21 @@ public struct Registry {
     var overlays: [any CanvasOverlay] { contributions(to: CorePoints.Overlays.self).map(\.value) }
     var willDeleteHandlers: [@MainActor (Set<ShapeID>, inout Transaction) -> Void] {
         contributions(to: CorePoints.WillDelete.self).map(\.value)
+    }
+    var partsMovedHandlers: [@MainActor ([PartAddress: PartAddress], inout Transaction) -> Void] {
+        contributions(to: CorePoints.PartsMoved.self).map(\.value)
+    }
+    /// What finds the stand-ins naming a shape, if a plugin gives it (`registrar.standInLookup`).
+    var standInLookup: (@MainActor (CanvasEditor, ShapeID) -> [ShapeID])? {
+        contributions(to: CorePoints.StandInLookups.self).first?.value.lookup
+    }
+    /// What finds the shapes whose records name a shape, if a plugin gives it (`registrar.standInLookup(_:names:namers:)`).
+    var namingLookup: (@MainActor (CanvasEditor, ShapeID) -> [ShapeID])? {
+        contributions(to: CorePoints.StandInLookups.self).first?.value.namers
+    }
+    /// What a stand-in's record names, if a plugin says (`registrar.standInLookup(_:names:)`): one shape, nil for any other record.
+    var standInNames: (@MainActor (AnyShapeRecord, Registry) -> ShapeID?)? {
+        contributions(to: CorePoints.StandInLookups.self).first?.value.names
     }
     /// A kind's rules for what its shapes hold (`keepsInStep`), found once a kind: every write of an
     /// added value asks.
@@ -635,11 +710,14 @@ struct RawContribution {
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
+            case is CorePoints.PartsMoved.Type: "parts moved"
+            case is CorePoints.StandInLookups.Type: "stand-in lookup"
             case is CorePoints.KeepsInStep.Type: "keeps in step → \(target)"
             case is CorePoints.ReadOnlyRules.Type: "read-only shapes"
             case is CorePoints.ShapeTints.Type: "shape tints"
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
+            case is CorePoints.InsertBesideByDefault.Type: "insert beside by default \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
             case is CorePoints.SelectionMenu.Type: "selection menu"
             case is CorePoints.CommandShapes.Type: "command shapes"

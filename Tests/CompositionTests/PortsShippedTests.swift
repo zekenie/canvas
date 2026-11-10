@@ -453,11 +453,9 @@ extension EditorHarness {
         expectEqual(h.editor.undoHistory.undoName, "Add Arrow")
         expectEqual(h.editor.selectedShapeIDs, [])
         expectEqual(h.editor.currentToolID, .select)
-        // ⌘L with the note alone selected makes another, round the first: the drag by keys.
+        // ⌘L with the note alone selected, and Itself picked, makes another, round the first: the drag by keys.
         h.editor.selection = a.id
-        h.hold(.command)
-        expect(h.key("l"), "⌘L takes one note")
-        h.hold([])
+        connectToItself(h.editor)
         expectEqual(arrows(h).count, 2)
         let second = try require(arrows(h).last)
         expectEqual(second.props.start.binding?.shapeID, a.id)

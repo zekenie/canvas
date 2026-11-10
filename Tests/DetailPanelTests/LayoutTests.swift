@@ -229,7 +229,7 @@ extension AlertsTab: DetailTab {
             }
         }])
         expectEqual(withoutKeys(registry.report), """
-        core          tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        core          tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · host inspector
         p             DetailStatuses → every shape · DetailStatuses in Alerts after Style → every shape
@@ -244,7 +244,7 @@ extension AlertsTab: DetailTab {
             }
         }])
         expectEqual(withoutKeys(registry.report), """
-        core          tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        core          tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · host inspector
         p             ShapeDetails in Style last, Frame after Style → box

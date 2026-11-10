@@ -347,7 +347,11 @@ public final class BoardDocument: NSDocument {
     /// so the zoom it opens at isn't a change of zoom to show.
     public override func makeWindowControllers() {
         let saved = fileURL.flatMap { viewMemory.recall(for: $0) }
-        if let saved { editor.camera = saved.camera }
+        if let saved {
+            editor.camera = saved.camera
+            // What plugins keep of the view (LineRows' folds), back before the canvas lays a shape out to draw it.
+            if let values = saved.values, !values.isEmpty { editor.restoreViewValues(values) }
+        }
         addWindowController(BoardWindowController(board: self))
         if let saved {
             editor.rememberedCameras = saved.cameras
@@ -383,7 +387,7 @@ public final class BoardDocument: NSDocument {
     /// Remembers, for the next time the file opens, where the camera was left on the boards it can
     /// still show (`editor.boardCameras`): the one shown and those above it, then those shown most
     /// lately, up to `BoardViewMemory.boardLimit`; which board is shown; whether its sidebar, details
-    /// and minimap show; and how wide the sidebar and the inspector were left.
+    /// and minimap show; how wide the sidebar and the inspector were left; and the view values plugins keep (`editor.viewValues`).
     public func rememberView() {
         guard let url = fileURL else { return }
         let all = editor.boardCameras
@@ -401,6 +405,8 @@ public final class BoardDocument: NSDocument {
                                         showsMinimap: viewState.showsMinimap)
         view.sidebarWidth = viewState.sidebarWidth.map(Double.init)
         view.inspectorWidth = viewState.inspectorWidth.map(Double.init)
+        let values = editor.viewValues
+        view.values = values.isEmpty ? nil : values
         viewMemory.remember(view, for: url)
     }
 
@@ -479,8 +485,8 @@ extension String {
 }
 
 /// Each file's view, remembered on this Mac by its path, most recent first: the camera on each of
-/// its boards, the board left open, whether the sidebar, the details and the minimap show, and how wide
-/// the sidebar and the inspector were left. Not in the file,
+/// its boards, the board left open, whether the sidebar, the details and the minimap show, how wide
+/// the sidebar and the inspector were left, and what plugins keep of the view (view values: folds). Not in the file,
 /// so panning or going into a board never marks it edited, and a file opens where this Mac left it.
 /// A renamed or moved file opens with the default view.
 public struct BoardViewMemory {
@@ -502,6 +508,9 @@ public struct BoardViewMemory {
         /// a view remembered before they were kept.
         public var sidebarWidth: Double?
         public var inspectorWidth: Double?
+        /// What plugins keep of the file's view, by key (`editor.viewValues`: LineRows' folds); nil for none, and in a view
+        /// remembered before they were kept.
+        public var values: [String: Data]?
 
         /// A camera, as the view keeps it.
         public struct Spot: Codable, Equatable, Sendable {
@@ -562,7 +571,7 @@ public struct BoardViewMemory {
         public var recentBoards: [BoardID] { (recent ?? []).compactMap(BoardID.init) }
 
         private enum CodingKeys: String, CodingKey {
-            case x, y, zoom, showsSidebar, showsDetails, showsMinimap, board, boards, recent, sidebarWidth, inspectorWidth
+            case x, y, zoom, showsSidebar, showsDetails, showsMinimap, board, boards, recent, sidebarWidth, inspectorWidth, values
         }
 
         /// A view remembered before there was a sidebar or a minimap shows them, as a new board does; one
@@ -580,6 +589,7 @@ public struct BoardViewMemory {
             recent = try container.decodeIfPresent([String].self, forKey: .recent)
             sidebarWidth = try container.decodeIfPresent(Double.self, forKey: .sidebarWidth)
             inspectorWidth = try container.decodeIfPresent(Double.self, forKey: .inspectorWidth)
+            values = try container.decodeIfPresent([String: Data].self, forKey: .values)
         }
     }
 

@@ -32,6 +32,25 @@ extension LaidOutBox {
     }
 }
 
+/// A kind whose shapes make room below them as they grow: when a step writes one taller (a table gaining a row), the
+/// shapes below it in its container (or on the board) that its new bottom reaches move down by as much, in the same
+/// step, so the gap they had stays; a container they would hang out of grows, and each pushes in its turn
+/// (`Transaction.makeRoom()`, MakingRoom.swift). How tall it is, for this, is its frame at rest: laid out without what a
+/// plugin sets for it while it's handled (`editor.setLayoutInput`: an editing view's waiting line), so only a write
+/// pushes. A best effort with clear limits, never a layout engine: read-only shapes stop it, and shrinking pulls
+/// nothing up. Conform in an extension, like every capability.
+public protocol MakesRoomAsItGrows: ShapeDefinition {
+    /// How much room, world units, a push from this shape's growth leaves clear between its new bottom and the top of a
+    /// shape it moves (a shape it reaches anyway), where the gap they had is less: what the shape shows below its rows while
+    /// it's edited (a waiting line) and what sits above the shape below (its title's pill), so neither covers the other as rows
+    /// are typed (UX walk 3 apis-1). By default none: the gap they had is kept, as ever.
+    var roomKeptBelow: CGFloat { get }
+}
+
+extension MakesRoomAsItGrows {
+    public var roomKeptBelow: CGFloat { 0 }
+}
+
 /// A kind whose shapes show another shape of the file in their place (a stand-in that shows its original, as a mirror
 /// does), drawing it with `RenderContext.drawShape(inFile:through:standingIn:)`: what it shows and where, so the core can
 /// edit it there (`editor.beginEditing(_:through:at:clickCount:)`: the shown shape's own editor laid over it at the
@@ -71,11 +90,17 @@ public protocol Editable: ShapeDefinition {
     /// Reference. Nil is "Typing". A step an action holds open (a placement's "Add ...") keeps the
     /// action's name.
     var editingStepName: String? { get }
+    /// Whether the shape can be edited where a stand-in shows it (`editor.beginEditing(_:through:)`): its editing view writes
+    /// through `EditContext.update` and reads `EditContext.shape`, which reach it on whichever board it is. A kind whose editor
+    /// reads and writes only the board shown (the rows written as lines) answers false, and is never edited through a mirror
+    /// (`beginEditing(_:through:)` returns false, so what asks first, Return on a mirror, finds nothing to open). Default true.
+    var editsThroughStandIn: Bool { get }
 }
 
 extension Editable {
     public func discardsWhenEditingEnds(_ props: Props) -> Bool { false }
     public var editingStepName: String? { nil }
+    public var editsThroughStandIn: Bool { true }
 }
 
 extension Editable where Props: BoxShapeProps {
@@ -155,8 +180,11 @@ public struct EditContext<Props: ShapeProps> {
     /// growing downward with what's typed), moving the camera at once, by as little as it takes, into
     /// the part of the view the host leaves clear, 16 points in from its edges; no zoom, and no undo
     /// step. `rect` is in the editing view's coordinates: world units, with the shape's editing frame
-    /// at their origin, as the view's bounds are. Nothing while a press is under way.
-    public func keepInView(_ rect: CGRect) { editor?.keepInView(rect, of: shapeID) }
+    /// at their origin, as the view's bounds are. Nothing while a press is under way. With `skippingNudges`, a rect already
+    /// wholly in the clear view is left where it is when the pan would be under `Style.leastKeepInViewPan`: for what a
+    /// pick or a step to another line changes at once, which a few points of pan would only move the board for; never for a
+    /// caret typed toward the edge, which is followed by each character.
+    public func keepInView(_ rect: CGRect, skippingNudges: Bool = false) { editor?.keepInView(rect, of: shapeID, skippingNudges: skippingNudges) }
 
     /// The pointer is on part of the view that has a popover (its anchor in the view's coordinates,
     /// as `keepInView`'s rect is), or on nothing that has one (nil), as `editor.hoverPopover` hears
@@ -231,10 +259,14 @@ public protocol CustomSizing: ShapeDefinition where Props: BoxShapeProps {
     /// Whether the shape is resized by hand: false for one whose size isn't its own to give (a
     /// relationship type's pill, as big as its name). Default true.
     func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool
+    /// The ways a resize by hand gives its size: both by default; a kind whose height is its rows' gives only its width, and
+    /// is resized by its corners alone (Selection's handles), so no handle sits at a side's middle, where a row's line ends.
+    func resizedAxes(of shape: ShapeRecord<Props>) -> SizeAxes
 }
 
 extension CustomSizing {
     public func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool { true }
+    public func resizedAxes(of shape: ShapeRecord<Props>) -> SizeAxes { .both }
 }
 
 /// Which ways a frame given to a shape gives its size (`CustomSizing`): its width, its height, or both.
@@ -247,13 +279,29 @@ public struct SizeAxes: OptionSet, Hashable, Sendable {
 }
 
 /// Painted relative to another shape instead of by document order, so bringing it to front means
-/// nothing. A connector stays just above the shapes it joins; a label, above its host.
+/// nothing. A connector stays just above the shapes it joins (or, bound to their rows, just below the
+/// lower of them: `paintsBelowAnchor`); a label, above its host.
 public protocol PaintOrderAnchored: ShapeDefinition {
     /// Paint just above this shape; nil (or a shape that isn't there) paints above everything.
     /// It must follow from the shape's own props and the document's order (which shapes there
     /// are, and where), not other shapes' props: the editor works the paint order out again only
     /// when the stack, or this shape, changes.
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?
+
+    /// Painted just below its anchor instead of just above (false, by default): a connector bound to rows of cards
+    /// (a key), under the lower of the cards it joins, so a card it passes covers it. As `paintAnchor`, it must follow
+    /// from the shape's own props and the document's order.
+    func paintsBelowAnchor(_ shape: ShapeRecord<Props>, in document: CanvasDocument) -> Bool
+
+    /// The shapes whose containment its anchor follows (none, by default): a connector under a card's container (a key, just
+    /// above the database of its end) names its ends, so a commit that puts one of them, or a container holding one, into or out
+    /// of a container places it again, and a commit that moves any other shape's containment keeps the paint list.
+    func paintAnchorFollowsContainment(of shape: ShapeRecord<Props>) -> [ShapeID]
+}
+
+extension PaintOrderAnchored {
+    public func paintsBelowAnchor(_ shape: ShapeRecord<Props>, in document: CanvasDocument) -> Bool { false }
+    public func paintAnchorFollowsContainment(of shape: ShapeRecord<Props>) -> [ShapeID] { [] }
 }
 
 /// Drawn more simply zoomed out: how a shape shows in place of `render` while the canvas draws
@@ -328,6 +376,49 @@ public protocol ShapeReferencing: ShapeDefinition {
     /// do without (an arrow can't tell where that end is drawn). A deletion then leaves the props
     /// as they were, and a copy leaves the shape out.
     func remappingReferences(of shape: ShapeRecord<Props>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Props?
+    /// The parts of shapes it's bound to (an arrow's end at a row), each with its shape: what a part taken out or moved
+    /// reaches (`Transaction.removeParts`, `moveParts`). None unless the kind binds parts.
+    func boundParts(of shape: ShapeRecord<Props>) -> [PartAddress]
+    /// The props with every part it's bound to passed through `move`: bound to where `move` says instead (a part of
+    /// another shape on the board, or a shape as a whole, part nil). Nil when nothing changed, as for a kind that binds
+    /// no part.
+    func movingParts(of shape: ShapeRecord<Props>, _ move: (PartAddress) -> PartAddress) -> Props?
+}
+
+extension ShapeReferencing {
+    public func boundParts(of shape: ShapeRecord<Props>) -> [PartAddress] { [] }
+    public func movingParts(of shape: ShapeRecord<Props>, _ move: (PartAddress) -> PartAddress) -> Props? { nil }
+}
+
+/// Each shape of this kind takes the shapes bound to it (`ShapeReferencing`: an arrow's ends) along: deleting it
+/// deletes them, but a read-only one, which lets go where it's drawn as it does for any kind; and copying it
+/// copies those bound only to shapes copied with it (`ShapeContext.takenAlong(by:)`). Nothing to implement: a
+/// kind adopts it in an extension, and the core's deletion and Clipboard's copy do the rest. A kind that
+/// doesn't keeps tldraw's rule (an arrow bound to a deleted shape stays, free at that end), so a concern that
+/// wants its shapes' arrows to go with them opts in, and no other kind's delete changes. What a delete took
+/// along is the transaction's to say (`Transaction.deletedAlong`), so its step is named for it.
+public protocol TakesBoundShapes: ShapeDefinition {}
+
+/// Each shape of this kind has parts other shapes may one day address: its rows (a table's columns). The one source
+/// of what they are: a picker, a pill, Find and VoiceOver read them here, so they say a row alike. Pure, from the
+/// record, so it's read for a shape on any board. Where each is drawn is the kind's geometry's
+/// (`ShapeGeometry.parts`), worked out with the rest. Conform in an extension.
+public protocol PartedShape: ShapeDefinition {
+    /// Its parts, in reading order: each one's id (the shape's own, kept by a copy), name, kind word, lead and
+    /// whether it stands alone.
+    func parts(of shape: ShapeRecord<Props>) -> [PartName]
+    /// The props with these parts taken out, the rest as they were: what a writer that names rows by their ids alone takes a
+    /// row out with (`canvas draw`'s `delete "orders".legacy_note`), which then hands them to `Transaction.removeParts`. Nil
+    /// (the default) when it has none of them, or the kind's parts are taken out only by its own writer.
+    func removing(_ parts: Set<PartID>, from shape: ShapeRecord<Props>) -> Props?
+    /// Whether every shape of this kind is all its one row (`PartName.isItsShape`: an endpoint taken out of its API), a fact of the
+    /// kind, so what shows or follows the shape as a whole as that row asks the kind and reads no parts of any other. False by default.
+    var isAllItsOneRow: Bool { get }
+}
+
+extension PartedShape {
+    public var isAllItsOneRow: Bool { false }
+    public func removing(_ parts: Set<PartID>, from shape: ShapeRecord<Props>) -> Props? { nil }
 }
 
 /// Each shape of this kind owns a board, one under the board it's on: kept in the file under its id

@@ -49,6 +49,10 @@ public struct LayoutProblem {
         /// boxes yields to the earlier. Such boxes placed alike list only with each other, never with a
         /// box the script wrote, `impliedListStep` apart.
         public var implied: Bool
+        /// The room it keeps clear below it (a table that grows as rows are typed: its waiting line and the next shape's pill), world
+        /// units: a box placed below it with no `gap:` said is at least this far down, as is the next of a list it heads. None by
+        /// default.
+        public var roomBelow: CGFloat = 0
 
         public init(line: Int, name: String, size: CGSize, clauses: [ResolvedClause] = [], gap: Gap? = nil,
                     overlapAllowed: Bool = false, current: CGRect? = nil, holder: Holder? = nil, carries: Set<Int> = [],
@@ -95,6 +99,8 @@ public struct LayoutProblem {
         /// against at twice that shape's area, and the `view` whatever its size; the board, framed by
         /// what's on it, and the origin, a point, make nothing a zone.
         public var word: PlaceWord?
+        /// The room it keeps clear below it, as a free box's (`Free.roomBelow`).
+        public var roomBelow: CGFloat = 0
 
         public init(rect: CGRect, gap: Gap? = nil, obstacle: Int? = nil, word: PlaceWord? = nil) {
             self.rect = rect
@@ -206,6 +212,29 @@ public struct LayoutProblem {
     /// How a message names a fixed box or an obstacle, as `Free.name` names a free one; asked only
     /// when one is needed.
     public var name: (Ref) -> String
+    /// Where a drawing with nothing to hang on lands for a person (a shape Insert puts down): at the nearest spot where
+    /// it is inside `clear` with `above` over its top too (the row of things shown just above it), when one is clear,
+    /// before the spots out of it. Nil, as `canvas draw` places one, for the nearest spot wherever it is.
+    public var landsInView: InView?
+
+    /// `landsInView`'s region: world units. `covered` are parts of `clear` it keeps out of too (the corner a minimap covers).
+    public struct InView: Sendable, Equatable {
+        public var clear: CGRect
+        public var above: CGFloat
+        public var covered: [CGRect]
+
+        public init(clear: CGRect, above: CGFloat, covered: [CGRect] = []) {
+            self.clear = clear
+            self.above = above
+            self.covered = covered
+        }
+
+        /// Whether `rect`, with the room above it, is inside, and clear of what's covered.
+        func holds(_ rect: CGRect) -> Bool {
+            let shown = CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above)
+            return clear.contains(shown) && !covered.contains { $0.intersects(shown) }
+        }
+    }
 
     public init(free: [Free], fixed: [Fixed] = [], obstacles: @escaping (CGRect) -> [Obstacle] = { _ in [] }, boardBounds: CGRect? = nil,
                 viewMiddle: CGPoint = .zero, view: CGRect? = nil, name: @escaping (Ref) -> String = { _ in "a shape" }) {
@@ -263,12 +292,33 @@ public struct LayoutSolution: Sendable, Equatable {
     /// on them, so it paints above them, and it isn't kept within them. Each is where the boxes
     /// leave it: one a restated box takes along (`Free.carries`), moved as far as that box moves.
     public var zones: [[LayoutProblem.Obstacle]]
+    /// Each box slid along an axis its placement leaves free, to stay inside what holds it (`in "F"`,
+    /// or `inside`), in the order it happened.
+    public var slides: [Slide]
 
     /// `zones` nil: none for any box.
-    public init(rects: [CGRect], pushes: [Push], zones: [[LayoutProblem.Obstacle]]? = nil) {
+    public init(rects: [CGRect], pushes: [Push], zones: [[LayoutProblem.Obstacle]]? = nil, slides: [Slide] = []) {
         self.rects = rects
         self.pushes = pushes
         self.zones = zones ?? rects.map { _ in [] }
+        self.slides = slides
+    }
+
+    /// A free box that would have crossed its holder's edge on the axis its placement leaves free (a
+    /// lone direction centers it there), and was slid along it until it was inside.
+    public struct Slide: Sendable, Equatable {
+        /// Its place in `free`.
+        public var box: Int
+        /// Which way it went: right, left, below or above.
+        public var way: Direction
+        /// What it stays inside.
+        public var inside: LayoutProblem.Ref
+
+        public init(box: Int, way: Direction, inside: LayoutProblem.Ref) {
+            self.box = box
+            self.way = way
+            self.inside = inside
+        }
     }
 
     /// For each free box, what it was pushed past, in order, each once: what it was kept clear of

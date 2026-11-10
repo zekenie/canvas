@@ -185,13 +185,18 @@ struct RowTemplate {
     var renames: Int
     /// The index of the first relation row; nil with none.
     var relationStart: Int?
+    /// How wide the widest of the fields' kinds' words is ("Number"), where none is a pill: the names may take the rest of the
+    /// row, so "amount_cents" isn't cut with room beside it; the same on a type's note and on a note that is one (one column
+    /// for both). Nil where a kind is a pill or there are relation rows: the names keep to their share.
+    var valueColumn: CGFloat?
 
-    init(items: [RowTemplateItem], nameColumn: CGFloat, usesNames: Bool, renames: Int, relationStart: Int? = nil) {
+    init(items: [RowTemplateItem], nameColumn: CGFloat, usesNames: Bool, renames: Int, relationStart: Int? = nil, valueColumn: CGFloat? = nil) {
         self.items = items
         self.nameColumn = nameColumn
         self.usesNames = usesNames
         self.renames = renames
         self.relationStart = relationStart
+        self.valueColumn = valueColumn
     }
 
     /// Whether a dashed line runs between the fields and the relation rows: only with both.
@@ -359,6 +364,9 @@ public final class RowBook {
         let list = RowList(resolved, own: own)
         let dotRoom = TypesStyle.neededDotGap + TypesStyle.neededDotSize
         var items: [RowTemplateItem] = [], column: CGFloat = 0, usesNames = false
+        // The widest of the kinds' words, while none is a pill: what a type's note shows as values, and the column a note that is
+        // one keeps too, so a name is cut at the same place on both (its typed values cut at their ends where they run past).
+        var values: CGFloat? = 0
         for item in list.items {
             switch item {
             case .field(let field):
@@ -369,6 +377,11 @@ public final class RowBook {
                 let memberCount: Int
                 if case .group = kind { memberCount = book.members(of: field).count } else { memberCount = 0 }
                 column = max(column, width + (subject.isType && field.field.isRequired ? dotRoom : 0))
+                if let widest = values {
+                    let label = kind.typeLabel(memberCount: memberCount)
+                    let chevron = kind.opensOnType ? FieldLines.width(of: "›", .kind) + TypesStyle.partGap : 0
+                    values = kind.chip == nil ? max(widest, FieldLines.width(of: label, .kind) + chevron) : nil
+                }
                 items.append(.field(FieldRowTemplate(resolved: field, path: FieldPath(field: field.field.name), name: name, kind: kind,
                                                      label: kind.typeLabel(memberCount: memberCount), chip: kind.chip,
                                                      opensOnType: kind.opensOnType, isNeeded: field.field.isRequired,
@@ -386,6 +399,7 @@ public final class RowBook {
                 }
                 // `+N more` runs from the left edge and is no name; `from Person` is one.
                 if !fold.isMore { column = max(column, FieldLines.width(of: name, .faint)) }
+                values = values.map { max($0, fold.isMore ? 0 : FieldLines.width(of: FieldWords.fields(fold.folded.count), .faint)) }
                 items.append(.fold(FoldTemplate(name: name, value: fold.isMore ? "" : FieldWords.fields(fold.folded.count), isMore: fold.isMore,
                                                 sources: fold.sources, folded: fold.folded)))
             }
@@ -413,7 +427,8 @@ public final class RowBook {
                 relationsMade += 1
             }
         }
-        return RowTemplate(items: items, nameColumn: column, usesNames: usesNames, renames: renames, relationStart: relationsMade > 0 ? relationStart : nil)
+        return RowTemplate(items: items, nameColumn: column, usesNames: usesNames, renames: renames, relationStart: relationsMade > 0 ? relationStart : nil,
+                           valueColumn: relationsMade > 0 ? nil : values)
     }
 
     /// `→` the type is the row's from end, `←` its to end, `↔` both: a word that needs no translation.

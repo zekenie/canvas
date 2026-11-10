@@ -292,6 +292,51 @@ private func runs(_ stored: String) -> [MentionRun] { MentionText(stored: stored
         expect(withMentions > 15_000, "most texts mention: \(withMentions)")
     },
 
+    test("the names of a text's mentions, some of rows, written for them through resolvingMentions, make the text with its mentions written whole: 5,000 fuzzed texts") {
+        var rng = SplitMix(seed: 0x726F_7773_2061_6C73)
+        let alphabet: [Character] = ["@", "[", "]", "(", ")", "\\", "a", " ", "\n", "s", "h", ":", "é", "/", "."]
+        let labelAlphabet = alphabet.filter { $0 != "\n" }
+        func scalarBytes(_ rng: inout SplitMix) -> (UInt8, UInt8) { (UInt8.random(in: 0...255, using: &rng), UInt8.random(in: 0...255, using: &rng)) }
+        var failures = 0, rows = 0
+        for _ in 0..<5_000 {
+            var pieces: [MentionRun] = []
+            for _ in 0..<Int.random(in: 1...6, using: &rng) {
+                if Bool.random(using: &rng) {
+                    pieces.append(.text(String((0..<Int.random(in: 0...8, using: &rng)).map { _ in alphabet.randomElement(using: &rng)! })))
+                } else {
+                    let label = String((0..<Int.random(in: 0...4, using: &rng)).map { _ in labelAlphabet.randomElement(using: &rng)! })
+                    let (x, y) = scalarBytes(&rng)
+                    let shape = ShapeID(UUID(uuid: (x, y, 1, 2, 3, 4, 0x40, 5, 0x80, 6, 7, 8, 9, 10, 11, 12)))
+                    if Bool.random(using: &rng) {
+                        let (u, v) = scalarBytes(&rng)
+                        rows += 1
+                        pieces.append(.mention(PartAddress(shape, part: PartID(UUID(uuid: (u, v, 1, 2, 3, 4, 0x40, 5, 0x80, 6, 7, 8, 9, 10, 11, 12)))), label: label))
+                    } else {
+                        pieces.append(.mention(shape, label: label))
+                    }
+                }
+            }
+            let whole = MentionText(pieces)
+            let targets = whole.mentionedTargets
+            // The same text, each mention written as its name alone.
+            var named = whole.stored
+            for target in targets {
+                named = named.replacingOccurrences(of: target.part.map { "(shape:\(target.shape)/row:\($0))" } ?? "(shape:\(target.shape))", with: "")
+            }
+            var asked = 0
+            let written = MentionTextFormat.resolvingMentions(in: named) { name in
+                defer { asked += 1 }
+                return asked < targets.count ? (targets[asked], name) : (PartAddress(idA), name)
+            }
+            if written != whole.stored || asked != targets.count {
+                failures += 1
+                if failures < 4 { expect(false, "\(named.debugDescription) is the names of \(whole.stored.debugDescription), not \(written.debugDescription) (\(asked) asked)") }
+            }
+        }
+        expectEqual(failures, 0)
+        expect(rows > 4_000, "many mention rows: \(rows)")
+    },
+
     test("the single pass reads 20,000 fuzzed strings as the scan from every @[ does: what it asks, in order, and what it writes; and once written, no name is left") {
         var rng = SplitMix(seed: 0x7265_6164_206E_616D)
         let alphabet: [String] = ["@", "[", "]", "(", ")", "\\", "a", " ", "\n", "\r", "@[", "](shape:", "](SHAPE:", "(shape", "\\]", "\\\\", "\\@[", "é",

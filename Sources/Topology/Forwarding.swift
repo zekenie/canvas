@@ -13,6 +13,9 @@ import CoreGraphics
 public enum Forwarding: Hashable, Sendable {
     /// The shapes its record names, in order: on any board, or gone.
     case shapes([ShapeID])
+    /// One part of one shape its record names (a row that stands alone: an endpoint), on any board, or gone: it stands for
+    /// the shape, and an edge into it reaches that part, unless the edge names a part itself.
+    case row(ShapeID, PartID)
     /// Whatever was last provided for it under this key, which its record holds (a question it
     /// asks): nothing until an answer for that key comes.
     case provided(ForwardingKey)
@@ -23,8 +26,23 @@ extension Forwarding {
     /// treats a direct stand-in as the shape it names reads it as, whether or not it may stand for it now.
     /// Nil for one that stands for what's provided, and one that names none, or several.
     public var onlyShape: ShapeID? {
+        if case .row(let shape, _) = self { return shape }
         guard case .shapes(let named) = self, let first = named.first, named.allSatisfy({ $0 == first }) else { return nil }
         return first
+    }
+
+    /// The shapes its record names, for one that names them (`shapes`, `row`); nil for one that stands for what's provided.
+    public var named: [ShapeID]? {
+        switch self {
+        case .shapes(let named): named
+        case .row(let shape, _): [shape]
+        case .provided: nil
+        }
+    }
+
+    /// The part a stand-in for a row reaches; nil for every other.
+    public var part: PartID? {
+        if case .row(_, let part) = self { part } else { nil }
     }
 }
 
@@ -66,6 +84,10 @@ public enum ForwardingState: Hashable, Sendable {
 /// a person picking it would have been shown, the shape's name). Nil: it can't.
 public typealias ForwardingMaker = @MainActor (_ blank: AnyShapeRecord, _ target: ShapeID, _ label: String) -> AnyShapeRecord?
 
+/// `ForwardingMaker` for a part of a shape (a row that stands alone: an endpoint): from the shape its tool places, the shape and
+/// the part it's made to stand for, and what to call it there (the row's name). Nil: it can't.
+public typealias ForwardingRowMaker = @MainActor (_ blank: AnyShapeRecord, _ target: PartAddress, _ label: String) -> AnyShapeRecord?
+
 /// Where a stand-in put down by name sits, from the shape it stands for: what a kind that shows where that shape is
 /// beside its name (a pill's "Alpha › Beta") works it out from (`standsIn(seats:)`, `StandIns.seat`).
 public enum StandInSeat: Sendable, Equatable {
@@ -92,6 +114,8 @@ public struct StandIn {
     let needs: String?
     /// How one is made to stand for a shape, if the kind says.
     let make: ForwardingMaker?
+    /// How one is made to stand for a part of a shape (a row that stands alone), if the kind says.
+    var makeRow: ForwardingRowMaker? = nil
     /// How one so made shows where its shape is, from where it sits, if the kind says.
     let seat: ForwardingSeating?
     /// How a shape is made something the kind may stand for, if the kind says (opaque to Topology).
@@ -160,6 +184,7 @@ extension ShapeRegistrar {
                                   fulfilling: (@MainActor (_ record: inout AnyShapeRecord, _ registry: Registry) -> Bool)? = nil,
                                   calls: (@MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> String?)? = nil,
                                   makes: (@MainActor (_ props: inout Definition.Props, _ target: ShapeID, _ label: String) -> Void)? = nil,
+                                  makesRow: (@MainActor (_ props: inout Definition.Props, _ target: PartAddress, _ label: String) -> Void)? = nil,
                                   seats: (@MainActor (_ props: inout Definition.Props, _ seat: StandInSeat, _ context: ShapeContext) -> Void)? = nil,
                                   _ forward: @escaping @MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> Forwarding?) {
         var make: ForwardingMaker?
@@ -167,6 +192,14 @@ extension ShapeRegistrar {
             make = { blank, target, label in
                 guard var shape = blank.typed(as: Definition.Props.self) else { return nil }
                 makes(&shape.props, target, label)
+                return AnyShapeRecord(shape)
+            }
+        }
+        var makeRow: ForwardingRowMaker?
+        if let makesRow {
+            makeRow = { blank, target, label in
+                guard var shape = blank.typed(as: Definition.Props.self) else { return nil }
+                makesRow(&shape.props, target, label)
                 return AnyShapeRecord(shape)
             }
         }
@@ -184,7 +217,7 @@ extension ShapeRegistrar {
         }
         contribute(StandIn(admitting: admitting, forward: { record, registry in
             record.typed(as: Definition.Props.self).flatMap { forward($0, registry) }
-        }, needs: needs, make: make, seat: seat, fulfil: fulfilling, calls: erasedCalls), to: EdgeForwarding.self)
+        }, needs: needs, make: make, makeRow: makeRow, seat: seat, fulfil: fulfilling, calls: erasedCalls), to: EdgeForwarding.self)
     }
 }
 
@@ -277,6 +310,18 @@ public struct StandIns {
         if let properties = made.propertiesJSON, let derived = try? registry.shape(made, setting: properties) { made = derived }
         return made
     }
+
+    /// A new shape of `kind` that stands for the part `row` of `target` (a row that stands alone: an endpoint), called `label`
+    /// there, as `make(_:standingFor:label:)` makes one for a shape; nil for a kind that can't (`standsIn(makesRow:)`).
+    public func make(_ kind: ShapeKind, standingFor target: ShapeID, row: PartID, label: String) -> AnyShapeRecord? {
+        guard let makeRow = rules[kind]?.makeRow, let placement = registry.placement(for: kind),
+              var made = makeRow(placement.shape(at: .zero), PartAddress(target, part: row), label) else { return nil }
+        if let properties = made.propertiesJSON, let derived = try? registry.shape(made, setting: properties) { made = derived }
+        return made
+    }
+
+    /// Whether a stand-in of `kind` can be made to stand for a row (`standsIn(makesRow:)`).
+    public func makesRows(_ kind: ShapeKind) -> Bool { rules[kind]?.makeRow != nil }
 
     /// A stand-in `make` made, told where it sits (`StandInSeat`): its kind shows where the shape it stands for is,
     /// beside its name, and leaves it in step as its own writers do (`standsIn(seats:)`; not derived again, which would

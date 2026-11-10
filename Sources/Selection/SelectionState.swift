@@ -27,7 +27,7 @@ final class SelectionState {
     /// the step closes (`settleNudge`).
     @ObservationIgnored var nudged: Nudged?
     private(set) var selectedIDs: [ShapeID] = []
-    /// `selectedIDs`, for asking whether a shape is among them.
+    /// `selectedIDs`, for asking whether a shape is among them (observed through `observeSelection()`).
     @ObservationIgnored private(set) var selectedSet: Set<ShapeID> = []
     /// +1 each time `selectedIDs` changes.
     private(set) var revision = 0
@@ -120,6 +120,25 @@ final class SelectionState {
     }
     /// Where its ring was last drawn (`focusedPartRect`).
     @ObservationIgnored var focusedPartRing: PartRing?
+    /// Bumped as `items` changes, and observed: what a view that reads `selectedItems` redraws for (a panel whose subject is a row).
+    private(set) var itemsVersion = 0
+    /// The items selected inside the only selected shape (`ShapeItems`: a table's rows), as they were selected: let go with
+    /// any other change of the selection, a part focused, another tool or board, and the shape's editing ending. VoiceOver's
+    /// focus follows them.
+    /// What `items` shows as, kept between changes (`shown`).
+    @ObservationIgnored var keptItems: KeptItems?
+    @ObservationIgnored var items: HeldItems? {
+        didSet {
+            guard items != oldValue else { return }
+            itemsVersion &+= 1
+            if items != nil { clearPartFocus() }
+            editor.setNeedsDisplay()
+            editor.accessibilityFocusDidChange()
+        }
+    }
+    /// The items ⌥Tab went on from to the shape's first part (`focusAdjacentPart`): what coming back to its items stop
+    /// selects again. Let go with any other change of the selection.
+    @ObservationIgnored var itemsLeft: HeldItems?
     /// The steps Tab, ⇧Tab and ⌥⌘ with an arrow took to the selection, latest last: the opposite key undoes
     /// the latest exactly (`step`). Any other change of the selection lets them go.
     @ObservationIgnored var trail = StepTrail()
@@ -145,6 +164,9 @@ final class SelectionState {
         faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()
         popoverSources = editor.registry.contributions(to: ShapePopovers.self).map(\.value).reversed()
     }
+
+    /// Tells Observation the selection was read, as reading `selectedIDs` does, for what asks `selectedSet` instead.
+    func observeSelection() { access(keyPath: \.selectedIDs) }
 
     /// Looks for the button under the pointer once every service has settled the change being delivered, at
     /// once outside one (`onceSettled`); asked again before it has, it looks once.
@@ -247,11 +269,13 @@ final class SelectionState {
     /// all in view, is kept there while the view settles (`keepInViewWhileSettling`).
     func select(_ ids: [ShapeID], recording: Bool = true) {
         var seen = Set<ShapeID>()
-        let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
+        let kept = holdingUnitsOfMembers(ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }, seen: &seen)
         guard kept != selectedIDs else { return }
         hasJustArrived = false
         if recording { record(leaving: selectedIDs, for: kept) }
         clearPartFocus()
+        if let held = items, kept != [held.shape] { items = nil }
+        itemsLeft = nil
         trail = StepTrail()
         let left = selectedIDs
         selectedIDs = kept
@@ -505,6 +529,7 @@ extension SelectionState: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
         clearPointerState()
         clearPartFocus()
+        clearItems()
     }
 
     /// Another board is shown: what was selected on the board left is a step back (even nothing
@@ -524,6 +549,7 @@ extension SelectionState: EditorService {
         hasJustArrived = !isGoingBack
         clearPointerState()
         clearPartFocus()
+        clearItems()
         trail = StepTrail()
         focus = []
         guard !selectedIDs.isEmpty else { return }
@@ -558,6 +584,7 @@ extension SelectionState: EditorService {
 
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         select(selectedIDs)
+        pruneItems()
         hover(hoveredID)
         hoverElsewhere(hoveredElsewhereID)
         // A shape that became read-only has no handles.
@@ -571,10 +598,18 @@ extension SelectionState: EditorService {
 
     /// Editing a shape lets its part's focus go: an edited shape lists no parts, and the focus doesn't come back
     /// as editing ends.
-    func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) { clearPartFocus() }
+    func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {
+        clearPartFocus()
+        if items?.shape == id { clearItems() }
+    }
 
-    /// What was placed is all that's selected.
-    func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) { select(ids) }
+    /// What was placed is all that's selected, and brought into view if it isn't (a shape Insert or ⇧↩ put beside a shape at the
+    /// view's edge, by the least pan, keeping that shape in view with it when both fit: `editor.placingBeside`; one placed under
+    /// the pointer is in view, and the camera stays still while a press lasts).
+    func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) {
+        select(ids)
+        if !editor.undoHistory.isPressHeld { editor.revealIfOffscreen(ids, keeping: editor.placingBeside) }
+    }
 
     /// Shapes are drawn as skeletons now, or in full again, so their faces and adornments went or
     /// came (a note's pills, a lock chip): a focused part that went lets the focus go, and under a
@@ -596,11 +631,25 @@ extension SelectionState: EditorService {
 /// where the switch and the selection are one step, as `showBoard(_:selecting:)` makes them: Back
 /// returns to the board left.
 extension SelectionState: UndoParticipant {
-    func undoSnapshot(in editor: CanvasEditor) -> any Sendable { selectedIDs }
+    func undoSnapshot(in editor: CanvasEditor) -> any Sendable { SelectionSnapshot(shapes: selectedIDs, items: items) }
 
     func restoreUndoSnapshot(_ snapshot: any Sendable, in editor: CanvasEditor) {
-        if let ids = snapshot as? [ShapeID] { select(ids, recording: !hasJustArrived) }
+        guard let snapshot = snapshot as? SelectionSnapshot else { return }
+        select(snapshot.shapes, recording: !hasJustArrived)
+        // The items selected as the step began (or ended) come back with it: the rows a Delete took, selected again.
+        if let held = snapshot.items, selectedIDs == [held.shape] {
+            setItems(held.ids, of: held.shape, anchor: held.anchor)
+        } else {
+            clearItems()
+        }
     }
+}
+
+/// What undo keeps of the selection: the shapes, and the items selected inside the only one. Made and read on the main
+/// actor only (the undo history's), so its item ids, which aren't `Sendable`, never cross.
+struct SelectionSnapshot: @unchecked Sendable {
+    let shapes: [ShapeID]
+    let items: HeldItems?
 }
 
 /// The shape the select tool presses at a point: on the shape itself, or on something a plugin draws
@@ -642,7 +691,15 @@ extension CanvasEditor {
     /// same shapes have been deselected and selected again. Without the Selection plugin, 0.
     public var selectionRevision: Int { selectionState?.revision ?? 0 }
 
-    public func isSelected(_ id: ShapeID) -> Bool { selectedShapeIDs.contains(id) }
+    /// Whether `id` is selected, from the set the selection keeps: a lookup, never a pass over the selection, so a check a
+    /// shape in view (a title bar zoomed out) costs nothing with every shape selected. Observed as reading the selection is (the
+    /// set itself isn't), so what asks it while observing hears the selection change: a hovered shape's row in the table of
+    /// contents, tinted only while its shape isn't selected.
+    public func isSelected(_ id: ShapeID) -> Bool {
+        guard let state = selectionState else { return false }
+        state.observeSelection()
+        return state.selectedSet.contains(id)
+    }
 
     /// Whether going back (`goBack`) would change the selection or the view: there's a place to go back
     /// to whose shapes aren't all gone, and aren't what's selected or, for a place a way around left,
@@ -751,12 +808,28 @@ extension CanvasEditor {
     public func deleteSelection() { deleteShapes(selectedShapeIDs) }
 
     /// Removes these shapes in one transaction ("Delete"): what `.delete` does to its shapes.
-    /// willDelete handlers see them all, so arrows bound to them let go where they are; a read-only
-    /// one is refused, and shakes.
+    /// willDelete handlers see them all, so arrows bound to them let go where they are, or, for a kind that takes
+    /// the shapes bound to it (`TakesBoundShapes`) or whose handler deletes more, go with them; a read-only
+    /// one is refused, and shakes. The step says what went along ("Delete Note and 2 Arrows", `DeleteSteps`), and
+    /// is "Delete" when nothing did. VoiceOver hears what went, as a row's delete is heard: "Delete API and 4 Arrows",
+    /// "Delete Note".
     public func deleteShapes(_ ids: [ShapeID]) {
         guard !ids.isEmpty else { return }
-        transact("Delete") { $0.delete(Set(ids)) }   // the commit drops them from the selection
+        // Shapes drawn by another (a bundle's members, drawn by its lead) are named, so Undo says what comes back.
+        let unseen = ids.contains { shapeContext.geometry(of: $0)?.isHidden == true }
+        var spoken: String?
+        transact("Delete") { tx in
+            let kinds = ids.compactMap { id in tx.document[id].map { (id, $0.kind) } }
+            tx.delete(Set(ids))
+            // The ones that went: a read-only shape asked for stays, and isn't part of the name.
+            let gone = kinds.filter { tx.document[$0.0] == nil }.map(\.1)
+            spoken = gone.isEmpty ? nil : DeleteSteps.name(asked: gone, along: tx.deletedAlong, namesAsked: true, in: registry)
+            guard !tx.deletedAlong.isEmpty || unseen else { return }       // nothing went along: plain "Delete"
+            tx.stepName = DeleteSteps.name(asked: gone, along: tx.deletedAlong, namesAsked: unseen, in: registry)
+        }                                                // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays
+        // Not where the slash bar says the step itself (`isSayingStep`): it is heard once.
+        if let spoken, !isSayingStep, ids.contains(where: { document[$0] == nil }) { announce(spoken) }
     }
 
     /// Whether the arrow keys nudge: something's selected, and nothing's under way or being edited.
@@ -837,7 +910,13 @@ extension CanvasEditor {
     /// being edited, else in a secondary color (`SelectionStyle.secondary`): keys go elsewhere (P7).
     var selectionOutlines: Outlines {
         let box = selectedShapeIDs.count > 1 ? selectionBounds : nil
-        return Outlines(shapes: selectedShapeIDs, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
+        // A shape whose items are selected (and listed) is outlined by them (`ItemsOverlay`), inside it.
+        let outlined = selectedItems.map { held in selectedShapeIDs.filter { $0 != held.shape || editingShapeID == held.shape } } ?? selectedShapeIDs
+        // A focused part that stands for a shape (an arrow from the table, ⌥Tab) lights it as a selected one is drawn.
+        let lit = selectionState?.focusedPartLights.filter { !outlined.contains($0) } ?? []
+        // The selection handed over as it is where nothing is added: `+` copies it, and a copy each frame makes every lookup
+        // in it a comparison of the whole list (⌘A with 10,000 shapes a hover lights: they added 43 ms to a frame, some 8 since).
+        return Outlines(shapes: lit.isEmpty ? outlined : outlined + lit, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
                         color: selectionOutlineColor)
     }
 

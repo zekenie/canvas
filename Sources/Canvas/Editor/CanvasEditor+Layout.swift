@@ -41,6 +41,16 @@ extension CanvasEditor {
         return ShapeContext(document: file[board], registry: registry, camera: camera, index: nil, layout: layoutSource).frame(of: record)
     }
 
+    /// A shape's geometry, wherever it is in the file, worked out afresh for a shape on another board (a stand-in lends its
+    /// parts to those who bind to it, `ShapeGeometry.parts`): on the board shown it's `shapeContext.geometry(of:)`. Nil for a
+    /// shape that isn't there. Observed through `document`.
+    public func geometry(inFile id: ShapeID) -> ShapeGeometry? {
+        guard let record = shape(inFile: id), let definition = registry.definition(for: record.kind) else { return nil }
+        if document[id] != nil { return shapeContext.geometry(of: id) }
+        guard let board = file.board(containing: id) else { return nil }
+        return definition.erasedGeometry(of: record, in: ShapeContext(document: file[board], registry: registry, camera: camera, index: nil, layout: layoutSource))
+    }
+
     /// A commit changed these shapes: the sizes kept for them are out of date, but for a shape that
     /// only moved (a size doesn't depend on where the shape is: a drag of thousands costs a
     /// comparison). Before the index and the services hear it.

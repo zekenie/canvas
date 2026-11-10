@@ -51,6 +51,16 @@ enum SelectionStyle {
     static let revealInset: CGFloat = 100
     static let revealMaxZoom = ReadableZoom.maximum
     static let revealDuration: Duration = .milliseconds(200)
+    /// Bringing shapes into view only if they are not (`revealIfOffscreen`) moves the view by the least pan, which leaves
+    /// this much margin, in view points, inside the clear part: room for the row a shape shows above its top (a title's
+    /// pill, 27 points) and a little air.
+    static let revealMargin: CGFloat = 40
+    /// Bringing shapes into view from a view so far out it draws skeletons (`revealIfOffscreen(_:zoomingIn:)`: what a paste
+    /// landed after an undo left the view at 10%) zooms in to fit them, no closer than this: 100%, where the text is set.
+    static let readableFitMaxZoom: CGFloat = 1
+    /// What of the row above a shape (its title's pill) counts as the shape when judging whether it is in view, view points:
+    /// a box in view with its pill under the title bar is not.
+    static let revealRowAbove: CGFloat = 28
     /// Going to shapes (`goTo`) leaves the camera where it is when they're all in view at this zoom
     /// or closer. Text on the canvas is set for 100%, a note's at 16 points: at 70% that's 11.2
     /// points on screen, just over the 11 of `NSFont.smallSystemFontSize`, the smallest size macOS
@@ -68,11 +78,19 @@ enum SelectionStyle {
     /// the part's rect by this much.
     static let partRingWidth: CGFloat = 2
     static let partRingStandoff: CGFloat = 3
+    /// The outline of a run of selected items (`ItemsOverlay`): this wide, its corners this round, this far inside its
+    /// shape's sides, in view points.
+    static let itemOutlineWidth: CGFloat = 2
+    static let itemRadius: CGFloat = 5
+    static let itemInset: CGFloat = 4
     /// How far an arrow key nudges the selection, and with ⇧, in world units (tldraw's 1 and 10).
     static let nudge: CGFloat = 1
     static let shiftNudge: CGFloat = 10
     /// What the Keyboard Shortcuts window calls the arrow keys: they nudge the selection, or with none pan the view.
     static let nudgeOrPan = "Nudge or Pan"
+    /// With a shape's rows selected (its items), the arrows step through them, and ⌥ and an arrow moves them.
+    static let nudgePanOrStep = "Nudge, Pan or Step Rows"
+    static let resizeOrMove = "Resize or Move Rows"
     // Stepping from shape to shape (`StopOrder`), with tldraw's numbers (`Editor.selectAdjacentShape`).
     /// Reading order: a shape joins a row when its center is less than this far, in world units, above or
     /// below the row's last.

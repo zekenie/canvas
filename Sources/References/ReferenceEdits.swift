@@ -1,3 +1,4 @@
+import Canvas
 import Chrome
 import CoreGraphics
 
@@ -66,6 +67,31 @@ public enum ReferenceEdits {
         let text = max(ReferenceMemo.shared.width(of: label, italic: false), ReferenceMemo.shared.width(of: label, italic: true))
         let line = place.isEmpty ? 0 : style.placeLine(place, room: style.placeRoomMost).width
         return min(style.maxWidth, max(style.minWidth, ceil(style.padding + max(text + trailing, line))))
+    }
+
+    /// Pills for rows that moved (`Transaction.moveParts`: a row into another shape, out into one of its own) stand for where
+    /// each went, on whichever board they are, in the move's step: another shape's row, or a shape as a whole (the row became
+    /// one); and a pill for a shape moved as a whole (a shape that was all its one row, put back into another shape as a row:
+    /// an endpoint taken out of its API) stands for that row, named as the row is and refit (a row's pill keeps its width); a read-only pill stays as it was.
+    /// Found through the stand-ins that name each moved shape (`standIns(naming:)`), so it costs the moved rows' pills.
+    static func follow(_ moves: [PartAddress: PartAddress], in transaction: inout Transaction) {
+        var asked: Set<ShapeID> = []
+        for from in moves.keys where asked.insert(from.shape).inserted {
+            for pill in transaction.standIns(naming: from.shape) where transaction.mayWrite(on: pill.board) && !transaction.isReadOnly(pill.id, on: pill.board) {
+                let there = transaction.contents(of: pill.board)
+                guard let record = there[pill.id]?.typed(as: Reference.self), let target = record.props.target, target.id == from.shape,
+                      let to = moves[PartAddress(from.shape, part: target.row)] else { continue }
+                // A pill for the shape as a whole that now stands for its row says the row's name, as it is drawn, at the width that fits it.
+                let label = target.row == nil ? transaction.part(at: to).map { $0.standsAlone ? $0.name : target.label + "." + $0.name } ?? target.label : target.label
+                transaction.update(pill.id, on: pill.board, as: Reference.self) {
+                    $0.props.target = ReferenceTarget(id: to.shape, label: label, row: to.part)
+                    // A pill for a row is never a mirror (`mirrorOriginal`): it is the pill it is drawn as, so Collapse isn't offered
+                    // for it, and an undo of this step brings the mirror back whole.
+                    if to.part != nil { $0.props.look = .pill }
+                    if label != target.label { fit(&$0.props) }
+                }
+            }
+        }
     }
 
     /// Fits the pill to what it says.

@@ -79,6 +79,13 @@ public struct PluginRegistrar {
         contribute(id, to: CorePoints.DefaultTool.self)
     }
 
+    /// The tool ⇧↩ puts a shape down with when the selection is no one kind a tool places (nothing selected, an
+    /// arrow, shapes of several kinds): StickyNotes' Note. A selection that is one kind a tool places gets that
+    /// kind's tool (`editor.toolBeside`). At most one plugin may claim it; otherwise ⇧↩ does nothing for those.
+    public mutating func insertsBesideByDefault(_ id: ToolID) {
+        contribute(id, to: CorePoints.InsertBesideByDefault.self)
+    }
+
     /// The menu a secondary click (a right-click, or a Control-click) opens at the pointer, made
     /// as the click happens; nil, and the click does nothing. At most one plugin may claim it;
     /// otherwise secondary clicks do nothing. It isn't asked while a press is under way.
@@ -134,6 +141,27 @@ public struct PluginRegistrar {
     /// deleted still exists while any handler runs.
     public mutating func willDelete(_ handler: @escaping @MainActor (Set<ShapeID>, inout Transaction) -> Void) {
         contribute(handler, to: CorePoints.WillDelete.self)
+    }
+
+    /// Runs inside the transaction that moves parts of shapes to other places (`Transaction.moveParts`: a row into
+    /// another table, out into a new one), after every shape bound to one is bound to where it went: what names a part
+    /// as a value (a mention of a row, a pill for one) renames it there, on any board, in the same step. `moves` says
+    /// where each part went (a part of another shape, or a shape as a whole, part nil).
+    public mutating func partsMoved(_ handler: @escaping @MainActor ([PartAddress: PartAddress], inout Transaction) -> Void) {
+        contribute(handler, to: CorePoints.PartsMoved.self)
+    }
+
+    /// Says which shapes stand in for a shape (Topology's index: the stand-ins whose record names it, on any board the editor
+    /// can show), so the core's part lifecycle (`Transaction.removeParts`, `moveParts`) reaches a binding to a part through a
+    /// pill for its shape (a key to a column on another board) in the same step; and `names`, the one shape a stand-in's own record
+    /// names (nil for any other shape), so a pill the same step put down earlier, which the index doesn't hold yet, is reached too.
+    /// `namers`, the shapes whose records name a shape as a value (a note whose text mentions a table's row), on any board the
+    /// editor can show, is what `Transaction.shapesNaming(_:)` reads: `moveParts` renames a moved part's names in them.
+    /// One plugin at most gives it.
+    public mutating func standInLookup(_ lookup: @escaping @MainActor (CanvasEditor, ShapeID) -> [ShapeID],
+                                       names: @escaping @MainActor (AnyShapeRecord, Registry) -> ShapeID? = { _, _ in nil },
+                                       namers: @escaping @MainActor (CanvasEditor, ShapeID) -> [ShapeID] = { _, _ in [] }) {
+        contribute(StandInLookup(lookup: lookup, names: names, namers: namers), to: CorePoints.StandInLookups.self)
     }
 
     /// `ShapeRegistrar.keepsInStep` for another plugin's kind.
@@ -332,7 +360,9 @@ public struct Placement {
     let completion: Completion
     let make: @MainActor (CGRect) -> AnyShapeRecord
 
-    enum Completion { case translate, edit }
+    /// What follows the put: the shape follows a press (or settles at once with none), then, for `.edit`, is edited;
+    /// `.settled` puts it down settled at once whatever the press, selects nothing and edits nothing (`settled()`).
+    enum Completion { case translate, edit, settled }
 
     init<P: BoxShapeProps>(kind: ShapeKind, size: CGSize, minimumSize: CGSize, completion: Completion, props: @escaping @MainActor () -> P) {
         self.init(kind: kind, size: size, minimumSize: minimumSize, completion: completion) { frame in
@@ -376,6 +406,13 @@ public struct Placement {
     /// where it lands (or in the rect it is given, `editor.place(_:in:)`). Its smallest size stays.
     public func sized(_ size: CGSize) -> Placement {
         Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion, make: make)
+    }
+
+    /// The same placement, put down settled where it lands and left at that: no press follows it, nothing is selected
+    /// or edited, and the tool stays. What a plugin puts down beside the work under way while the keyboard stays where
+    /// it is: a type made for an endpoint's body while its line or card has the caret (Types' `newType(…editing: false)`).
+    public func settled() -> Placement {
+        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: .settled, make: make)
     }
 
     /// The same placement, with an added property set on every shape it places:

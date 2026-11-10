@@ -39,6 +39,9 @@ struct KindVocabulary {
     /// The properties that may hold a string a format writes, anywhere inside: those a script's
     /// value is read for.
     let textKeys: Set<String>
+    /// What each value writer that takes text says of it (`DrawValueWriting.describes`), by the property it writes: a
+    /// quoted value of these is the writer's to read, never refused as JSON written as text.
+    let textWriters: [String: String]
 
     init(_ kind: ShapeKind, in registry: Registry) {
         self.kind = kind
@@ -51,6 +54,8 @@ struct KindVocabulary {
         collisions = Set(schema.properties.keys.filter { keys.contains($0) && $0 != naming })
         let formats = registry.drawTextFormats
         textWords = formats.mapValues(\.describes)
+        let properties = schema.properties
+        textWriters = registry.drawValueWriters.compactMapValues(\.describes).filter { properties[$0.key] != nil }
         let mediaTypes = Set(formats.keys)
         textKeys = mediaTypes.isEmpty ? [] : Set(schema.properties.filter { _, declared in
             var seen: Set<String> = []
@@ -107,6 +112,7 @@ struct KindVocabulary {
     /// takes after it, as `text (<Title> names)`.
     func compactType(of name: String) -> String {
         let compact = schema.compactType(of: name)
+        if let words = textWriters[name] { return "\(words) or \(compact)" }
         guard let words = textFormatWords(of: name) else { return compact }
         return "\(compact) (\(words))"
     }
@@ -138,6 +144,8 @@ struct KindVocabulary {
     func value(of attribute: Attribute) throws(ValueRefusal) -> JSONValue {
         let name = attribute.key, written = attribute.value.written
         guard let shape = schema.shape(of: name) else { throw notAnAttribute(name) }
+        // Text for a property whose writer reads text: the writer's to read (a table's columns, a line each).
+        if case .quoted(let text) = attribute.value, textWriters[name] != nil { return .string(text) }
         let takes = "\(name): takes \(compactType(of: name))"
         func refuse(_ why: String? = nil) -> ValueRefusal {
             ValueRefusal(message: "\(name): \(written) \(why ?? "isn't what \(name): takes")", hint: takes)

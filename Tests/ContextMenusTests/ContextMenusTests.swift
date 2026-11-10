@@ -50,6 +50,23 @@ import TestKit
         expectEqual(h.editor.document.shapes.map(\.id), [lamp], "the box, as the Delete key deletes it")
         expectEqual(h.editor.undoHistory.undoName, "Delete")
     },
+    test("shownIn asks the editor of each shape by id, besides when: what the shape's value can't say leaves the item out") {
+        let h = try harness([Contributor(id: "asked") { r in
+            r.contextMenu(Box.self) {
+                MenuItem("Only the First", shownIn: { id, editor in editor.document.shapes.first?.id == id }) { _ in }
+                MenuItem("Never Here", shownIn: { _, _ in false }) { _ in }
+            }
+        }])
+        let box = h.add(Box(slot(0)))
+        let menu = try require(h.secondaryClick(at: middle(0)))
+        expectEqual(menu.outline, ["Only the First", "—", "Delete"])
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        let other = h.add(Box(slot(1)))
+        h.editor.selectedShapeIDs = [box, other]
+        let both = try require(h.secondaryClick(at: middle(0)))
+        expectEqual(h.editor.selectedShapeIDs, [box, other], "a right-click on the selection keeps it")
+        expectEqual(both.outline, ["Delete"], "two selected: the editor says no of the second, so the item is left out")
+    },
     test("a submenu's own when leaves it out, items and all") {
         let h = try harness([Contributor(id: "wide") { r in
             r.contextMenu(Box.self) {

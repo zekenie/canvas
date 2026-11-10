@@ -1,0 +1,1426 @@
+import AppKit
+import Canvas
+import Connections
+import Selection
+import TextEditing
+import Titles
+
+// The editing view of a kind whose content is its rows (a table, an enum): its stops are the title, typed in its pill
+// (Titles' field), each row, and one waiting line, an empty line not yet a row. One line field is moved to the stop with
+// the caret, so only that row is drawn as typed; the kind draws the rest, skipping the focused row and leaving the
+// waiting line's room (`LineRowsLayout.focused`, `LineRowsLayout.waiting`, set while it's edited). A row's line is a draft until the
+// caret leaves it, when it commits as one step the kind names ("Add Column", "Rename Column", "Delete Column"); ⌥↑ ⌥↓
+// move a row, repeats one step; a pasted block is a row a line, one step. VoiceOver hears it as a group of rows.
+
+/// A stop of a row-written shape's editing: its title, its fixed line (an API's server), a row, or the waiting line.
+public enum LineStop: Hashable, Sendable, CustomStringConvertible {
+    case title
+    case fixed
+    case row(PartID)
+    case waiting
+
+    public var description: String {
+        switch self {
+        case .title: "title"
+        case .fixed: "fixed"
+        case .row(let id): "row \(id)"
+        case .waiting: "waiting"
+        }
+    }
+}
+
+/// A shape's title stop: the field its name is typed in, made from the title it has (Titles' `TitleField`).
+@MainActor
+public struct LineTitle {
+    let make: @MainActor (String?) -> TitleField
+
+    public init(_ make: @escaping @MainActor (String?) -> TitleField) { self.make = make }
+}
+
+/// Moves of one row, repeated, coalesced into one step.
+struct LineMoveRun: Hashable {
+    let shape: ShapeID
+    let row: PartID
+}
+
+/// Moves of rows selected whole, repeated, coalesced into one step.
+struct LineBlockRun: Hashable {
+    let shape: ShapeID
+    let rows: Set<PartID>
+}
+
+/// The editing view of a kind written as lines, as a host and a test read it, whatever its rows are.
+@MainActor
+public class LineRowsView: NSView {
+    /// The line rows are typed in, moved to the stop with the caret.
+    public let field = LineField()
+    /// The title's field, where the kind's title is typed in its pill.
+    public internal(set) var titleField: TitleField?
+    /// Where the caret is.
+    public internal(set) var focus: LineStop = .waiting
+    /// The clip the field slides in: flipped, as the view is, so the field is placed down from the line's top by its baseline.
+    let clip = FlippedClip()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        clip.clipsToBounds = true
+        clip.addSubview(field)
+        addSubview(clip)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    public override var isFlipped: Bool { true }
+
+    /// Every stop, in order: the title, the rows with the waiting line among them.
+    public var stops: [LineStop] { [] }
+
+    /// The responder of the stop with the caret.
+    public var focusedResponder: NSResponder { focus == .title ? (titleField?.field ?? field) : field }
+
+    /// Goes to a stop as a key would, committing the line it leaves.
+    public func go(to stop: LineStop) {}
+
+    /// The line a row is printed as now (the focused one as typed).
+    public func line(of stop: LineStop) -> String? { nil }
+
+    /// Where a stop's line is, in the view's coordinates (nil for the title, and a stop the shape doesn't have).
+    public func rect(of stop: LineStop) -> CGRect? { nil }
+
+    /// Starts the session where its shape's first or last stop is, or a press at a world point puts it.
+    func start() {}
+
+    /// Prints the row with the caret again as it's stored, where the line holds nothing of the person's.
+    func reprint() {}
+
+    /// The rows selected whole (⇧↑ ⇧↓), in their order; none while the caret is in a line.
+    public var selectedRows: [PartID] { [] }
+
+    /// A commit settled (another writer's, an agent's): rows selected whole that it took out are no selection.
+    func documentDidSettle() {}
+
+    /// ⌘↓: the line written, then the card of the row with the caret shown under it; false where there's none (the title, an
+    /// empty waiting line, a row with nothing more).
+    @discardableResult
+    public func openCard() -> Bool { false }
+}
+
+extension LineRowsView {
+    /// The editing view of `shape`, a kind written as lines by `model`, with its title typed in its pill (`title`, nil for
+    /// a kind with no title stop). Where it starts: a press's point, else the title of an untitled shape, else the waiting
+    /// line at the end; the last stop for a shape ⇧Tab came back to.
+    public static func make<Model: LineModel>(_ shape: ShapeRecord<Model.Props>, context: EditContext<Model.Props>, model: Model,
+                                              title: LineTitle?) -> EditingView {
+        guard let service = context.service(LineRowsService.self) else {
+            // No session without its plugin: the title alone, if there is one.
+            let view = LineRowsView(frame: .zero)
+            return EditingView(view: view, firstResponder: view.field)
+        }
+        let view = LineSession(shape: shape, context: context, model: model, title: title, service: service)
+        view.start()
+        return EditingView(view: view, firstResponder: view.focusedResponder)
+    }
+}
+
+/// The session, over one shape of one kind.
+@MainActor
+final class LineSession<Model: LineModel>: LineRowsView {
+    typealias Row = Model.Row
+    let id: ShapeID
+    let context: EditContext<Model.Props>
+    let model: Model
+    let service: LineRowsService
+    var editor: CanvasEditor { service.editor }
+    /// Where the waiting line is while it has the caret: an index among the rows.
+    private var waitingAt = 0
+    /// The row as it's stored, that the field shows (nil on the waiting line).
+    private var held: Row?
+    /// The line the field was given, and the row it stands for (its line read, joined onto the stored row): what a draft is
+    /// measured against, so a line the person didn't change writes nothing, whatever the file has become since the row was
+    /// stored (an enum renamed under a column's type).
+    private var shown: (line: LineText, row: Row)?
+    /// What the field's line reads as now.
+    private var reading: LineReading<Row>?
+    /// A move of the caret under way: the field leaving a row isn't the keyboard leaving.
+    private var isMoving = false
+    /// How far the field's text is slid left in its clip, so the caret stays in it.
+    private var slide: CGFloat = 0
+    /// The elements VoiceOver reads for the rows without the caret, by stop.
+    private var elements: [LineStop: LineRowElement] = [:]
+    /// ⌘L opened the picker on the row with the caret: its line is printed again as the keyboard comes back, with what the pick made.
+    private var awaitsPicker = false
+    /// Whole rows selected (⇧↑ ⇧↓): the row the first ⇧ key selected and the end the keys move. The caret's stop stays the
+    /// anchor's row, its line hidden while they're selected.
+    private var band: (anchor: PartID, head: PartID)? {
+        didSet {
+            field.isBanded = band != nil
+            service.band = band == nil ? nil : (id, selectedRows)
+        }
+    }
+    /// The fixed line as the field was given it: what a draft of it is measured against.
+    private var fixedShown: LineText?
+    /// Whether the row with the caret has a card, so the "›" the kind asks for shows (`showsCardChevron`).
+    private var hasCard = false
+    /// VoiceOver's button for the "›".
+    private let chevronElement = LineRowElement()
+
+    init(shape: ShapeRecord<Model.Props>, context: EditContext<Model.Props>, model: Model, title: LineTitle?, service: LineRowsService) {
+        id = shape.id
+        self.context = context
+        self.model = model
+        self.service = service
+        super.init(frame: .zero)
+        field.plain = model.style.plain
+        field.font = model.style.font
+        field.insertionPointColor = model.style.ink
+        field.onKey = { [weak self] key in self?.handle(key) ?? false }
+        field.onChange = { [weak self] in self?.lineChanged() }
+        field.onPasteLines = { [weak self] text in self?.paste(text) ?? false }
+        field.onRows = { [weak self] action in self?.rowsAction(action) ?? false }
+        field.canPasteRows = { [weak self] in self?.pastableRows != nil }
+        field.onBlur = { [weak self] in self?.blurred() }
+        field.onFocus = { [weak self] in self?.focused() }
+        editor.connectPicker?.connectsEditedRow = { [weak self] shape in shape == self?.id && self?.connectEditedRow() == true }
+        field.offering = { [weak self] in self?.offers() }
+        field.draft = { [weak self] in self?.hasDraft ?? false }
+        field.onLight = { [weak service] light in service?.setLight(light) }
+        field.onAction = { [weak self] action, range in self?.act(action, at: range) }
+        if let title {
+            let titleField = title.make(shape[TitleProperty.self])
+            titleField.typed = { [context, id] text in
+                let title = TitleProperty.folded(text)
+                guard context.shape?[TitleProperty.self] != title else { return }
+                context.transact { $0.update(id) { $0[TitleProperty.self] = title } }
+            }
+            titleField.finished = { [weak self] ending in self?.titleEnded(ending) }
+            titleField.began = { [weak self] in self?.titleBegan() }
+            // The keyboard leaving the field any way but a key of its own (a click away, editing ended): the rename is heard.
+            titleField.left = { [weak self] in self?.titleLeft() }
+            titleField.onDown = { [weak self] in
+                self?.step(by: 1)
+                return true
+            }
+            addSubview(titleField)
+            self.titleField = titleField
+        }
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+    }
+
+    // MARK: Reading the shape
+
+    private var shape: ShapeRecord<Model.Props>? { context.shape }
+    var rows: [Row] { shape.map { model.rows(of: $0.props) } ?? [] }
+
+    private func index(of row: PartID) -> Int? { rows.firstIndex { model.id(of: $0) == row } }
+
+    /// Where the waiting line is drawn: where it has the caret, else last.
+    private var waitingLine: Int { focus == .waiting ? min(waitingAt, rows.count) : rows.count }
+
+    override var stops: [LineStop] {
+        var stops: [LineStop] = titleField == nil ? [] : [.title]
+        if model.fixedLine != nil { stops.append(.fixed) }
+        var lines = rows.map { LineStop.row(model.id(of: $0)) }
+        lines.insert(.waiting, at: waitingLine)
+        stops += lines
+        return stops
+    }
+
+    private func lineContext(_ row: PartID? = nil) -> LineContext { LineContext(editor: editor, shape: id, row: row) }
+
+    /// The grammar of the stop with the caret.
+    private var grammar: any LineGrammar<Row> {
+        switch focus {
+        case .row(let row): model.grammar(for: rows.first { model.id(of: $0) == row }.map(model.role(of:)) ?? model.roleOfNewRow(at: rows.count, in: shape!.props))
+        default: model.grammar(for: shape.map { model.roleOfNewRow(at: waitingAt, in: $0.props) } ?? "")
+        }
+    }
+
+    override func line(of stop: LineStop) -> String? {
+        if stop == focus { return field.string }
+        if stop == .fixed, let fixed = model.fixedLine, let shape { return fixed.print(shape.props, lineContext()).string }
+        guard case .row(let row) = stop, let held = rows.first(where: { model.id(of: $0) == row }) else { return stop == .waiting ? "" : nil }
+        return model.grammar(for: model.role(of: held)).print(held, in: lineContext(row)).string
+    }
+
+    // MARK: Starting
+
+    override func start() {
+        service.session = self
+        // A folded shape shows every row while it's edited: laid out so before a press finds its row. The press itself was
+        // made against the fold, so its row is found there.
+        let folded = editor.rowFolds?.foldedLines(of: id)
+        editor.rowFolds?.editingWillBegin(id)
+        let untitled = shape?[TitleProperty.self] == nil
+        // Before the press is placed: the rows are where the kind drew them, the waiting line last.
+        waitingAt = rows.count
+        let hopped = service.startingStop(id)
+        if hopped == .last {
+            show(.waiting, at: .end, waitingAt: rows.count)
+        } else if hopped == .first, let first = stops.first {
+            show(first, at: .end, waitingAt: rows.count)
+        } else if let point = context.startPoint, let stop = stop(at: point, folded: folded) {
+            show(stop, at: .point(point, clicks: context.startClickCount), waitingAt: rows.count)
+        } else if untitled, titleField != nil {
+            show(.title, at: .end, waitingAt: rows.count)
+        } else {
+            show(.waiting, at: .end, waitingAt: rows.count)
+        }
+    }
+
+    /// The stop a press at a world point is on: the pill's row is the title, a row's line the row, any other the waiting
+    /// line. A press on a folded shape was made against the lines it showed (`folded`): the row on its line, and the waiting
+    /// line for the "+N ›" line.
+    private func stop(at point: CGPoint, folded: RowsShown? = nil) -> LineStop? {
+        guard let paper else { return nil }
+        if titleField != nil, point.y < paper.minY { return .title }
+        if let fixed = model.fixedLine, point.y < fixed.rect(paper).maxY { return .fixed }
+        if let folded {
+            for line in 0..<folded.count {
+                let rect = model.lineRect(line, in: paper)
+                guard point.y >= rect.minY, point.y < rect.maxY else { continue }
+                return folded.row(atLine: line).flatMap { rows.indices.contains($0) ? .row(model.id(of: rows[$0])) : nil } ?? .waiting
+            }
+            return .waiting
+        }
+        for (index, row) in rows.enumerated() {
+            let rect = model.lineRect(LineRowsLayout.line(of: index, waiting: waitingLine), in: paper)
+            if point.y >= rect.minY, point.y < rect.maxY { return .row(model.id(of: row)) }
+        }
+        return .waiting
+    }
+
+    // MARK: Where things are
+
+    /// The shape's paper, as it's laid out now, world units.
+    private var paper: CGRect? {
+        guard let record = editor.document[id] else { return nil }
+        return editor.shapeContext.frame(of: record)
+    }
+
+    /// The editing frame's origin, world units: the view's bounds' origin.
+    private var origin: CGPoint { context.frame?.origin ?? .zero }
+
+    /// Line `line`'s rect, in the view's coordinates.
+    private func rect(ofLine line: Int) -> CGRect? {
+        guard let paper else { return nil }
+        let origin = origin
+        return model.lineRect(line, in: paper).offsetBy(dx: -origin.x, dy: -origin.y)
+    }
+
+    /// The rect of a stop's line, in the view's coordinates (nil for the title).
+    override func rect(of stop: LineStop) -> CGRect? {
+        switch stop {
+        case .title: return nil
+        case .fixed:
+            guard let paper, let fixed = model.fixedLine else { return nil }
+            let origin = origin
+            return fixed.rect(paper).offsetBy(dx: -origin.x, dy: -origin.y)
+        case .waiting: return rect(ofLine: waitingLine)
+        case .row(let row): return index(of: row).flatMap { rect(ofLine: LineRowsLayout.line(of: $0, waiting: waitingLine)) }
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        place()
+    }
+
+    override func setBoundsSize(_ newSize: NSSize) {
+        super.setBoundsSize(newSize)
+        place()
+    }
+
+    override func layout() {
+        super.layout()
+        place()
+    }
+
+    /// The title's field on the pill's row, the line's over its stop.
+    private func place() {
+        if let titleField, let paper, frame.width > 0, bounds.width > 0 {
+            let zoom = frame.width / bounds.width, origin = origin
+            let row = TitleField.pillRow(of: id, above: paper, zoom: zoom, in: editor).offsetBy(dx: -origin.x, dy: -origin.y)
+            if titleField.frame != row { titleField.frame = row }
+        }
+        guard let line = rect(of: focus) else {
+            // The row with the caret went under it (another writer took it out): the line stays where it was, keeping the
+            // keyboard and its draft, until the commit settles and it goes to the waiting line (`documentDidSettle`). A hidden
+            // view would give the keyboard up and write the draft as a step nobody asked for.
+            if case .row(let row) = focus, index(of: row) == nil { return }
+            clip.isHidden = true
+            return
+        }
+        clip.isHidden = false
+        // Rows selected whole hide the line, which keeps the keyboard (a hidden view would give it up): drawn clear.
+        clip.alphaValue = band == nil ? 1 : 0
+        let style = model.style
+        let inset = style.textInset + indent(of: focus)
+        // The clip starts the kind's lead before the text (a chip's padding), the text kept where it is: a chip at the line's start
+        // is drawn whole, as at rest, never cut at the clip's edge.
+        let lead = style.fieldLead
+        let clipFrame = CGRect(x: line.minX + inset - lead, y: line.minY,
+                               width: max(1, line.width - inset - style.trailingInset - chevronRoom + lead), height: line.height)
+        if clip.frame != clipFrame { clip.frame = clipFrame }
+        // As tall as a chip the kind draws taller than the text (an endpoint's method), the text kept where it was in its middle:
+        // a view draws nothing past its edges, and the chip with the caret would be cut flat.
+        let (lineHeight, height) = style.fieldHeight
+        let chipInset = NSSize(width: lead, height: (height - lineHeight) / 2)
+        if field.textContainerInset != chipInset { field.textContainerInset = chipInset }
+        // Its baseline where the kind sets the row's text at rest: the font's middle (half its ascender over its descender) on the
+        // row's middle, so nothing moves as the caret comes onto a row or leaves it (UX walk 5 connect-7: a line 1 point high).
+        let resting = line.height / 2 + (style.font.ascender + style.font.descender) / 2
+        let fieldFrame = CGRect(x: -slide, y: resting - field.firstBaseline(else: style.font),
+                                width: max(textWidth + LineFieldStyle.textSlack + 2 * lead, clipFrame.width + slide), height: height)
+        field.place(at: fieldFrame)
+        keepCaretInClip()
+        needsDisplay = true
+    }
+
+    /// How far in a stop's text starts past the line's inset: the kind's indent of a row, or of a new row where the waiting line is.
+    private func indent(of stop: LineStop) -> CGFloat {
+        let rows = rows
+        switch stop {
+        case .row(let row): return index(of: row).map { model.indent(at: $0, of: rows, isNew: false) } ?? 0
+        case .waiting: return model.indent(at: waitingLine, of: rows, isNew: true)
+        case .title, .fixed: return 0
+        }
+    }
+
+    /// Room kept at the line's right for the "›" while it shows.
+    private var chevronRoom: CGFloat { showsChevron ? LineRowsStyle.chevronRoom : 0 }
+
+    /// Whether the "›" shows: on a row with a card, of a kind that asks for it.
+    private var showsChevron: Bool {
+        guard model.showsCardChevron, hasCard, case .row = focus else { return false }
+        return true
+    }
+
+    /// The "›" on the row with the caret, in the view's coordinates; nil where it doesn't show.
+    private var chevronRect: CGRect? {
+        guard showsChevron, let line = rect(of: focus) else { return nil }
+        return CGRect(x: line.maxX - model.style.trailingInset - LineRowsStyle.chevronRoom + LineRowsStyle.chevronGap, y: line.minY,
+                      width: LineRowsStyle.chevronRoom - LineRowsStyle.chevronGap, height: line.height)
+    }
+
+    private var textWidth: CGFloat {
+        guard let layout = field.textLayoutManager else { return 0 }
+        layout.ensureLayout(for: layout.documentRange)
+        return layout.usageBoundsForTextContainer.width
+    }
+
+    /// Slides the text so the caret stays in the clip.
+    private func keepCaretInClip() {
+        // The caret in the field's own coordinates, which slide with it: in view while it's `slide` to `slide + limit`.
+        guard let caret = field.caretFrame else { return }
+        let limit = clip.frame.width - LineFieldStyle.caretMargin, lead = model.style.fieldLead
+        var next = slide
+        if caret.maxX - next > limit { next = caret.maxX - limit }
+        // The lead before the text is the clip's too: the caret slid back to the text's start sits there, where it does at rest.
+        if caret.minX - lead - next < 0 { next = max(0, caret.minX - lead) }
+        guard next != slide else { return }
+        slide = next
+        field.place(at: field.frame.offsetBy(dx: -slide - field.frame.origin.x, dy: 0))
+    }
+
+    /// The band behind the line with the caret, its gutter's mark as it reads now, the fixed line's placeholder while it's empty,
+    /// and the "›" of a row with a card, where the kind asks for one.
+    override func draw(_ dirtyRect: NSRect) {
+        if let rows = bandRect {
+            LineFieldStyle.rowsBand.setFill()
+            NSBezierPath(roundedRect: rows.insetBy(dx: model.style.bandInset, dy: 0), xRadius: LineFieldStyle.bandRadius, yRadius: LineFieldStyle.bandRadius).fill()
+            return
+        }
+        guard let line = rect(of: focus) else { return }
+        let style = model.style
+        let band = line.insetBy(dx: style.bandInset, dy: 0)
+        style.band.setFill()
+        NSBezierPath(roundedRect: band, xRadius: LineFieldStyle.bandRadius, yRadius: LineFieldStyle.bandRadius).fill()
+        if focus == .fixed, field.string.isEmpty, let fixed = model.fixedLine {
+            let text = NSAttributedString(string: fixed.placeholder, attributes: LineRowsStyle.placeholder(style))
+            let size = text.size()
+            text.draw(at: CGPoint(x: line.minX + style.textInset, y: line.midY - size.height / 2))
+        }
+        if let chevron = chevronRect {
+            let text = NSAttributedString(string: LineRowsStyle.chevron, attributes: [.font: style.font, .foregroundColor: style.secondaryInk])
+            let size = text.size()
+            text.draw(at: CGPoint(x: chevron.midX - size.width / 2, y: chevron.midY - size.height / 2))
+        }
+        guard let mark = reading?.mark,
+              let image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: style.markSize, weight: .semibold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [mark.color]))) else { return }
+        let size = image.size
+        image.draw(in: CGRect(x: line.minX + style.gutterMiddle - size.width / 2, y: line.midY - size.height / 2, width: size.width, height: size.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
+    /// Presses on the title's chip and on the paper's lines are the session's; anywhere else they go on to the canvas.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local: CGPoint
+        if let superview {
+            local = convert(point, from: superview)
+        } else {
+            guard frame.width > 0, frame.height > 0 else { return nil }
+            local = CGPoint(x: bounds.minX + (point.x - frame.minX) * bounds.width / frame.width,
+                            y: bounds.minY + (point.y - frame.minY) * bounds.height / frame.height)
+        }
+        if let titleField, let hit = titleField.hitTest(local) { return hit }
+        // A press on rows selected whole goes through to the canvas, which ends editing first: they're its items there.
+        if let rows = bandRect, rows.contains(local) { return nil }
+        guard let paper, bounds.contains(local) else { return nil }
+        let inPaper = paper.offsetBy(dx: -origin.x, dy: -origin.y)
+        guard inPaper.contains(local) else { return nil }
+        if !clip.isHidden, clip.frame.contains(local) { return field }
+        return self
+    }
+
+    /// A press on another line goes to it, the caret where it was; on the "›", the row's card opens.
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil), origin = origin
+        if let chevron = chevronRect, chevron.contains(point) {
+            openCard()
+            return
+        }
+        guard let stop = stop(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y)), stop != focus else { return }
+        go(to: stop, at: .point(CGPoint(x: point.x + origin.x, y: point.y + origin.y), clicks: event.clickCount))
+    }
+
+    // MARK: Showing a stop
+
+    /// Where the caret goes in a line it moves to.
+    enum Caret {
+        case start, end
+        /// Across from where it was, view x.
+        case x(CGFloat)
+        /// Where a press was, world units.
+        case point(CGPoint, clicks: Int)
+    }
+
+    /// Puts the caret in `stop`, its line shown as stored, and tells the kind what to draw. `takingKeys` false is for a stop
+    /// the keyboard is already at (the title's field, pressed).
+    private func show(_ stop: LineStop, at caret: Caret, waitingAt: Int? = nil, takingKeys: Bool = true) {
+        if band != nil { band = nil }
+        isMoving = true
+        defer { isMoving = false }
+        if focus == .title, stop != .title { titleLeft() }
+        if stop == .title, focus != .title { titleAtFocus = shape?[TitleProperty.self] }
+        focus = stop
+        if let waitingAt { self.waitingAt = waitingAt }
+        slide = 0
+        hasCard = false
+        switch stop {
+        case .title:
+            held = nil
+            shown = nil
+            reading = nil
+            field.closeOffers()
+            fitWidth()
+        case .fixed:
+            held = nil
+            shown = nil
+            let fixed = model.fixedLine
+            field.substitutions = fixed?.substitutions ?? []
+            field.show(shape.flatMap { shape in fixed.map { $0.print(shape.props, lineContext()) } } ?? LineText(""))
+            lineChanged(reportingChange: false)
+            fixedShown = field.line
+        case .waiting:
+            held = nil
+            shown = nil
+            field.substitutions = grammar.substitutions
+            field.show(LineText(""), caret: 0)
+            lineChanged(reportingChange: false)
+        case .row(let row):
+            let stored = rows.first { model.id(of: $0) == row }
+            held = stored
+            // Before the line is shown: the room the "›" takes is counted in the width the shape is laid out at.
+            hasCard = model.showsCardChevron && stored.map { model.card(of: $0, in: lineContext(row)) != nil } == true
+            field.substitutions = grammar.substitutions
+            field.show(stored.map { grammar.print($0, in: lineContext(row)) } ?? LineText(""))
+            lineChanged(reportingChange: false)
+            shown = stored.map { stored in (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored) }
+        }
+        setInputs()
+        place()
+        if stop != .title {
+            switch caret {
+            // Arrived by a key: the caret placed is no move of the caret to the end of a dashed name, which asks the list.
+            case .start: field.placing { field.setSelectedRange(NSRange(location: 0, length: 0)) }
+            case .end: field.placing { field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0)) }
+            case .x(let x): field.placing { field.placeSelection(at: CGPoint(x: x - clip.frame.minX + slide, y: field.bounds.midY)) }
+            case .point(let point, let clicks):
+                // A click is the person's own move of the caret: it asks again where it lands.
+                let origin = origin
+                let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+                field.placeSelection(at: field.convert(local, from: self), selectingWord: clicks >= 2)
+            }
+            keepCaretInClip()
+            if case .row(let row) = stop, let index = index(of: row) {
+                field.setAccessibilityLabel(model.accessibleLabel(of: rows[index], at: index, among: rows))
+            } else if stop == .fixed, let fixed = model.fixedLine {
+                field.setAccessibilityLabel(fixed.name)
+            } else {
+                field.setAccessibilityLabel("New \(model.noun.singular)")
+            }
+        }
+        if takingKeys, let window {
+            let responder = focusedResponder
+            if window.firstResponder !== responder { window.makeFirstResponder(responder) }
+        }
+        elements = [:]
+        setAccessibilityLabel(groupLabel)
+        NSAccessibility.post(element: focusedResponder, notification: .focusedUIElementChanged)
+        if let rect = stop == .title ? titleField?.frame : rect(of: stop) { context.keepInView(rect, skippingNudges: true) }
+        needsDisplay = true
+    }
+
+    /// What the kind reads: where the waiting line is while it has the caret (it takes no room otherwise, as the frames
+    /// draw a table whose row is being typed in), and which row the field draws.
+    private func setInputs() {
+        editor.setLayoutInput(LineRowsLayout.waiting, focus == .waiting && band == nil ? waitingLine : nil, for: id)
+        if case .row(let row) = focus, band == nil {
+            editor.setLayoutInput(LineRowsLayout.focused, row, for: id)
+        } else {
+            editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)
+        }
+        editor.setLayoutInput(LineRowsLayout.fixed, focus == .fixed ? true : nil, for: id)
+        // The row the keys are on, for the panel's subject (the row's own tabs): the caret's row, or the one row selected whole.
+        let keysOn: PartID? = if band != nil { selectedRows.count == 1 ? selectedRows[0] : nil } else if case .row(let row) = focus { row } else { nil }
+        if editor.editingShapeID == id, editor.editingPart != keysOn { editor.editingPart = keysOn }
+        // A waiting line opened between rows moves the ones below it with nothing committed: a card under one goes with it.
+        service.cards?.follow(nil)
+    }
+
+    /// The line was typed in: read again, its looks and mark shown, the clip slid to the caret. True where the shape is laid out
+    /// at another width for it.
+    @discardableResult
+    private func lineChanged(reportingChange: Bool = true) -> Bool {
+        guard focus != .title else { return false }
+        if focus == .fixed {
+            let look = model.fixedLine.map { $0.look(field.line, lineContext()) } ?? (spans: [], mark: nil)
+            let read = LineReading<Row>(row: nil, spans: look.spans, mark: look.mark)
+            reading = read
+            field.show(read, style: model.style)
+            let widened = fitWidth()
+            if reportingChange {
+                place()
+                keepCaretInClip()
+                if widened { keepCaretInView() }
+            }
+            needsDisplay = true
+            return widened
+        }
+        let rowID: PartID
+        if case .row(let row) = focus { rowID = row } else { rowID = PartID() }
+        let read = grammar.read(field.line, id: rowID, in: lineContext(focus == .waiting ? nil : rowID))
+        reading = read
+        field.show(read, style: model.style)
+        let widened = fitWidth()
+        if reportingChange {
+            place()
+            keepCaretInClip()
+            // The shape laid out wider (or narrower) as the line is typed: the view follows the caret, as a text editor scrolls to
+            // it, so a line that widens its shape past the clear view's edge (under the inspector) is never typed blind.
+            if widened { keepCaretInView() }
+        }
+        needsDisplay = true
+        return widened
+    }
+
+    /// Pans the view by as little as brings the caret and the rest of its line, to the line's end at its width now, into the
+    /// clear view (`EditContext.keepInView`); a run too wide for the view keeps the caret in it.
+    private func keepCaretInView() {
+        guard let line = rect(of: focus), let caret = field.caretFrame else { return }
+        let x = min(max(clip.frame.minX + caret.minX - slide, line.minX), line.maxX)
+        // A pick that widens the line (Tab on a key's target) a few points into the margin leaves the board where it is; a character
+        // typed toward the edge is followed, every one.
+        context.keepInView(CGRect(x: x, y: line.minY, width: max(1, line.maxX - x), height: line.height), skippingNudges: field.isPicking)
+    }
+
+    /// The shape laid out as wide as the line being typed needs (its text, the row's insets and gutter), never narrower
+    /// than it stores, nor past the kind's widest (`widestLine`), where the line slides in its clip as before; nothing
+    /// written, no step. As stored again on the title and as editing ends.
+    @discardableResult
+    private func fitWidth() -> Bool {
+        guard let stored = editor.document[id]?.box?.width else { return false }
+        var wanted: CGFloat?
+        if focus != .title {
+            let style = model.style
+            let needed = ceil(style.textInset + indent(of: focus) + textWidth + LineFieldStyle.textSlack + LineFieldStyle.caretMargin
+                              + style.trailingInset + chevronRoom)
+            if needed > stored { wanted = model.widestLine.map { min(needed, max($0, stored)) } ?? needed }
+            if wanted == stored { wanted = nil }
+        }
+        return service.setWidth(wanted, of: id)
+    }
+
+    private func offers() -> LineOffers? {
+        guard focus != .title, let reading else { return nil }
+        if focus == .fixed { return model.fixedLine?.offers(field.selectedRange().location, field.line, lineContext()) }
+        let row: PartID? = if case .row(let row) = focus { row } else { nil }
+        return grammar.offers(at: field.selectedRange().location, in: field.line, reading: reading, context: lineContext(row))
+    }
+
+    // MARK: Committing
+
+    /// Writes the line with the caret, if it changed what's stored: a row added from the waiting line, a row changed, or a
+    /// row emptied taken out; one step the kind names. The row it is after, or nil where nothing was written.
+    @discardableResult
+    func commitDraft() -> LineStop? {
+        guard focus != .title, editor.canTransact, editor.document[id] != nil else { return nil }
+        reanchor()
+        let line = field.line
+        let blank = line.string.trimmingCharacters(in: .whitespaces).isEmpty
+        switch focus {
+        case .fixed:
+            return commitFixed() ? .fixed : nil
+        case .waiting:
+            guard !blank, let row = grammar.read(line, id: PartID(), in: lineContext()).row else { return nil }
+            let at = min(waitingAt, rows.count)
+            guard write([.add([row], at: at)]) else { return nil }
+            // The line is that row now: written again, it changes nothing.
+            focus = .row(model.id(of: row))
+            held = rows.first { model.id(of: $0) == model.id(of: row) }
+            shown = held.map { (field.line, $0) }
+            refreshStop()
+            return focus
+        case .row(let rowID):
+            guard let current = rows.first(where: { model.id(of: $0) == rowID }) else { return nil }
+            if blank {
+                guard write([.delete([current])]) else { return nil }
+                focus = .waiting
+                waitingAt = rows.count
+                held = nil
+                shown = nil
+                refreshStop()
+                lineChanged(reportingChange: false)
+                return .waiting
+            }
+            // A line left as it was shown writes nothing, though what it reads as may not be what's stored (an enum it names
+            // was renamed since); one changed is measured against what it stood for, so only what the person changed counts.
+            if let shown, field.line == shown.line { return focus }
+            guard let read = grammar.read(line, id: rowID, in: lineContext(rowID)).row else { return nil }
+            let merged = model.merged(read, onto: current)
+            let before = shown?.row ?? current
+            guard merged != before else { return focus }
+            guard write([.change(from: before, to: merged)]) else { return nil }
+            held = rows.first { model.id(of: $0) == rowID }
+            shown = held.map { (field.line, $0) }
+            return .row(rowID)
+        case .title:
+            return nil
+        }
+    }
+
+    /// The fixed line, if it changed from what it was shown as: written in one step the kind names ("Change Server"), heard by
+    /// VoiceOver. False where it wasn't written: unchanged, or refused (a locked shape shakes).
+    private func commitFixed() -> Bool {
+        guard let fixed = model.fixedLine, let fixedShown, field.line != fixedShown else { return false }
+        let line = field.line, id = id, context = lineContext()
+        let written: Bool? = editor.transactWhole(nil, shaking: [id]) { transaction in
+            guard let record = transaction.document[id]?.typed(as: Model.Props.self) else { throw Transaction.Refused([id]) }
+            var props = record.props
+            fixed.write(line, &props, context)
+            transaction.update(id, as: Model.Props.self) { $0.props = props }
+            // A shape that refuses writes (locked) is left as it was: refused, and it shakes.
+            guard let after = transaction.document[id]?.typed(as: Model.Props.self),
+                  fixed.print(after.props, context) == fixed.print(props, context) else { throw Transaction.Refused([id]) }
+            transaction.stepName = fixed.stepName
+            return true
+        }
+        guard written == true else { return false }
+        editor.announce(fixed.stepName)
+        self.fixedShown = field.line
+        return true
+    }
+
+    /// A commit changed the stop with the caret (a waiting line became its row, an emptied row went): what the kind lays
+    /// out and the field's place follow, for a caller that goes on without showing a stop.
+    private func refreshStop() {
+        guard editor.editingShapeID == id else { return }
+        setInputs()
+        place()
+        needsDisplay = true
+    }
+
+    /// Whether the line has words the person wrote that aren't stored: a waiting line with any, a row changed.
+    private var hasDraft: Bool {
+        switch focus {
+        case .title: false
+        case .fixed: fixedShown.map { field.line != $0 } ?? false
+        case .waiting: !field.string.trimmingCharacters(in: .whitespaces).isEmpty
+        case .row: shown.map { field.line != $0.line } ?? false
+        }
+    }
+
+    /// The row with the caret is gone (another writer took it out): its line is a draft on the waiting line, last.
+    private func reanchor() {
+        guard case .row(let row) = focus, index(of: row) == nil else { return }
+        focus = .waiting
+        waitingAt = rows.count
+        held = nil
+        shown = nil
+        refreshStop()
+    }
+
+    /// One step of `changes`, named as the kind names the first (and what a delete took along); heard by VoiceOver. A
+    /// refusal (a locked shape) writes nothing and shakes the shape.
+    @discardableResult
+    func write(_ changes: [LineChange<Row>], coalescing key: AnyHashable? = nil, named naming: LineChange<Row>? = nil) -> Bool {
+        model.write(changes, to: id, in: editor, coalescing: key, named: naming)
+    }
+
+    /// The keyboard left the line for somewhere else (a click away, another window): what it held is written.
+    private func blurred() {
+        guard !isMoving else { return }
+        commitDraft()
+    }
+
+    // MARK: Keys
+
+    private func handle(_ key: LineKey) -> Bool {
+        reanchor()
+        if band != nil, let taken = bandKey(key) { return taken }
+        switch key {
+        case .commit: returnPressed()
+        case .up: step(by: -1)
+        case .down: step(by: 1)
+        case .firstRow: toEndRow(first: true)
+        case .lastRow: toEndRow(first: false)
+        case .next: tab(by: 1)
+        case .previous: tab(by: -1)
+        case .end, .finish: end()
+        case .card: openCard()
+        case .moveUp: move(by: -1)
+        case .moveDown: move(by: 1)
+        case .addBeside: addBeside()
+        case .deleteEmpty: return deleteEmpty()
+        case .connect: return connect()
+        case .extendUp: extend(by: -1)
+        case .extendDown: extend(by: 1)
+        case .deleteRows: return false
+        }
+        return true
+    }
+
+    // MARK: Rows selected whole
+
+    /// The rows selected whole went (another writer took them out): the line is the caret's again, shown and typed in. Not once
+    /// editing has ended: a press on the band that drags the rows away ends it, and the view, not yet taken down, would lay the
+    /// shape out again with a waiting line.
+    override func documentDidSettle() {
+        guard !isMoving, editor.editingShapeID == id else { return }
+        if band == nil, case .row(let row) = focus, index(of: row) == nil {
+            // The row with the caret went (another writer): the keyboard is kept on the waiting line, VoiceOver told, the line
+            // in view. A line the person had changed goes with it, a draft written only as the caret leaves; one only
+            // rested on holds nothing of theirs and is emptied, so leaving never puts back what the other writer took out.
+            let drafted = hasDraft
+            isMoving = true
+            defer { isMoving = false }
+            if drafted {
+                reanchor()
+                field.setAccessibilityLabel("New \(model.noun.singular)")
+                NSAccessibility.post(element: focusedResponder, notification: .focusedUIElementChanged)
+                if let rect = rect(of: .waiting) { context.keepInView(rect, skippingNudges: true) }
+                editor.announce(LineFieldStyle.gone(model.noun.title, model.noun.singular, keeping: true))
+            } else {
+                show(.waiting, at: .end, waitingAt: rows.count)
+                editor.announce(LineFieldStyle.gone(model.noun.title, model.noun.singular, keeping: false))
+            }
+            needsDisplay = true
+            return
+        }
+        guard let band, index(of: band.anchor) == nil || index(of: band.head) == nil else { return }
+        self.band = nil
+        reanchor()
+        setInputs()
+        place()
+        needsDisplay = true
+    }
+
+    override var selectedRows: [PartID] {
+        guard let band, let anchor = index(of: band.anchor), let head = index(of: band.head) else { return [] }
+        let rows = rows
+        return (min(anchor, head)...max(anchor, head)).map { model.id(of: rows[$0]) }
+    }
+
+    /// Where the rows selected whole are drawn, in the view's coordinates.
+    private var bandRect: CGRect? {
+        let rects = selectedRows.compactMap { rect(of: .row($0)) }
+        guard let first = rects.first else { return nil }
+        return rects.dropFirst().reduce(first) { $0.union($1) }
+    }
+
+    /// ⇧↑ (-1) ⇧↓ (+1): the first selects the caret's row whole (the line written first; ⇧↑ on the waiting line, the row above
+    /// it), then the run's moving end goes a row up or down; the line is hidden while rows are selected. VoiceOver hears how
+    /// many.
+    private func extend(by delta: Int) {
+        if let band {
+            guard let head = index(of: band.head) else { return }
+            let next = head + delta
+            guard rows.indices.contains(next) else { return }
+            self.band = (band.anchor, model.id(of: rows[next]))
+        } else {
+            guard focus != .title else { return }
+            if focus == .waiting, commitDraft() == nil {
+                // An empty waiting line: ⇧↑ selects the row above it.
+                guard delta < 0, waitingAt > 0, rows.indices.contains(waitingAt - 1) else { return }
+                let above = model.id(of: rows[waitingAt - 1])
+                show(.row(above), at: .end)
+            } else {
+                commitDraft()
+            }
+            guard case .row(let row) = focus, index(of: row) != nil else { return }
+            field.closeOffers()
+            band = (row, row)
+        }
+        setInputs()
+        place()
+        editor.announce(LineFieldStyle.selected(model.noun.counted(selectedRows.count)))
+    }
+
+    /// A key while rows are selected whole: ⇧↑ ⇧↓ draw the run; ⌥↑ ⌥↓ move the rows (one step a held key); ⌫ ⌦ delete them;
+    /// Escape, ⌘↑ and ⌘↩ end editing, the rows selected as items on the canvas; any other key goes back to the line at the
+    /// run's moving end (↑ ↓ Return Tab) and does there what it does. Nil: the key as with no rows selected.
+    private func bandKey(_ key: LineKey) -> Bool? {
+        guard let band else { return nil }
+        switch key {
+        case .extendUp, .extendDown:
+            return nil
+        case .moveUp, .moveDown:
+            let rows = selectedRows
+            editor.moveRows(rows, of: id, by: key == .moveUp ? -1 : 1, coalescing: LineBlockRun(shape: id, rows: Set(rows)))
+            place()
+            return true
+        case .deleteRows:
+            deleteSelectedRows()
+            return true
+        case .end, .finish:
+            end()
+            return true
+        case .deleteEmpty:
+            deleteSelectedRows()
+            return true
+        case .commit, .up, .down, .firstRow, .lastRow, .next, .previous, .card, .addBeside, .connect:
+            // Back to a line: the run's moving end, the caret at its end; then the key does what it does there.
+            show(.row(band.head), at: .end)
+            return key == .commit || key == .up || key == .down ? true : nil
+        }
+    }
+
+    /// The rows selected whole deleted, one step the kind names, and what went with them; the caret to the row above them (else
+    /// the one after, else the waiting line).
+    private func deleteSelectedRows() {
+        let ids = Set(selectedRows)
+        let gone = rows.filter { ids.contains(model.id(of: $0)) }
+        guard let first = rows.firstIndex(where: { ids.contains(model.id(of: $0)) }), !gone.isEmpty else { return }
+        // The caret's row goes with them: the line it leaves, hidden as it goes, writes nothing.
+        isMoving = true
+        let written = write([.delete(gone)])
+        isMoving = false
+        guard written else { return }
+        let left = rows
+        if first > 0, left.indices.contains(first - 1) {
+            show(.row(model.id(of: left[first - 1])), at: .end)
+        } else if let next = left.first {
+            show(.row(model.id(of: next)), at: .start)
+        } else {
+            show(.waiting, at: .start, waitingAt: 0)
+        }
+    }
+
+    /// The rows on the pasteboard, if this shape takes them.
+    private var pastableRows: RowsPayload? {
+        guard let payload = editor.pasteboardRows, let kind = editor.document[id]?.kind, kind == payload.carrier.kind,
+              editor.registry.rowMoving(of: kind)?.takes(kind) == true else { return nil }
+        return payload
+    }
+
+    /// ⌘C ⌘X with rows selected whole: on the pasteboard (a cut taking them out with the arrows bound to them, counted). ⌘V
+    /// with rows on the pasteboard: after the caret's row (in place of an empty line), or after the rows selected whole, one
+    /// step ("Paste Columns"), the caret at the end of the last. False: the key as text's.
+    private func rowsAction(_ action: LineRowsAction) -> Bool {
+        switch action {
+        case .copy:
+            guard band != nil else { return false }
+            editor.copyRows(selectedRows, of: id)
+            return true
+        case .cut:
+            guard band != nil else { return false }
+            let rows = selectedRows
+            let above = self.rows.firstIndex { model.id(of: $0) == rows.first }.flatMap { $0 > 0 ? model.id(of: self.rows[$0 - 1]) : nil }
+            // The caret's row goes with them: the line it leaves, hidden as it goes, writes nothing.
+            isMoving = true
+            let cut = editor.cutRows(rows, of: id)
+            isMoving = false
+            guard cut else { return true }
+            if let above, index(of: above) != nil { show(.row(above), at: .end) } else { show(.waiting, at: .start, waitingAt: 0) }
+            return true
+        case .paste:
+            // Rows this shape takes: others (an enum's values on the pasteboard, in a table's line) are text there, pasted as lines.
+            guard focus != .title, let payload = pastableRows else { return false }
+            let before: PartID?
+            if band != nil {
+                let last = selectedRows.last.flatMap(index(of:)) ?? rows.count - 1
+                before = rows.indices.contains(last + 1) ? model.id(of: rows[last + 1]) : nil
+            } else {
+                reanchor()
+                let blank = field.string.trimmingCharacters(in: .whitespaces).isEmpty
+                switch focus {
+                case .row(let row) where !blank:
+                    commitDraft()
+                    let at = (index(of: row) ?? rows.count - 1) + 1
+                    before = rows.indices.contains(at) ? model.id(of: rows[at]) : nil
+                case .row(let row):
+                    // An emptied row: the rows go where it is, and it goes.
+                    before = row
+                default:
+                    if !blank { commitDraft() }
+                    let at = focus == .waiting ? min(waitingAt, rows.count) : rows.count
+                    before = rows.indices.contains(at) ? model.id(of: rows[at]) : nil
+                }
+            }
+            // An emptied row the rows land in place of goes in the same step.
+            var emptied: Row?
+            if band == nil, case .row(let row) = focus, field.string.trimmingCharacters(in: .whitespaces).isEmpty { emptied = storedRow(row) }
+            isMoving = true
+            defer { isMoving = false }
+            var landed: [PartID]?
+            let moving = editor.registry.rowMoving(of: payload.carrier.kind)
+            editor.undoHistory.group(moving.map { RowSteps.paste($0.noun, count: $0.rowIDs(of: payload.carrier)?.count ?? 0) }) {
+                landed = editor.landPastedRows(payload, into: id, before: before)
+                if landed != nil, let emptied { write([.delete([emptied])]) }
+            }
+            guard let last = landed?.last else { return true }
+            show(.row(last), at: .end)
+            return true
+        }
+    }
+
+    /// ⌘L: the line written, then, on a row, ⌘L's picker opens on the row, the shape still edited and the keyboard back on the line
+    /// once it closes (picked or not); on the title, or a waiting line with nothing on it, editing ends and the picker opens on the
+    /// shape as a whole, as Connect does. Without the picker the key goes on.
+    private func connect() -> Bool {
+        guard let picker = editor.connectPicker else { return false }
+        commitDraft()
+        if case .row(let row) = focus, index(of: row) != nil {
+            awaitsPicker = true
+            picker.open(on: ConnectEnd(id, part: row), returningKeyboardTo: field) { [weak self] made in self?.picked(made) }
+            if !picker.isOpen { awaitsPicker = false }
+            return true
+        }
+        let id = id
+        if focus == .title { titleLeft() }
+        context.end()
+        picker.open(on: id)
+        return true
+    }
+
+    /// Connect from the menu bar, while a row has the caret: the key's meaning, the picker on the row. False on the title or the
+    /// waiting line, where Connect ends editing and acts on the shape.
+    private func connectEditedRow() -> Bool {
+        guard editor.editingShapeID == id, case .row(let row) = focus, index(of: row) != nil else { return false }
+        return connect()
+    }
+
+    /// The keyboard back on the line from the picker: the pick is made as it closes, after the keyboard is back, so the row is
+    /// printed again once its commit settles (the service tells), with the key it drew.
+    private func focused() {
+        guard awaitsPicker, !isMoving else { return }
+        awaitsPicker = false
+        // Only a pick prints the line again: Escape, or a pick that made nothing, leaves it as it is.
+        if editor.connectPicker?.isPicking == true { service.awaitingReprint = self }
+    }
+
+    /// A pick is done: if it made no connection, nothing is coming for the line to wait for.
+    private func picked(_ made: Bool) {
+        awaitsPicker = false
+        if !made, service.awaitingReprint === self { service.awaitingReprint = nil }
+    }
+
+    override func reprint() {
+        guard editor.editingShapeID == id, case .row(let row) = focus, !hasDraft, let stored = rows.first(where: { model.id(of: $0) == row }) else { return }
+        held = stored
+        field.show(grammar.print(stored, in: lineContext(row)))
+        let widened = lineChanged(reportingChange: false)
+        shown = (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored)
+        place()
+        // Printed wider (a card's toggle wrote `null`): the row kept in the clear view, as a line typed wider keeps its caret.
+        if widened, let line = rect(of: focus) { context.keepInView(line, skippingNudges: true) }
+    }
+
+    /// Return: on the title, the waiting line; on a line with words, the line committed and a waiting line under it (above it,
+    /// with the caret at the line's very start, as a text editor opens one); on an empty line, editing ends (an emptied row going
+    /// as it does).
+    private func returnPressed() {
+        let blank = field.string.trimmingCharacters(in: .whitespaces).isEmpty
+        switch focus {
+        case .title:
+            show(.waiting, at: .end, waitingAt: rows.count)
+        case .fixed:
+            commitDraft()
+            show(.waiting, at: .end, waitingAt: rows.count)
+        case .waiting where blank:
+            end()
+        case .row where blank:
+            end()
+        case .waiting:
+            let at = min(waitingAt, rows.count)
+            guard let added = commitDraft() else { return }
+            // Under the row it became, wherever the kind put it (a header typed among rows regroups those around it).
+            let below = if case .row(let row) = added, let index = index(of: row) { index + 1 } else { at + 1 }
+            show(.waiting, at: .end, waitingAt: below)
+        case .row(let row):
+            // With the caret at the very start of the line, a text editor's Return: the line opens above it.
+            let caret = field.selectedRange()
+            let above = caret.location == 0 && caret.length == 0
+            // A refused commit (the shape locked meanwhile) keeps the draft where it is, the shape shaking.
+            guard commitDraft() != nil else { return }
+            let at = index(of: row).map { above ? $0 : $0 + 1 } ?? rows.count
+            show(.waiting, at: .end, waitingAt: at)
+        }
+    }
+
+    /// ↑ ↓: the stop above or below, the caret across from where it was; nothing past the ends.
+    private func step(by delta: Int) {
+        let stops = stops
+        guard let at = stops.firstIndex(of: focus) else { return }
+        let to = at + delta
+        guard stops.indices.contains(to) else { return }
+        // An empty line has no column to carry: the caret is at its start only because there is nothing else, and a row entered there
+        // would take Return for the start's (a line above it): the row is entered at its end.
+        let x = field.string.isEmpty ? nil : field.caretFrame.map { $0.minX - slide + clip.frame.minX }
+        go(to: stops[to], at: x.map(Caret.x) ?? .end)
+    }
+
+    /// Home End: the first or last row's stop, the caret at its line's end; with no rows, the waiting line. A key from any stop,
+    /// so a header at the top of sixty rows is one press, and the opposite key comes back to the other end.
+    private func toEndRow(first: Bool) {
+        let rows = stops.filter { if case .row = $0 { true } else { false } }
+        guard let stop = first ? rows.first : rows.last else { return go(to: .waiting, at: .end) }
+        go(to: stop, at: .end)
+    }
+
+    /// Tab ⇧Tab: the next or previous stop, the caret at its line's end; past the ends, the next or previous shape of the
+    /// kind (its first or last stop), or with none, round to this one's other end.
+    private func tab(by delta: Int) {
+        let stops = stops
+        guard let at = stops.firstIndex(of: focus) else { return }
+        let to = at + delta
+        if stops.indices.contains(to) { return go(to: stops[to], at: .end) }
+        commitDraft()
+        if service.hop(delta > 0 ? .next : .previous, from: id) { return }
+        let round = self.stops
+        guard let target = delta > 0 ? round.first : round.last else { return }
+        show(target == .waiting ? .waiting : target, at: .end, waitingAt: rows.count)
+    }
+
+    /// The caret to `stop`, committing the line it leaves; a stop the commit changed is found again.
+    override func go(to stop: LineStop) { go(to: stop, at: .end) }
+
+    private func go(to stop: LineStop, at caret: Caret) {
+        guard stop != focus else { return }
+        commitDraft()
+        switch stop {
+        case .title: show(.title, at: caret)
+        case .fixed: show(.fixed, at: caret)
+        case .row(let row) where index(of: row) != nil: show(stop, at: caret)
+        // The waiting line, or a row that went with the line it was (emptied and left): the waiting line, last.
+        default: show(.waiting, at: caret, waitingAt: rows.count)
+        }
+    }
+
+    /// Escape, ⌘↩, ⌘↑: the line written, editing ends.
+    func end() {
+        commitDraft()
+        if focus == .title { titleLeft() }
+        if service.wasEnteredAtItem(id), case .row(let row) = focus, index(of: row) != nil { service.endsOnRow = (id, row) }
+        context.end()
+    }
+
+    /// ⌥↑ ⌥↓: the row one place up or down, the line written first; held or repeated, one step ("Move Column").
+    private func move(by delta: Int) {
+        if focus == .waiting, let added = commitDraft() {
+            show(added, at: .end)
+        } else if case .row = focus {
+            commitDraft()
+        }
+        guard case .row(let row) = focus, let at = index(of: row), let held = rows.first(where: { model.id(of: $0) == row }) else { return }
+        let to = at + delta
+        guard rows.indices.contains(to) else { return }
+        let caret = field.selectedRange()
+        guard write([.move(held, to: to)], coalescing: LineMoveRun(shape: id, row: row)) else { return }
+        show(.row(row), at: .start)
+        field.placing { field.setSelectedRange(NSRange(location: min(caret.location, (field.string as NSString).length), length: 0)) }
+    }
+
+    /// ⇧↩: the line written, editing ends, and a shape of the kind goes beside this one, edited (Insert's beside).
+    private func addBeside() {
+        commitDraft()
+        guard let kind = editor.document[id]?.kind else { return }
+        if !editor.insert(ToolID(placing: kind), beside: [id]) { editor.refuseChanges(to: [id]) }
+    }
+
+    /// ⌫ on an empty line: a row goes, one step ("Delete Column"), the caret to the end of the row above (else the start of
+    /// the one below), and a held ⌫ stops there; on the waiting line, the caret goes to the row above, nothing written.
+    private func deleteEmpty() -> Bool {
+        switch focus {
+        case .title, .fixed:
+            return false
+        case .waiting:
+            let stops = stops
+            guard let at = stops.firstIndex(of: .waiting), at > 0, case .row = stops[at - 1] else { return true }
+            show(stops[at - 1], at: .end)
+            return true
+        case .row(let row):
+            guard let at = index(of: row), let current = rows.first(where: { model.id(of: $0) == row }) else { return true }
+            guard write([.delete([current])]) else { return true }
+            field.swallowsDeleteRepeats = true
+            let left = rows
+            if at > 0, left.indices.contains(at - 1) {
+                show(.row(model.id(of: left[at - 1])), at: .end)
+            } else if let first = left.first {
+                show(.row(model.id(of: first)), at: .start)
+            } else {
+                show(.waiting, at: .start, waitingAt: 0)
+            }
+            return true
+        }
+    }
+
+    /// A block of lines pasted: a row a line, where the caret's line is (in place of it when it's empty, after it
+    /// otherwise), one step ("Paste Columns"); the caret at the end of the last. One line is typed.
+    private func paste(_ text: String) -> Bool {
+        guard focus != .title, focus != .fixed else { return false }
+        reanchor()
+        let lines = grammar.lines(fromPasted: text)
+        guard lines.count > 1 else {
+            if let line = lines.first { field.insertText(line, replacementRange: field.selectedRange()) }
+            return true
+        }
+        let blank = field.string.trimmingCharacters(in: .whitespaces).isEmpty
+        var gone: Row?
+        var at: Int
+        switch focus {
+        case .waiting:
+            if !blank, let added = commitDraft(), case .row(let row) = added {
+                at = index(of: row).map { $0 + 1 } ?? rows.count
+            } else {
+                at = min(waitingAt, rows.count)
+            }
+        case .row(let row):
+            guard let index = index(of: row), let current = rows.first(where: { model.id(of: $0) == row }) else { return true }
+            if blank {
+                // The block first, so the step is named for it ("Paste Columns"), and the emptied row goes after.
+                gone = current
+                at = index
+            } else {
+                commitDraft()
+                at = (self.index(of: row) ?? index) + 1
+            }
+        case .title, .fixed:
+            return false
+        }
+        let grammar = model.grammar(for: shape.map { model.roleOfNewRow(at: at, in: $0.props) } ?? "")
+        let made = lines.compactMap { grammar.read(LineText($0), id: PartID(), in: lineContext()).row }
+        guard !made.isEmpty else { return true }
+        var changes = model.placing(pasted: made, at: at, among: rows)
+        if let gone { changes.append(.delete([gone])) }
+        isMoving = true
+        defer { isMoving = false }
+        // Named for the block as pasted, wherever each row went.
+        guard write(changes, named: .add(made, at: at)) else { return true }
+        show(.row(model.id(of: made[made.count - 1])), at: .end)
+        return true
+    }
+
+    /// The title's field took the keyboard (a press on its pill, VoiceOver's): the line it left is written, and the title is
+    /// the stop, so the keys go on from it.
+    private func titleBegan() {
+        guard focus != .title, !isMoving else { return }
+        commitDraft()
+        show(.title, at: .end, takingKeys: false)
+    }
+
+    /// The title as it was when the caret came into its field, to tell a rename as the caret leaves it.
+    private var titleAtFocus: String?
+
+    /// The caret leaves the title's field: a name changed there in the kind's rename step ("Rename Table") is heard by
+    /// VoiceOver once, as a row's commit is. A name typed into the step that placed the shape ("Add Table", heard as it
+    /// landed) is not said again.
+    private func titleLeft() {
+        let now = shape?[TitleProperty.self]
+        guard now != titleAtFocus else { return }
+        titleAtFocus = now
+        let rename = (editor.registry.definition(for: Model.Props.kind) as? any Editable)?.editingStepName
+        if let rename, editor.undoHistory.undoName == rename { editor.announce(rename) }
+    }
+
+    /// The title's field ended: Return to the waiting line, Tab on, ⇧Tab back, Escape out.
+    private func titleEnded(_ ending: TitleField.Ending) {
+        switch ending {
+        case .done: show(.waiting, at: .end, waitingAt: rows.count)
+        case .escape:
+            titleLeft()
+            context.end()
+        case .tab: tab(by: 1)
+        case .backTab: tab(by: -1)
+        }
+    }
+
+    // MARK: Actions
+
+    /// An action row done in the line (Return on it, or a click): what it makes, the words it was offered for standing for that, and
+    /// the line written with them, in one step of the action's name ("New Type"), heard by VoiceOver; the caret stays in the line.
+    private func act(_ action: LineAction, at range: NSRange) {
+        guard focus != .title, focus != .fixed, editor.canTransact, editor.document[id] != nil else { return }
+        let row: PartID? = if case .row(let row) = focus { row } else { nil }
+        let context = lineContext(row), field = field
+        var written = false
+        editor.undoHistory.group(action.stepName) {
+            guard let made = action.perform(context) else { return }
+            field.stand(for: made, at: range)
+            written = commitDraft() != nil
+        }
+        guard written else { return }
+        // The line is the row now: shown again where the caret was, so Undo is the board's ("Undo New Type"), not the typing's.
+        field.show(field.line, caret: field.selectedRange().location)
+        lineChanged(reportingChange: false)
+        if case .row(let row) = focus, let stored = storedRow(row) { shown = (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored) }
+        editor.announce(action.stepName)
+        place()
+    }
+
+    // MARK: The row's card
+
+    @discardableResult
+    override func openCard() -> Bool {
+        commitDraft()
+        // A line the file refused (an undrawable key, a frozen shape) is still a draft: the card would write over it later.
+        guard !hasDraft, case .row(let row) = focus, let stored = storedRow(row), let cards = service.cards,
+              let card = model.card(of: stored, in: lineContext(row)) else { return false }
+        return cards.show(card, of: row, in: self)
+    }
+
+    /// A row as it's stored now.
+    func storedRow(_ id: PartID) -> Row? { rows.first { model.id(of: $0) == id } }
+
+    /// What a card's lines are read in: the row's own context.
+    func cardContext(_ row: PartID) -> LineContext { lineContext(row) }
+
+    /// How the kind's lines look.
+    var style: LineStyle { model.style }
+
+    /// A row's rect as it's laid out now, world units: what its card hangs from.
+    func worldRect(of row: PartID) -> CGRect? { editor.shapeContext.geometry(of: id)?.parts.frame(row)?.rect }
+
+    /// A line of the row's card left changed: `row` written over `held`, as a row's line is, one step the kind names by what
+    /// changed ("Change Column", "Change Key Action"), heard by VoiceOver; the row's line printed again as it's stored. Refused
+    /// where the row is gone, the file can't take a commit now, or the shape refused (and shook): nothing written, the card's
+    /// words kept by the caller as a row's line keeps its draft.
+    @discardableResult
+    func commitCard(_ row: Row, over held: Row) -> CardCommit {
+        guard row != held else { return .unchanged }
+        guard editor.canTransact, storedRow(model.id(of: held)) != nil else { return .refused }
+        guard write([.change(from: held, to: row)]) else { return .refused }
+        reprint()
+        return .written
+    }
+
+    // MARK: VoiceOver
+
+    /// "Columns of orders".
+    private var groupLabel: String {
+        let title = shape?[TitleProperty.self]
+        return title.map { "\(model.noun.pluralTitle) of \($0)" } ?? model.noun.pluralTitle
+    }
+
+    override func accessibilityLabel() -> String? { groupLabel }
+
+    /// The title's field, then a row's element each (the one with the caret is the field), then the waiting line.
+    override func accessibilityChildren() -> [Any]? {
+        var children: [Any] = []
+        if let titleField { children.append(titleField.field) }
+        let rows = rows
+        for stop in stops where stop != .title {
+            if stop == focus {
+                children.append(field)
+                // The "›", a button after the line it opens the card of.
+                if let chevron = chevronRect, let window {
+                    chevronElement.setAccessibilityRole(.button)
+                    chevronElement.setAccessibilityParent(self)
+                    chevronElement.setAccessibilityLabel(LineRowsStyle.chevronName)
+                    chevronElement.setAccessibilityFrame(window.convertToScreen(convert(chevron, to: nil)))
+                    chevronElement.press = { [weak self] in self?.openCard() }
+                    children.append(chevronElement)
+                }
+                continue
+            }
+            let element = elements[stop] ?? LineRowElement()
+            elements[stop] = element
+            element.setAccessibilityRole(.textField)
+            element.setAccessibilityParent(self)
+            switch stop {
+            case .fixed:
+                guard let fixed = model.fixedLine else { continue }
+                element.setAccessibilityLabel(fixed.name)
+                element.setAccessibilityValue(line(of: .fixed) ?? "")
+                element.setAccessibilityPlaceholderValue(fixed.placeholder)
+            case .row(let row):
+                guard let at = index(of: row) else { continue }
+                let held = rows[at]
+                let grammar = model.grammar(for: model.role(of: held))
+                element.setAccessibilityLabel(model.accessibleLabel(of: held, at: at, among: rows))
+                element.setAccessibilityValue(grammar.print(held, in: lineContext(row)).string)
+                element.setAccessibilityHelp(grammar.spoken(held, in: lineContext(row)))
+            default:
+                element.setAccessibilityLabel("New \(model.noun.singular)")
+                element.setAccessibilityValue("")
+            }
+            if let rect = rect(of: stop), let window {
+                element.setAccessibilityFrame(window.convertToScreen(convert(rect, to: nil)))
+            }
+            element.press = { [weak self] in self?.go(to: stop) }
+            children.append(element)
+        }
+        return children
+    }
+}
+
+/// A row without the caret, as VoiceOver reads it: a text field, "Column 3 of 5", its line the value; pressed, the caret
+/// goes there.
+final class LineRowElement: NSAccessibilityElement {
+    /// What pressing it does: the caret to its row. Set and used on the main thread, where AppKit asks.
+    nonisolated(unsafe) var press: (@MainActor () -> Void)?
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let press else { return false }
+        MainActor.assumeIsolated { press() }
+        return true
+    }
+}
+
+
+/// What the session draws beside a row's line: the "›" of a row with a card, and a fixed line's placeholder. World units.
+@MainActor
+enum LineRowsStyle {
+    /// What a click opens a row's card by.
+    static let chevron = "›"
+    /// What VoiceOver calls it.
+    static let chevronName = "Show Details"
+    /// The room it takes at a line's right, and the gap before it.
+    static let chevronRoom: CGFloat = 22
+    static let chevronGap: CGFloat = 6
+
+    /// A fixed line's placeholder: the line's font, slanted, in its secondary ink (E1, E7: a faint "server").
+    static func placeholder(_ style: LineStyle) -> [NSAttributedString.Key: Any] {
+        let slanted = NSFontManager.shared.convert(style.font, toHaveTrait: .italicFontMask)
+        return [.font: slanted, .foregroundColor: style.secondaryInk]
+    }
+}
+
+/// The clip a line's field slides in, flipped as the rows' view is: the field's frame is down from the line's top.
+final class FlippedClip: NSView {
+    override var isFlipped: Bool { true }
+}

@@ -38,6 +38,8 @@ public final class FindState {
     /// The shapes with hits, in order, each once.
     public private(set) var results: [FindResult] = []
     @ObservationIgnored private var labelStems: [Int: String] = [:]
+    /// What `whenResultsChange` asked to be told.
+    @ObservationIgnored private var resultListeners: [@MainActor () -> Void] = []
     /// How many hits, exact and typos alike.
     public private(set) var total = 0
     /// The current hit: a result, and which of its hits (the walk's place).
@@ -144,8 +146,53 @@ public final class FindState {
     /// A result's texts, as the index read them, in order.
     public func texts(of id: ShapeID) -> [String] { index.entries[id]?.texts.map(\.text) ?? [] }
 
+    /// What a result's row leads with: the text that names its shape (its title, a contribution's `names`), when the row's
+    /// first hit is in another of its texts (a table's row); nil when it has none, or the hit is in that text, which the
+    /// snippet then shows.
+    public func rowName(of result: FindResult) -> String? { rowName(of: result, excluding: result.first.text) }
+
+    /// The same for the hit in text `text` (a step's: the hit it stands on, not the row's first): the shape's name, unless
+    /// that hit is in the text that names it, which its words then show.
+    public func rowName(of result: FindResult, excluding text: Int) -> String? {
+        guard let entry = index.entries[result.id], let kind = editor.withoutObservingDocument({ editor.file.record(result.id)?.kind }),
+              let named = entry.texts.indices.first(where: { index.contribution(entry.texts[$0].source, of: kind)?.names == true }),
+              named != text else { return nil }
+        let name = entry.texts[named].text.replacingOccurrences(of: "\n", with: " ")
+        return name.isEmpty ? nil : name
+    }
+
     /// Whether a shape has hits.
     public func hasHits(_ id: ShapeID) -> Bool { places[id] != nil }
+
+    /// The fields of a shape's texts that hold hits (`FindableText.field`: a row's id, for a kind whose rows are found a
+    /// text a row), read from its result, which the search (off the main actor) and a commit's patch keep: what a plugin
+    /// that hides some of a shape's texts shows while Find is open (a folded table's rows). Costs the texts that hold hits,
+    /// never a search again. Empty while Find is closed, and for a shape with none.
+    public func fieldsHit(of id: ShapeID) -> Set<String> {
+        guard isActive, let place = places[id], results.indices.contains(place), let entry = index.entries[id] else { return [] }
+        var fields: Set<String> = []
+        for text in results[place].textsHit where entry.texts.indices.contains(text) { fields.insert(entry.texts[text].field) }
+        return fields
+    }
+
+    /// The ranges hit in each field of a shape's texts that holds hits (UTF-16, of the field's text): what a plugin that hides some
+    /// of a shape's texts reads to show only those whose hits are drawn where they are (an endpoint's row, never for a hit in its
+    /// group's prefix, which is drawn on the group's header). Costs the shape's hits; empty while Find is closed.
+    public func rangesHit(of id: ShapeID) -> [String: [Range<Int>]] {
+        guard isActive, places[id] != nil, let entry = index.entries[id] else { return [:] }
+        var ranges: [String: [Range<Int>]] = [:]
+        for (text, hits) in hits(of: id).enumerated() where entry.texts.indices.contains(text) && !hits.isEmpty {
+            ranges[entry.texts[text].field, default: []] += hits.map(\.range)
+        }
+        return ranges
+    }
+
+    /// Runs `body` each time what `fieldsHit(of:)` answers may have changed: new results, a commit's patch of them, Find
+    /// opened or closed. Called after the change, never during a search; a plugin that lays shapes out by the answer says
+    /// so then (`shapesDidChangeLayout`).
+    public func whenResultsChange(_ body: @escaping @MainActor () -> Void) {
+        resultListeners.append(body)
+    }
 
     /// Where a hit is drawn on the board shown, world units, where its shape is: its line rects, as
     /// its contribution lays its text out now (empty for a shape that isn't there).
@@ -204,6 +251,7 @@ public final class FindState {
         pendingStep = nil
         walk.end()
         laidOut = [:]
+        tellResultListeners()
         editor.setNeedsDisplay()
     }
 
@@ -291,6 +339,11 @@ public final class FindState {
         self.offsets = offsets
         self.total = total
         walk.rowsDidChange()
+        tellResultListeners()
+    }
+
+    private func tellResultListeners() {
+        for listener in resultListeners { listener() }
     }
 
     /// Typing's current hit: the first on the board shown that's in view, else the first on the
@@ -402,7 +455,7 @@ public final class FindState {
     private func labelStem(of index: Int) -> String {
         if let known = labelStems[index] { return known }
         let result = results[index]
-        var parts = [FindSnippet.text(of: result, in: self), kindName(of: result.id)]
+        var parts = (rowName(of: result).map { [$0] } ?? []) + [FindSnippet.text(of: result, in: self), kindName(of: result.id)]
         if result.board != editor.board {
             let board = editor.boardHeading(of: result.board).title
             if !board.isEmpty { parts.append(board) }
@@ -412,11 +465,14 @@ public final class FindState {
         return made
     }
 
-    /// What each step announces: "Hit 3 of 12, Note, the text around it".
+    /// What each step announces: "Hit 3 of 12, orders, Table, the text around this hit" (a titled shape's name before its kind,
+    /// as its row says it; the words around the hit stepped to, never only the shape's first).
     public var announcement: String? {
         guard isActive, let current, results.indices.contains(current.result), let number = currentNumber else { return nil }
         let result = results[current.result]
-        return ["Hit \(number) of \(total)", kindName(of: result.id), FindSnippet.text(of: result, in: self)].joined(separator: ", ")
+        let around = hit(at: current).map(\.hit)
+        return (["Hit \(number) of \(total)"] + (rowName(of: result, excluding: around?.text ?? result.first.text).map { [$0] } ?? [])
+                + [kindName(of: result.id), FindSnippet.text(of: result, around: around, in: self)]).joined(separator: ", ")
     }
 
     private func kindName(of id: ShapeID) -> String {
@@ -472,10 +528,11 @@ public final class FindState {
                 if count == 0 {
                     removed.insert(id)
                 } else if let entry = index.entries[id], entry.board == list[i].board {
-                    let first = entry.texts.enumerated().lazy.compactMap { index, text in
-                        search.hits(in: text.folded).first.map { FindHit(text: index, range: $0.range, isExact: $0.isExact) }
-                    }.first ?? list[i].first
-                    list[i] = FindResult(id: id, board: entry.board, hitCount: count, first: first, rank: list[i].rank)
+                    let found = entry.texts.enumerated().compactMap { index, text in
+                        search.hits(in: text.folded).first.map { (text: index, hit: FindHit(text: index, range: $0.range, isExact: $0.isExact)) }
+                    }
+                    list[i] = FindResult(id: id, board: entry.board, hitCount: count, first: found.first?.hit ?? list[i].first,
+                                         textsHit: found.map(\.text), rank: list[i].rank)
                 } else {
                     needsSearch = true
                 }

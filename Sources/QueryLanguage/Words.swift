@@ -102,3 +102,13 @@ public enum Keyword: String, Sendable {
     /// `only T` in a type list: the type alone, without those under it.
     case only
 }
+
+extension Word {
+    /// Whether the word's anchor may name a row (`#<shape>::part(<row>)`): the edge words that read one edge's end at the anchor.
+    public var anchorsRow: Bool {
+        switch self {
+        case .edgeTo, .edgeFrom, .startsAt, .endsAt, .startOf, .endOf: true
+        default: false
+        }
+    }
+}

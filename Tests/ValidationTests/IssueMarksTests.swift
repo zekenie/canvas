@@ -76,7 +76,7 @@ extension CanvasEditor {
     test("the marks' plugin is one line in the report, and contributes to Validation nothing") {
         let registry = try Registry(plugins: [ValidationPlugin(), TableOfContentsPlugin(), ValidationContentsPlugin()])
         expectEqual(registry.report, """
-        core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        core                 tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
         table-of-contents    service ContentsState · host sidebar
         validation-contents  ContentsMarks → every shape

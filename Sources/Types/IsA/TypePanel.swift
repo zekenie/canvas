@@ -6,6 +6,7 @@ import LanguageModels
 import Neighbors
 import Selection
 import SwiftUI
+import TextEditing
 import Validation
 
 /// A type's own tab: its JSON Schema.

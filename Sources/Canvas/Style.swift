@@ -40,6 +40,9 @@ public enum Style {
     /// Shapes waiting to be placed (`editor.placeLater`) are drawn at this opacity, the overlays'
     /// decorations of them too (`OverlayContext.drawingPending`): there, but not yet put down.
     static let pendingOpacity: CGFloat = 0.45
+    /// A drag's ghosts (`Session.ghosts`: rows dragged, as a card of their own) are drawn at this opacity: a card at the
+    /// pointer as the frames draw it, opaque, so the rows it passes over don't show through its own.
+    static let ghostOpacity: CGFloat = 1
 
     // Skeletons: shapes as they show zoomed out (`CustomSkeleton`).
     /// Below this zoom a frame draws shapes as skeletons (`CanvasEditor.skeletonZoom`): a note's
@@ -72,6 +75,14 @@ public enum Style {
     /// strokes a hover like the selection.
     static let faintIndicatorWidth: CGFloat = 2.5
     static let faintIndicatorOpacity: CGFloat = 0.6
+    /// The hinted shape's lit part (`editor.hintedPart`, a row a connection would end on, T3's lit row): its rect this far
+    /// inside, rounded this much, stroked this wide (view points) and filled faintly, in the hint's color.
+    static let hintedPartInset: CGFloat = 2
+    /// A part read with its shape, as VoiceOver and the lists say it: "id in customers".
+    static func partInShape(_ part: String, _ shape: String) -> String { "\(part) in \(shape)" }
+    static let hintedPartRadius: CGFloat = 5
+    static let hintedPartWidth: CGFloat = 2
+    static let hintedPartFillOpacity: CGFloat = 0.16
     /// A faint outline beside tinted ones (`Outlines.tinted`) is stronger than alone: it's the shape
     /// they're about (the one hovered, when they're a hover's lights), and has to read above them.
     static let tintedFaintIndicatorOpacity: CGFloat = 0.85
@@ -147,6 +158,13 @@ public enum Style {
     /// How far inside a container's edge a shape nudged in ends, and how far outside one nudged out,
     /// in world units (`Transaction.settle`): the edge stays clear to grab.
     nonisolated static let containerGap: CGFloat = 16
+    /// How near the bottom of a shape that grows (`MakesRoomAsItGrows`) may come to the top of one below it before it
+    /// pushes that one down, in world units (`Transaction.makeRoom()`): twice the containers' gap, which clears what is
+    /// drawn over a shape's top edge (a title's row reaches 27 world units above it at 100%).
+    nonisolated static var roomReach: CGFloat { containerGap * 2 }
+    /// The most shapes one step's push moves, and containers it grows (`Transaction.makeRoom()`): past that it leaves
+    /// the rest where they are, for the person.
+    nonisolated static let roomMoves = 200
     /// The glide (`CanvasEditor.glide`): a shape settling nudged in or out, or a refused drop going
     /// back, eases there from where it was drawn over this long, a frame every `glideFrame`...
     static let glideDuration: Duration = .milliseconds(250)
@@ -162,6 +180,10 @@ public enum Style {
     /// How far in from the edges of the view (view points) an editing view's caret is kept
     /// (`EditContext.keepInView`).
     static let keepInViewMargin: CGFloat = 16
+    /// The least pan (view points, either way) that brings what an editing view keeps in view the margin in from the edges when
+    /// all of it is in the clear view already: a few points move every shape on the board and show nothing the person can't see
+    /// (UX walk 5 firstminute-5-2: a key's pick widened its line 4 points into the margin, and the board jumped 4 points).
+    static let leastKeepInViewPan: CGFloat = 8
     static let edgeScrollDistance: CGFloat = 8
     /// How long the pointer stays there before it scrolls, and then how long the speed eases in.
     static let edgeScrollDelay: CGFloat = 200

@@ -82,6 +82,13 @@ enum ReferenceStyle {
     // MARK: Type and symbols
 
     static let labelFont = NSFont.systemFont(ofSize: 14, weight: .medium)
+    /// A row's lead drawn as its chip (an endpoint's method): bold small text, white on the chip, 16 tall, 5 in, rounded 3, and
+    /// the gap before the rest of the name.
+    static let chipFont = NSFont.systemFont(ofSize: 10, weight: .bold)
+    static let chipHeight: CGFloat = 16
+    static let chipPadding: CGFloat = 5
+    static let chipRadius: CGFloat = 3
+    static let chipGap: CGFloat = 6
     /// What a pill that stands for nothing says, in italic.
     static let missingFont: NSFont = {
         let descriptor = labelFont.fontDescriptor.withSymbolicTraits(.italic)
@@ -136,6 +143,8 @@ enum ReferenceStyle {
     static let placeLineHeight = ceil(placeBoardFont.ascender - placeBoardFont.descender)
     /// A line the label sits on as the render and the editing view lay it out: its font's, rounded up.
     static let lineHeight = ceil(labelFont.ascender - labelFont.descender)
+    /// On two lines, a row's chip starts this far down the pill at the least: a point below the place line's descenders.
+    static let chipBelowPlace = placeBaseline + ceil(-placeFont.descender) + 1
 
     /// Where a line of `font` starts in a box `height` tall: its capitals centered, as the symbols
     /// beside them are, on a whole point. String drawing and the editor both set the baseline the

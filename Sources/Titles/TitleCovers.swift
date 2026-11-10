@@ -1,5 +1,8 @@
+import Adornments
 import AppKit
 import Canvas
+import Palette
+import Selection
 
 /// A title on its shape, zoomed out: a shape the canvas draws as a skeleton (`editor.drawsSkeleton(of:)`,
 /// below the editor's `skeletonZoom`, 35%) shows no adornments, and so no pill, so its title is said
@@ -238,12 +241,21 @@ struct TitleCoverOverlay: CanvasOverlay {
     func draw(in context: OverlayContext) {
         guard context.drawsSkeletons else { return }
         let editor = context.editor
-        let reach = context.worldDrawingReach
+        let reach = context.worldDrawingReach + TitleBar.reach / context.zoom
         let visible = context.visibleRect.insetBy(dx: -reach, dy: -reach)
+        var bars = TitleBars()
         for record in editor.paintOrder(in: visible) where context.drawsSkeleton(of: record.id) {
+            // The selection's own set, asked only of a shape with a bar: a pass over the selection a shape made a frame of 10,000
+            // selected 66 ms, 32.5 with the set.
+            if let bar = TitleBar.bar(of: record, in: context.shapes, offset: context.worldDrawingOffset(of: record.id), selected: { editor.isSelected(record.id) },
+                                      start: { editor.adornmentRowStart(of: record.id) }) {
+                bars.add(bar)
+                continue
+            }
             guard let found = TitleCoverStyle.cover(of: record, in: context.shapes, editor: editor) else { continue }
             draw(found, offset: context.worldDrawingOffset(of: record.id), in: context)
         }
+        bars.fill(in: context.cg, zoom: context.zoom)
         guard !context.pendingShapes.isEmpty else { return }
         context.drawingPending {
             for record in context.pendingShapes {
@@ -263,5 +275,117 @@ struct TitleCoverOverlay: CanvasOverlay {
         found.layout.halo.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
         found.layout.string.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
         cg.restoreGState()
+    }
+}
+
+/// A title zoomed out, for a kind that asks (`title(bars: true)`): a bar where its pill is, above the shape's top-left
+/// corner, as long as its title reads, in its pill's color, so a board of tables far out reads as cards under their
+/// names' bars (E8's 30%) rather than names printed over their rows. No text, no symbol; the shapes' bars are filled a
+/// color at a time (`TitleBars`).
+@MainActor
+enum TitleBar {
+    /// The bar's height, as much of the pill's.
+    static let heightFraction: CGFloat = 0.4
+    /// The narrowest shape that has a bar, view points: a bar needs no room for text, so a table of usual width far out (10%) still
+    /// has its bar (a cover's floor, `TitleCoverStyle.smallestShape`, is for words).
+    static let narrowest: CGFloat = 8
+    /// How far above its shape's top edge a bar's bottom is, view points: close enough to read as its own shape's name and never as
+    /// the footer of the one above, where tables a few points apart far out stack in a database (UX walk 3 evolve-8, walk 4
+    /// structure-45).
+    static let gap: CGFloat = 1.5
+    /// The same for a selected shape: clear of its outline (the core's, 4 off its edge and 1.5 wide) and of the corner handles on its
+    /// edge (Selection's, 4 across their middle and a 1.5 stroke), with a point to spare, so a selected shape's bar is never under
+    /// its outline or a handle (UX walk 4 apis-2, review U12-E1: for every shape, a lower table's bar stood nearer the table above).
+    static let selectedGap: CGFloat = 6.5
+    /// How far in from a selected shape's left edge a bar too narrow to start past a container's tab starts, view points: past its
+    /// corner handle (review U12-E9).
+    static let handleReach: CGFloat = 6
+    /// A bar thinner than this, view points, is drawn square: its rounded ends are under a point.
+    static let squareBelow: CGFloat = 4
+    /// A column of its title, view points: the pill's 11-point text, as `SkeletonText` counts a column.
+    static let column: CGFloat = SkeletonTextMetrics.systemFontColumn * 11
+    /// What the bar keeps besides its title's columns, view points: the pill's padding at both ends and its symbol.
+    static let lead: CGFloat = 26
+    /// The farthest a bar reaches above its shape, view points: what the overlay looks past the view's edge for.
+    static let reach: CGFloat = AdornmentLayout.rowReach
+    /// The pill's gray, which a bar is drawn in where no look tints it: as the pill is in the light appearance, lighter
+    /// in the dark, where the pill's dark gray would be lost on the canvas.
+    static let fill = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.5, alpha: 0.9) : NSColor(white: 0.25, alpha: 0.9) }
+
+    /// A titled shape's bar, world units, where its shape is drawn (moved by `offset`); nil for a kind that draws a
+    /// cover, an untitled shape, and one too small on screen to be seen (`narrowest`).
+    /// `start`: how far right of the shape's left edge the bar starts, world units (Adornments' `adornmentRowStart`, clear
+    /// of a container's tab, as the pill's row is). `selected`: whether the shape is selected, so its bar clears its outline and handles,
+    /// asked only of a shape that has a bar.
+    static func bar(of record: AnyShapeRecord, in shapes: ShapeContext, offset: CGPoint, selected: () -> Bool = { false },
+                    start: () -> CGFloat = { 0 }) -> (rect: CGRect, color: NSColor?)? {
+        guard !record.isOpaque, let found = shapes.registry.titleBar(of: record), let geometry = shapes.geometry(of: record.id),
+              !geometry.bounds.isNull else { return nil }
+        let bounds = geometry.bounds.offsetBy(dx: offset.x, dy: offset.y), zoom = shapes.zoom
+        guard bounds.width * zoom >= narrowest else { return nil }
+        let isSelected = selected()
+        let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction
+        let points = lead + column * CGFloat(SkeletonText.columns(of: found.title, upTo: 80))
+        let wanted = min(bounds.width, points * row.height / AdornmentLayout.rowHeight)
+        var width = wanted
+        // Just above its own shape's top edge, `gap` clear of it, so it reads as that shape's name and never as the footer of the
+        // shape above (UX walk 3 evolve-8): the pill's row is a line of text tall, which zoomed out reaches most of the way to
+        // the shape above.
+        let top = bounds.minY - (isSelected ? selectedGap : gap) / zoom - height
+        // Past a container's tab it meets, as the pill's row is, over its own shape alone (never past its right edge, over the
+        // next shape's bar: review U9-E1), while at least half of it still fits (`least`); a shape too narrow for that (a table at
+        // a database's top-left far out) keeps its bar where every other bar is, just above its own top edge, and the tab gives
+        // way to it, up off the container's edge (Adornments' `RowZoomedOut`, which `kept(of:in:)` answers), as at full zoom the
+        // pill gives way to the tab (UX walk 3 structure-3: the tab hid the first tables' bars outright; walk 4: just inside, the
+        // tab lay over their tops; walk 5: below the tab, inside their cards, they read as a row of the table's).
+        var start = start()
+        if start > 0 {
+            let room = bounds.width - start
+            if room >= least(wanted, zoom: zoom) {
+                width = min(wanted, room)
+            } else {
+                start = isSelected && bounds.width * zoom >= handleReach + narrowest ? handleReach / zoom : 0
+                width = min(wanted, bounds.width - start)
+            }
+        }
+        return (CGRect(x: row.minX + start, y: top, width: width, height: height), found.color)
+    }
+
+    /// The least of a bar `wanted` long that may show past a container's tab, world units: half of it, and `narrowest` view points.
+    private static func least(_ wanted: CGFloat, zoom: CGFloat) -> CGFloat { max(wanted / 2, narrowest / zoom) }
+
+    /// What a shape's bar keeps above it zoomed out, which a container's tab gives way to (Adornments' `RowZoomedOut`): where it is
+    /// drawn starting at the shape's left edge, as far above it as a selected shape's, and the least of it that may start past a tab;
+    /// nil for one with no bar.
+    static func kept(of record: AnyShapeRecord, in shapes: ShapeContext) -> RowZoomedOut? {
+        guard let bar = bar(of: record, in: shapes, offset: .zero, selected: { true }) else { return nil }
+        return RowZoomedOut(rect: bar.rect, least: least(bar.rect.width, zoom: shapes.zoom))
+    }
+}
+
+/// The bars of the shapes in view, by color: each color's filled at once, so a board of hundreds costs a fill a color.
+struct TitleBars {
+    private var plain: [CGRect] = []
+    private var tinted: [NSColor: [CGRect]] = [:]
+
+    mutating func add(_ bar: (rect: CGRect, color: NSColor?)) {
+        if let color = bar.color { tinted[color, default: []].append(bar.rect) } else { plain.append(bar.rect) }
+    }
+
+    /// `zoom`: a bar thinner than `squareBelow` view points has corners too small to see, so it is filled as a plain rect, all of a
+    /// color in one call (a board of thousands far out is a bar a table: a path each cost more than the rest of the frame).
+    @MainActor func fill(in cg: CGContext, zoom: CGFloat) {
+        func fill(_ rects: [CGRect], _ color: NSColor) {
+            guard let first = rects.first else { return }
+            cg.setFillColor(color.cgColor)
+            if first.height * zoom < TitleBar.squareBelow { return cg.fill(rects) }
+            for rect in rects {
+                let radius = rect.height / 2
+                cg.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            }
+            cg.fillPath()
+        }
+        fill(plain, TitleBar.fill)
+        for (color, rects) in tinted { fill(rects, color) }
     }
 }

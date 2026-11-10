@@ -293,8 +293,9 @@ public enum AdornmentLayout {
 
     /// Each item's frame, in the order given (the order they're claimed), for a shape `width`
     /// points wide; nil for one left out. `slant` is an open shape's: without it the row is laid out as a closed shape's.
-    public static func frames(of items: [Item], width: CGFloat, slant: Slant? = nil) -> [CGRect?] {
-        slots(of: items, width: width, slant: slant).map { slot in slot.map { $0.frame(width: width) } }
+    /// `leftStart`: where the row's left end may start at the earliest (clear of a container's tab).
+    public static func frames(of items: [Item], width: CGFloat, slant: Slant? = nil, leftStart: CGFloat = 0) -> [CGRect?] {
+        slots(of: items, width: width, slant: slant, leftStart: leftStart).map { slot in slot.map { $0.frame(width: width) } }
     }
 
     /// Where an item goes: its frame from the top corner its place runs from, the right one for the
@@ -340,9 +341,9 @@ public enum AdornmentLayout {
         }
     }
 
-    static func slots(of items: [Item], width: CGFloat, slant: Slant? = nil) -> [Slot?] {
+    static func slots(of items: [Item], width: CGFloat, slant: Slant? = nil, leftStart: CGFloat = 0) -> [Slot?] {
         var slots: [Slot?] = []
-        self.slots(of: items, width: width, slant: slant, into: &slots)
+        self.slots(of: items, width: width, slant: slant, leftStart: leftStart, into: &slots)
         return slots
     }
 
@@ -359,30 +360,32 @@ public enum AdornmentLayout {
     /// Returns how far the row slid along the anchor, in view points (0 for a level shape, one not read, or a row
     /// already clear): where something that hangs from the row (a card, a menu) hangs.
     @discardableResult
-    static func slots(of items: [Item], width: CGFloat, slant: Slant? = nil, into slots: inout [Slot?]) -> CGFloat {
-        placeRow(items, width: width, into: &slots)
+    static func slots(of items: [Item], width: CGFloat, slant: Slant? = nil, leftStart: CGFloat = 0, into slots: inout [Slot?]) -> CGFloat {
+        placeRow(items, width: width, leftStart: leftStart, into: &slots)
         return slideRow(items, width: width, slant: slant, into: &slots)
     }
 
     /// The row and the corner, with the compact faces where they give the left end's text the most room.
-    private static func placeRow(_ items: [Item], width: CGFloat, into slots: inout [Slot?]) {
+    /// `leftStart`: where the row's left end may start at the earliest, view points from the left edge (clear of a
+    /// container's tab, `AdornmentState.giveWay`).
+    private static func placeRow(_ items: [Item], width: CGFloat, leftStart: CGFloat = 0, into slots: inout [Slot?]) {
         var compactable = 0
         var overTab = false
         for item in items {
             if item.placement == .aboveTopRight && item.compact != nil { compactable += 1 }
             if item.placement == .onTopEdge { overTab = true }
         }
-        place(items, width: width, compacting: 0, overTab: overTab, into: &slots)
+        place(items, width: width, compacting: 0, overTab: overTab, leftStart: leftStart, into: &slots)
         guard compactable > 0, !leftText(items, slots).isWhole else { return }
         // The most the text gets: every face compact. If it shows none even then, that's the layout.
-        place(items, width: width, compacting: compactable, overTab: overTab, into: &slots)
+        place(items, width: width, compacting: compactable, overTab: overTab, leftStart: leftStart, into: &slots)
         let most = leftText(items, slots)
         guard most.shown > 0 else { return }
         for count in 0..<compactable {
-            place(items, width: width, compacting: count, overTab: overTab, into: &slots)
+            place(items, width: width, compacting: count, overTab: overTab, leftStart: leftStart, into: &slots)
             if leftText(items, slots).shown == most.shown { return }
         }
-        place(items, width: width, compacting: compactable, overTab: overTab, into: &slots)
+        place(items, width: width, compacting: compactable, overTab: overTab, leftStart: leftStart, into: &slots)
     }
 
     /// How the row's left end's texts are shown: whether every one is at its full width, and how
@@ -407,7 +410,7 @@ public enum AdornmentLayout {
 
     /// The layout itself, with the first `compacting` of the right end's compactable items (in the
     /// order they're claimed) in their compact faces; `overTab`, the shape has a tab on its top edge.
-    private static func place(_ items: [Item], width: CGFloat, compacting: Int, overTab: Bool, into slots: inout [Slot?]) {
+    private static func place(_ items: [Item], width: CGFloat, compacting: Int, overTab: Bool, leftStart: CGFloat = 0, into slots: inout [Slot?]) {
         slots.removeAll(keepingCapacity: true)
         slots.append(contentsOf: repeatElement(Slot?.none, count: items.count))
         // Over a tab on the top edge the row is lifted clear of it, and its left end starts where the tab does.
@@ -438,7 +441,11 @@ public enum AdornmentLayout {
             corner = x - spacing
         }
         // The row's left end, rightward from the left edge (from the tab's start over a tab), in the room the right end leaves.
-        var left: CGFloat = overTab ? tabInset : 0
+        // Started past a container's tab, a row with no right end keeps the room it had, running on past the shape's right
+        // edge rather than cutting a name the tab took the start of (a table's "orders" at its database's top-left was "or…").
+        let tabStart = overTab ? tabInset : 0
+        var left: CGFloat = max(tabStart, leftStart)
+        let width = right == 0 ? width + max(0, leftStart - tabStart) : width
         var folded: Int?
         for i in items.indices where items[i].placement == .aboveTopLeft {
             let item = items[i]

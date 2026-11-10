@@ -99,6 +99,8 @@ final class ErasedEntry {
     let title: String?
     let key: EntryKey
     let isShown: @MainActor (AnyShapeRecord) -> Bool
+    /// What the editor is asked besides, for a shape (`MenuItem`'s `shownIn`); nil, nothing.
+    let isShownIn: (@MainActor (ShapeID, CanvasEditor) -> Bool)?
     let content: Content
     let stepName: String?
 
@@ -129,6 +131,7 @@ final class ErasedEntry {
         key = EntryKey(group: entry.group, id: entry.id)
         let shown = entry.isShown
         isShown = { read($0).map(shown) ?? false }
+        isShownIn = entry.isShownIn
         switch entry.content {
         case .item(let isEnabled, let isChecked, let action):
             var checked: (@MainActor (AnyShapeRecord) -> Bool)?

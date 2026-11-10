@@ -145,7 +145,9 @@ enum ContextMenuItems {
     /// claims.
     static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord, in editor: CanvasEditor) -> [ErasedEntry] {
         var seen = Set<EntryKey>()
-        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record) && $0.isClaimed(in: editor) }
+        return entries.filter { seen.insert($0.key).inserted }.filter {
+            $0.isShown(record) && ($0.isShownIn?(record.id, editor) ?? true) && $0.isClaimed(in: editor)
+        }
     }
 
     /// An item's title: its own, else its command's (`registry.title(of:)`), else the id it's keyed by.
@@ -157,7 +159,7 @@ enum ContextMenuItems {
     /// the menu's shapes and click (its rule, asked with them: the menu ends editing as it opens and is
     /// never asked mid-press, so the command's moment isn't asked), or shown dimmed with `dims`, and
     /// left out unasked where the menu omits the command; when chosen, it runs the command on them, in
-    /// one step named by the item.
+    /// one step named as the command names it (as its key does: a delete that took arrows along says so).
     static func commandItem(_ command: CanvasCommand, dims: Bool, title: String, key: EntryKey, omitting: Set<CanvasCommand>,
                             for subject: MenuSubject) -> ResolvedEntry? {
         guard !omitting.contains(command) else { return nil }
@@ -165,7 +167,7 @@ enum ContextMenuItems {
         let can = editor.canPerform(command, on: subject.shapes, at: subject.point)
         guard can || dims else { return nil }
         return ResolvedEntry(title: title, key: key, content: .item(isEnabled: can, state: nil) {
-            editor.undoHistory.group(title) { _ = editor.perform(command, on: subject.shapes, at: subject.point) }
+            _ = editor.perform(command, on: subject.shapes, at: subject.point)
         }, command: command, menuKey: editor.registry.menuKey(of: command))
     }
 

@@ -98,6 +98,8 @@ public struct QueryVocabulary: Sendable {
 
     /// The names point's contribution, if one.
     let naming: QueryNaming?
+    /// What each kind's parts are called (the part names point's), by kind: what a connection's end bound to a row says.
+    let partNames: [ShapeKind: @Sendable (AnyShapeRecord, PartID) -> String?]
     /// Text formats, by media type.
     let textFormats: [String: QueryTextFormatting]
     /// Plugins' words, by word.
@@ -165,6 +167,9 @@ public struct QueryVocabulary: Sendable {
         self.edgeTypes = edgeTypes
         self.words = words
         self.naming = naming
+        partNames = registry.contributions(to: QueryPartNames.self).reduce(into: [:]) { byKind, naming in
+            if case .kind(let kind) = naming.target { byKind[kind] = naming.value.name }
+        }
         textFormats = formats
         contributedWords = contributed
         edgeTree = tree

@@ -500,6 +500,9 @@ public struct AdornmentContext {
     let editor: CanvasEditor
     public var registry: Registry { editor.registry }
     public func service<S: EditorService>(_: S.Type) -> S? { editor.service(S.self) }
+    /// A layout input of the shape, as the editor lays it out now: read only by one whose provider tells Adornments when it
+    /// changes (a connection's bundle: `editor.adornmentsDidChange(for:)`).
+    public func layoutInput<V>(_ key: LayoutInputKey<V>, of record: AnyShapeRecord) -> V? { editor.shapeContext.layoutInput(key, of: record) }
 }
 
 // MARK: The extension point
@@ -537,6 +540,51 @@ extension ShapeAdornments: KeyedExtensionPoint {
     public static func summary(of contribution: AdornmentContribution, for target: ShapeTarget) -> String {
         let order = contribution.adornment.order
         return "adornment \(contribution.adornment)" + (order == .natural ? "" : " \(order)") + " → \(target)"
+    }
+}
+
+/// What a shape draws where its row above its top-left is, zoomed out, where no adornment is drawn but the containers' tabs: Titles'
+/// bar, a table's title far out. A container's tab gives way to it, up off its edge (or left, turned), where the row can't start past
+/// the tab and keep `least` (UX walk 5 structure-3: the first tables' bars moved inside their cards below the tab read as a row of
+/// theirs), as at full zoom the pill gives way to the tab.
+public struct RowZoomedOut: Equatable, Sendable {
+    /// Where it is drawn at rest, world units at the zoom now, as far from the shape's top as it is drawn at the most (selected).
+    public let rect: CGRect
+    /// The least of it, world units, that may show past a tab it starts past: less room than that, and the tab gives way.
+    public let least: CGFloat
+
+    public init(rect: CGRect, least: CGFloat) {
+        self.rect = rect
+        self.least = least
+    }
+}
+
+/// The rows kept zoomed out (`RowZoomedOut`), on the kinds a scope reaches: `scope.rowZoomedOut { shape, context in … }`.
+public enum ShapeRowsZoomedOut {}
+
+extension ShapeRowsZoomedOut: ExtensionPoint {
+    public typealias Contribution = RowZoomedOutContribution
+    public static var owner: PluginID { .adornments }
+    /// Kept on other kinds' shapes says which: the kinds that have a capability.
+    public static var scope: PointScope { .scoped }
+
+    /// "row zoomed out → every shape adopting title pill".
+    public static func summary(of contribution: RowZoomedOutContribution, for target: ShapeTarget) -> String {
+        "row zoomed out → \(target)"
+    }
+}
+
+/// What `ShapeRowsZoomedOut` stores. Only the sugar makes one.
+@MainActor
+public struct RowZoomedOutContribution {
+    let row: @MainActor (AnyShapeRecord, ShapeContext) -> RowZoomedOut?
+}
+
+extension ScopedRegistrar {
+    /// What the shapes of the kinds the scope reaches draw where their row is, zoomed out (nil for one that draws nothing there):
+    /// the containers' tabs give way to it.
+    public mutating func rowZoomedOut(_ row: @escaping @MainActor (AnyShapeRecord, ShapeContext) -> RowZoomedOut?) {
+        contribute(RowZoomedOutContribution(row: row), to: ShapeRowsZoomedOut.self)
     }
 }
 
@@ -663,6 +711,14 @@ extension CanvasEditor {
     public func adornmentFrames(of id: ShapeID) -> [AdornmentFrame] {
         guard let state = adornmentState, let record = document[id] else { return [] }
         return state.frames(of: record)
+    }
+
+    /// How far right of a closed shape's left edge its row above the top-left starts, at the earliest, in world units at
+    /// the zoom now, to keep clear of a container's tab (a table's pill, or its bar zoomed out, at a database's top-left
+    /// inset): 0 where no container's tab meets the row. What Titles' bars zoomed out go by, as the row does.
+    public func adornmentRowStart(of id: ShapeID) -> CGFloat {
+        guard let state = adornmentState, state.hasTabs, document[id] != nil else { return 0 }
+        return state.rowStart(of: id)
     }
 
     /// The rect a shape's adornment row is laid out against, in world units, at the zoom now: a closed

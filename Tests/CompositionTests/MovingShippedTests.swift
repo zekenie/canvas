@@ -2,16 +2,19 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Frames
 import LanguageModels
 import Mentions
+import References
 import Selection
 import ShippedTesting
 import SlashCommands
 import StickyNotes
 import Subboards
 import TestKit
+import Topology
 
 // Moving as shipped: `/move-to` and `/move-near` typed in a note's editor in the app's canvas view, the shape
 // they take picked with `@`: Mentions' picker lists what the command's rule admits (for `/move-to`, the
@@ -204,5 +207,73 @@ import TestKit
         expectEqual(e.editor.file.board(containing: arrow), .root)
         expectEqual(e.editor.file.record(arrow)?.typed(as: Arrow.self)?.props.end, .free(free), "and the free end where it was")
         expectEqual(e.frame(e.note)?.origin, origin)
+    },
+
+    test("/move-to @Plans with an arrow bound at both ends: it goes with its start and ends at a reference pill for the note that stays, right of the start; Undo Move brings every board back") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let e = Errands(pasteboard)
+        let plans = BoardID(owner: e.plans)
+        let toMilk = try require(e.editor.connect(ConnectEnd(e.note), to: ConnectEnd(e.milk)), "an arrow from the note to Milk")
+        let eggs = e.editor.add(StickyNote(frame: CGRect(x: 400, y: 1000, width: 200, height: 200), text: "Eggs"))
+        let unrelated = try require(e.editor.connect(ConnectEnd(e.milk), to: ConnectEnd(eggs)), "and one from Milk to Eggs")
+        let before = e.editor.file
+        expect(e.editor.slashCommands?.run("move-to", on: e.note, with: SlashArguments([.shape(e.plans, label: "Plans")])) ?? false)
+        expectEqual(e.editor.file.board(containing: e.note), plans)
+        expectEqual(e.editor.file.board(containing: toMilk), plans, "the arrow went with its start")
+        let pill = try require(e.editor.file[plans].shapes.first { $0.kind == Reference.kind }, "a pill, on the board the note went to")
+        expectEqual(e.editor.registry.standIns.directTarget(of: pill), e.milk, "it stands for Milk, which stayed")
+        let ends = try require(e.editor.file.record(toMilk).flatMap { e.editor.registry.connectionEnds(of: $0) })
+        expectEqual(ends.from, e.note)
+        expectEqual(ends.to, pill.id, "the end is the pill")
+        expect((pill.box?.minX ?? 0) >= (e.frame(e.note)?.maxX ?? .infinity), "right of the start")
+        expectEqual(e.editor.file.board(containing: unrelated), .root, "an arrow that crosses nowhere stays")
+        expectEqual(e.editor.undoHistory.undoName, "Move")
+        e.editor.undo()
+        expect(e.editor.file == before, "every board as it was")
+    },
+
+    test("/move-to @Plans for the note that an arrow from Milk ends at: the arrow stays and ends at a reference pill for the note, right of Milk, on the root; Undo Move brings it back") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let e = Errands(pasteboard)
+        let arrow = try require(e.editor.connect(ConnectEnd(e.milk), to: ConnectEnd(e.note)), "an arrow from Milk to the note")
+        let before = e.editor.file
+        expect(e.editor.slashCommands?.run("move-to", on: e.note, with: SlashArguments([.shape(e.plans, label: "Plans")])) ?? false)
+        expectEqual(e.editor.file.board(containing: e.note), BoardID(owner: e.plans))
+        expectEqual(e.editor.file.board(containing: arrow), .root, "the arrow stays with its start")
+        let pill = try require(e.editor.file[.root].shapes.first { $0.kind == Reference.kind })
+        expectEqual(e.editor.registry.standIns.directTarget(of: pill), e.note, "it stands for the note that moved")
+        let ends = try require(e.editor.file.record(arrow).flatMap { e.editor.registry.connectionEnds(of: $0) })
+        expectEqual(ends.from, e.milk)
+        expectEqual(ends.to, pill.id)
+        expect((pill.box?.minX ?? 0) >= (e.frame(e.milk)?.maxX ?? .infinity), "right of Milk")
+        e.editor.undo()
+        expect(e.editor.file == before, "as it was")
+    },
+
+    test("/move-to @Plans for a second note whose arrow ends at the same note: the pill Plans has for it is reused, the arrow goes to it, and no other is made; Undo Move takes only the second move back") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let e = Errands(pasteboard)
+        let plans = BoardID(owner: e.plans)
+        let eggs = e.editor.add(StickyNote(frame: CGRect(x: 400, y: 1000, width: 200, height: 200), text: "Eggs"))
+        let first = try require(e.editor.connect(ConnectEnd(e.note), to: ConnectEnd(e.milk)))
+        let second = try require(e.editor.connect(ConnectEnd(eggs), to: ConnectEnd(e.milk)))
+        let command = SlashArguments([.shape(e.plans, label: "Plans")])
+        expect(e.editor.slashCommands?.run("move-to", on: e.note, with: command) ?? false)
+        let pill = try require(e.editor.file[plans].shapes.first { $0.kind == Reference.kind }, "the first move made a pill for Milk")
+        expect(e.editor.showBoard(.root))
+        let before = e.editor.file
+        expect(e.editor.slashCommands?.run("move-to", on: eggs, with: command) ?? false)
+        expectEqual(e.editor.file[plans].shapes.filter { $0.kind == Reference.kind }.map(\.id), [pill.id], "no second pill")
+        expectEqual(e.editor.file.board(containing: second), plans, "the arrow went with Eggs")
+        let ends = try require(e.editor.file.record(second).flatMap { e.editor.registry.connectionEnds(of: $0) })
+        expectEqual(ends.from, eggs)
+        expectEqual(ends.to, pill.id, "to the pill that was there")
+        expectEqual(e.editor.file.board(containing: first), plans)
+        expectEqual(e.editor.undoHistory.undoName, "Move")
+        e.editor.undo()
+        expect(e.editor.file == before, "the second move undone exactly")
     },
 ])

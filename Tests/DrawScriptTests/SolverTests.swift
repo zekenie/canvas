@@ -19,6 +19,31 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         expectRect(draw(#"box "A" right of "B""#, on: board)["A"], rect(280, 0, 100, 100))
         expectRect(draw(#"disc "A" below "B""#, on: board)["A"], rect(40, 180, 120, 120))
     },
+    test("below a shape that keeps room below it, with no gap said, at least that room; above one, the box's own; a gap said wins") {
+        let placed = ["below": try shape(#"card below "B""#).clauses, "above": try shape(#"card above "B""#).clauses,
+                      "right of": try shape(#"card right of "B""#).clauses,
+                      "below-right of": try shape(#"card below-right of "B""#).clauses]
+        @MainActor func below(_ word: String, gap: Gap? = nil, keeps: CGFloat, own: CGFloat = 0) throws -> CGRect {
+            let clauses = placed[word] ?? []
+            var box = LayoutProblem.Free(line: 1, name: "\"A\"", size: CGSize(width: 200, height: 100),
+                                         clauses: clauses.map { LayoutProblem.ResolvedClause($0, refs: [.fixed(0)]) }, gap: gap)
+            box.roomBelow = own
+            var target = LayoutProblem.Fixed(rect: rect(0, 0, 200, 100), obstacle: 0)
+            target.roomBelow = keeps
+            let problem = LayoutProblem(free: [box], fixed: [target],
+                                        obstacles: { area in [LayoutProblem.Obstacle(id: 0, rect: rect(0, 0, 200, 100))].filter { $0.rect.intersects(area) } },
+                                        name: { _ in "\"B\"" })
+            return try problem.solve().rects[0]
+        }
+        expectRect(try below("below", keeps: 86), rect(0, 186, 200, 100))
+        expectRect(try below("below", keeps: 40), rect(0, 180, 200, 100))   // never under the normal gap
+        expectRect(try below("below", gap: .named(.tight), keeps: 86), rect(0, 140, 200, 100))   // a gap said wins
+        expectRect(try below("above", keeps: 86), rect(0, -180, 200, 100))   // the target's room is below it, not above
+        expectRect(try below("above", keeps: 0, own: 86), rect(0, -186, 200, 100))   // a box above keeps its own room
+        expectRect(try below("right of", keeps: 86), rect(280, 0, 200, 100))   // across, nothing
+        // A corner: the room is for the way down alone; across it, the default gap.
+        expectRect(try below("below-right of", keeps: 86), rect(280, 186, 200, 100))
+    },
     test("a corner is two directions at once, the gap off both") {
         let board = Board([("B", rect(0, 0, 200, 100))])
         expectRect(draw(#"card "A" above-right of "B""#, on: board)["A"], rect(280, -180, 200, 100))
@@ -201,6 +226,41 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         } catch {
             expectEqual(error.reason, .noRoom)
             expectEqual(error.message, #""N" is in "Z", and there's no room left in "Z""#)
+        }
+    },
+    test("held (in), a box that crosses its holder's edge only on the axis a lone direction centers it on slides along it, keeping its side, and says so; one that does not fit, or has another say on that axis, is no_room") {
+        // F (0, 0, 800 × 600) holds N; B is in it, at its top-left inset, 100 × 100: N right of B is centered on B's middle (y 90).
+        let f = rect(0, 0, 800, 600), b = rect(40, 40, 100, 100), c = rect(300, 400, 100, 40)
+        let held = { (source: String, height: CGFloat) throws -> LayoutProblem in
+            let clauses = try shape(source).clauses
+            let refs: [[LayoutProblem.Ref]] = clauses.map { clause in clause.targets.isEmpty ? [] : [.fixed(1)] }
+            return LayoutProblem(free: [LayoutProblem.Free(line: 1, name: "\"N\"", size: CGSize(width: 100, height: height),
+                                                           clauses: zip(clauses, refs).map { LayoutProblem.ResolvedClause($0, refs: $1) },
+                                                           holder: LayoutProblem.Holder(.fixed(0), written: #"in "F""#))],
+                                 fixed: [LayoutProblem.Fixed(rect: f, obstacle: 0), LayoutProblem.Fixed(rect: b, obstacle: 1), LayoutProblem.Fixed(rect: c, obstacle: 2)],
+                                 obstacles: { area in [LayoutProblem.Obstacle(id: 0, rect: f), LayoutProblem.Obstacle(id: 1, rect: b), LayoutProblem.Obstacle(id: 2, rect: c)].filter { $0.rect.intersects(area) } },
+                                 name: { ref in if case .fixed(0) = ref { "\"F\"" } else { "\"B\"" } })
+        }
+        let slid = try held(#"card right of "B""#, 300).solve()
+        expectRect(slid.rects[0], rect(220, 40, 100, 300))
+        expectEqual(slid.slides, [LayoutSolution.Slide(box: 0, way: .below, inside: .fixed(0))])
+        // Too tall for F on that axis: no room, and F is named.
+        let tooTall = try held(#"card right of "B""#, 560)
+        do throws(ScriptError) {
+            _ = try tooTall.solve()
+            expect(false, "too tall for F")
+        } catch {
+            expectEqual(error.reason, .noRoom)
+        }
+        // Another say on the axis (a corner is two directions) or an alignment: not a slide.
+        for script in [#"card right of "B" above "B""#, #"card right of "B" top level with "B""#] {
+            let problem = try held(script, 100)
+            do throws(ScriptError) {
+                let solved = try problem.solve()
+                expectEqual(solved.slides, [], script)
+            } catch {
+                expectEqual(error.reason, .noRoom, script)
+            }
         }
     },
     test("held directly (Holder.direct), a box goes in its holder itself: a shape in the holder that holds another is in its way, not a zone it lands on") {

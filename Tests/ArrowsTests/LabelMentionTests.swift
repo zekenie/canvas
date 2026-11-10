@@ -131,7 +131,7 @@ private final class LabelCanvas: NSView {
         let pills = try require(h.editor.arrowLabelFrame(of: id)), bare = try require(h.editor.arrowLabelFrame(of: plain))
         expect(pills.width > bare.width + 60, "the pills are in the label: \(pills) against \(bare)")
         expectEqual(h.editor.mentionPills(of: id).map(\.isLive), [true, true])
-        expectEqual(h.editor.mentionPills(of: id).map(\.target), [groceries, sam])
+        expectEqual(h.editor.mentionPills(of: id).map(\.target.shape), [groceries, sam])
         for pill in h.editor.mentionPills(of: id) {
             expect(pills.insetBy(dx: LabelMetrics.padding, dy: LabelMetrics.padding).contains(pill.frame), "\(pill.frame) is inside the label \(pills)")
         }
@@ -170,7 +170,7 @@ private final class LabelCanvas: NSView {
         }
     },
     test("what's typed is written to the arrow as mention text, the label grown with it, in one step; undo takes it back") {
-        let (h, id, _, _) = try mentionBoard { _, _ in "calls" }
+        let (h, id, _, _) = try mentionBoard { _, _ in "scall" }
         h.editor.selection = id
         expect(h.editor.beginEditing(id))
         let view = try require(h.editor.makeEditingView())
@@ -178,14 +178,14 @@ private final class LabelCanvas: NSView {
         let before = try require(h.editor.arrowLabelFrame(of: id))
         textView.setSelectedRange(NSRange(location: 5, length: 0))
         textView.insertText(" the cache, then \\@[x](shape:1)", replacementRange: textView.selectedRange())
-        expectEqual(said(h, id), MentionText(plain: "calls the cache, then \\@[x](shape:1)"), "text that looks like a mention stays text")
+        expectEqual(said(h, id), MentionText(plain: "scall the cache, then \\@[x](shape:1)"), "text that looks like a mention stays text")
         let after = try require(h.editor.editingFrame)
         expect(after.width > before.width + 30, "grown with it: \(after) against \(before)")
         expectEqual(after, h.editor.arrowLabelFrame(of: id), "laid over the label")
         h.editor.endEditing()
         expectEqual(h.editor.undoHistory.undoName, "Typing")
         h.editor.undo()
-        expectEqual(said(h, id), "calls")
+        expectEqual(said(h, id), "scall")
     },
     // The label is measured by the names its mentions show now: Mentions hands the arrow's geometry
     // those that differ from the names the text holds (a layout input), and tells the editor when a

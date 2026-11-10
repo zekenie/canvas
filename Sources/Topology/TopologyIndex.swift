@@ -57,6 +57,8 @@ public final class TopologyIndex {
     /// The stand-ins whose record names each shape (`Forwarding.shapes`): those to look at again
     /// when a commit changes it.
     @ObservationIgnored private var declaredBy: [ShapeID: Set<ShapeID>] = [:]
+    /// The stand-ins declared again with another part of their shape (`Forwarding.row`), until `apply` notes their edges.
+    @ObservationIgnored private var partChanged: Set<ShapeID> = []
     /// The answer provided for each stand-in that stands for what's provided, for the key its
     /// record holds now (`provide`): never saved, never undone, dropped with the key.
     @ObservationIgnored private var provided: [ShapeID: ProvidedForwarding] = [:]
@@ -184,6 +186,17 @@ public final class TopologyIndex {
         tables.forEachEdge(of: id, direction, types: filter, in: types, view: view, body)
     }
 
+    /// `id`'s edges at one of its parts (`part`; nil: those at the shape as a whole), as `direction` asks, of the types
+    /// `filter` admits, as `view` reads them: a row's (a key leaving a column), filtered from the shape's, in their order.
+    public func edges(of id: ShapeID, part: PartID?, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all,
+                      view: EdgeView = .resolved) -> [Edge] {
+        var found: [Edge] = []
+        tables.forEachEdge(of: id, direction, types: filter, in: types, view: view) { edge in
+            if edge.touches(id, part: part, direction) { found.append(edge) }
+        }
+        return found
+    }
+
     /// `hasEdges(of:_:types:where:)`, as `view` reads them.
     public func hasEdges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all, view: EdgeView,
                          where predicate: (Edge) -> Bool = { _ in true }) -> Bool {
@@ -232,6 +245,13 @@ public final class TopologyIndex {
         return standing[standIn]?.forwarding?.onlyShape
     }
 
+    /// The part of its shape a stand-in for a row reaches (`Forwarding.row`: a pill for an endpoint), whether or not it stands
+    /// for it now; nil for any other. O(1).
+    public func directPart(of standIn: ShapeID) -> PartID? {
+        guard !standing.isEmpty else { return nil }
+        return standing[standIn]?.forwarding?.part
+    }
+
     /// The kind of a stand-in on a board the editor can show (whatever it stands for now), nil for any
     /// other shape: what a plugin that keeps its own kind's stand-ins asks of a commit's shapes, once the
     /// index has heard it. O(1).
@@ -250,7 +270,7 @@ public final class TopologyIndex {
     public func forwarding(of id: ShapeID) -> ForwardingState {
         guard !standing.isEmpty, let forwarding = standing[id]?.forwarding else { return .none }
         switch forwarding {
-        case .shapes: return .record(tables.forwards(of: id))
+        case .shapes, .row: return .record(tables.forwards(of: id))
         case .provided(let key): return provided[id]?.key == key ? .provided(tables.forwards(of: id)) : .pending
         }
     }
@@ -589,6 +609,11 @@ public final class TopologyIndex {
             let (targets, kinds, kind) = effective(standIn, in: &lookup)
             let change = ForwardsChange.between(tables.forwards(of: standIn), targets, kinds: kinds)
             tables.setForwards(standIn, targets, kind: kind, change: change)
+            // The same shape, another of its parts: the edges forwarded through it reach another row.
+            if partChanged.remove(standIn) != nil, !change.moved, !targets.isEmpty {
+                touchForwards(standIn, ForwardsChange(went: targets))
+                moved.insert(standIn)
+            }
             guard change.moved else { continue }
             touchForwards(standIn, change)
             moved.insert(standIn)
@@ -599,6 +624,7 @@ public final class TopologyIndex {
             touchForwards(standIn, change)
             moved.insert(standIn)
         }
+        partChanged.removeAll()
         return moved
     }
 
@@ -659,7 +685,7 @@ public final class TopologyIndex {
     /// Keeps what a stand-in declares (nil: it's no longer one), which stand-ins name each shape, its
     /// answer (only for the key it holds now) and whether it waits for one, in step.
     private func declare(_ id: ShapeID, _ declared: Declared?) {
-        if case .shapes(let old)? = standing[id]?.forwarding {
+        if let old = standing[id]?.forwarding?.named {
             for target in old {
                 guard let index = declaredBy.index(forKey: target) else { continue }
                 declaredBy.values[index].remove(id)
@@ -668,9 +694,11 @@ public final class TopologyIndex {
         }
         if (standing[id] == nil) != (declared == nil) { tables.setStandIn(id, declared != nil) }
         standing[id] = declared
-        if case .shapes(let new)? = declared?.forwarding {
+        if let new = declared?.forwarding?.named {
             for target in new { declaredBy[target, default: []].insert(id) }
         }
+        // A pill for a row: what an edge forwarded through it reaches. A change with the same shape is a change to those edges.
+        if tables.setForwardPart(id, declared?.forwarding?.part) { partChanged.insert(id) }
         if let held = provided[id], declared?.forwarding != .provided(held.key) { setAnswer(id, nil) }
         if case .provided(let key)? = declared?.forwarding, provided[id]?.key != key {
             pendingStandIns.insert(id)
@@ -702,8 +730,17 @@ public final class TopologyIndex {
     private func named(by standIn: ShapeID, _ forwarding: Forwarding) -> ([ShapeID], ForwardKind) {
         switch forwarding {
         case .shapes(let ids): (ids, .record)
+        case .row(let id, _): ([id], .record)
         case .provided(let key): (provided[standIn].flatMap { $0.key == key ? $0.shapes : nil } ?? [], .provided)
         }
+    }
+
+    /// For a stand-in for a row (`Forwarding.row`): whether a shape still lists that row, which it must for the pill to stand for it; nil for any
+    /// other stand-in. A row that is gone leaves the pill standing for nothing, as it is drawn (missing).
+    private func holdsRow(_ forwarding: Forwarding) -> ((AnyShapeRecord) -> Bool)? {
+        guard case .row(_, let part) = forwarding else { return nil }
+        let registry = registry
+        return { registry.parts(of: $0)?.contains { $0.id == part } == true }
     }
 
     /// What a stand-in stands for now: the shapes it names, in order, each once, that are on a board
@@ -714,7 +751,7 @@ public final class TopologyIndex {
             return ([], [], .record)
         }
         let (named, kind) = named(by: standIn, forwarding)
-        let taken = Effective.taking(named, for: standIn, isStandIn: { standInRules[$0] != nil }, admits: admits) { target in
+        let taken = Effective.taking(named, for: standIn, isStandIn: { standInRules[$0] != nil }, admits: admits, alsoNeeds: holdsRow(forwarding)) { target in
             #if DEBUG
             targetsRead += 1
             #endif
@@ -739,7 +776,8 @@ public final class TopologyIndex {
             #endif
             let standsFor = tables.standIns(for: id).contains(standIn)
             let record = lookup.shape(id)
-            let may = record.map { !$0.isOpaque && standInRules[$0.kind] == nil && admits($0) } ?? false
+            let needsRow = holdsRow(forwarding)
+            let may = record.map { !$0.isOpaque && standInRules[$0.kind] == nil && admits($0) && (needsRow?($0) ?? true) } ?? false
             if may, !standsFor, let record, let index = Self.place(of: id, in: named, among: tables.forwards(of: standIn)) {
                 tables.insertForward(standIn, id, at: index, record.kind, as: kind)
                 change.came.append((id, record.kind))
@@ -950,6 +988,15 @@ private struct Upkeep {
 extension CanvasEditor {
     /// Topology's index of the file's edges; nil without TopologyPlugin.
     public var topology: TopologyIndex? { service(TopologyIndex.self) }
+
+    /// `accessibleName(of:)`, but a part named on a stand-in (a key to a column on another board: the pill for its table, the column
+    /// on the binding) is read as the part of the shape it stands for ("id in customers"), as a part named on the shape itself is.
+    /// Nil for what neither names.
+    public func accessibleName(readingThrough address: PartAddress) -> String? {
+        if let name = accessibleName(of: address) { return name }
+        guard address.part != nil, let shape = topology?.directTarget(of: address.shape) else { return nil }
+        return accessibleName(of: PartAddress(shape, part: address.part))
+    }
 }
 
 /// `editor.shape(inFile:)` for many shapes at once (a board deleted or pasted, thousands of them):

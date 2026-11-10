@@ -39,7 +39,8 @@ struct RowGeometry {
     let block: CGRect
     /// Where the first row starts.
     let top: CGFloat
-    /// The name column's width: the longest shown name's, at most `nameShare` of the block.
+    /// The name column's width: the longest shown name's, at most `nameShare` of the block, or all of it but the widest value
+    /// where the template knows that (a type's kinds' words).
     let nameColumn: CGFloat
     /// The row the dashed line comes before: the first relation row, when a field or a fold is above it; nil with
     /// no line. Every row from it down is `relationRuleHeight` lower.
@@ -50,7 +51,9 @@ struct RowGeometry {
     init(block: CGRect, hasLead: Bool, template: RowTemplate) {
         self.block = block
         top = block.minY + (hasLead ? TypesStyle.rowsLead : 0)
-        nameColumn = min(template.nameColumn, TypesStyle.nameShare * block.width)
+        // Its share of the block, or, where every value's width is known, all the row but the widest value and the gap.
+        let room = template.valueColumn.map { max(0, block.width - $0 - TypesStyle.nameGap) } ?? 0
+        nameColumn = min(template.nameColumn, max(TypesStyle.nameShare * block.width, room))
         ruleBefore = template.hasRule ? template.relationStart : nil
     }
 

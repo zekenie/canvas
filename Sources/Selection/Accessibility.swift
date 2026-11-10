@@ -10,17 +10,46 @@ extension SelectionPlugin {
     func registerAccessibility(into registrar: inout PluginRegistrar) {
         registrar.accessibleOrder { $0.selectionState?.readingOrder ?? [] }
         registrar.accessibleParts({ editor, id in
-            editor.shapeParts(of: id).map { part in
+            // Its items first (a table's rows), said selected as they are, then its ⌥Tab parts.
+            let selected = editor.selectedItems.flatMap { $0.shape == id ? Set($0.ids) : nil } ?? []
+            let actions = editor.document[id].flatMap { editor.itemSource(of: $0.kind)?.actions }
+            let leads = editor.document[id].flatMap { record in actions?.leadTitles?(editor, record) } ?? [:]
+            let items = editor.shapeItems(of: id).flatMap { item in
+                let itemID = item.id
+                let row = AccessiblePart(id: ItemKey(id: itemID), title: item.title, role: .row, rect: item.rect,
+                                         isSelected: selected.contains(itemID)) { editor in
+                    editor.selectItems([itemID], of: id)
+                }
+                // Its lead, where it does more than select it (an endpoint's method chip): a button after it, pressed as Space on it is.
+                guard let title = leads[itemID], let press = actions?.pressLead else { return [row] }
+                return [row, AccessiblePart(id: ItemLeadKey(id: itemID), title: title, role: .menuButton, rect: item.rect) { editor in
+                    editor.selectItems([itemID], of: id)
+                    _ = press(editor, id, itemID)
+                }]
+            }
+            return items + editor.shapeParts(of: id).map { part in
                 let partID = part.id
                 return AccessiblePart(id: partID, title: part.title, role: part.role.accessible, rect: part.rect) { editor in
                     editor.pressPartForAccessibility(partID, of: id)
                 }
             }
         }, focused: { editor in
+            // The first item selected has the keyboard, else the focused part.
+            if let selection = editor.selectedItems, editor.canStepItems { return AccessiblePartFocus(shape: selection.shape, part: ItemKey(id: selection.ids[0])) }
             guard editor.hasFocusedPart, let focus = editor.selectionState?.partFocus else { return nil }
             return AccessiblePartFocus(shape: focus.shape, part: focus.part)
         })
     }
+}
+
+/// An item's key among its shape's accessible parts, apart from every part's.
+struct ItemKey: Hashable {
+    let id: AnyHashable
+}
+
+/// An item's lead's key among its shape's accessible parts (a button after the item).
+struct ItemLeadKey: Hashable {
+    let id: AnyHashable
 }
 
 extension PartRole {

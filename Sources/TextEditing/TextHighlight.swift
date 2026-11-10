@@ -13,11 +13,29 @@ public struct TextHighlight: Equatable {
     /// A symbol drawn at its start, in room the text makes for it before the range (a kern on the
     /// character before it, an indent of its line where it starts one), so the characters stay as they are.
     public var symbol: String?
+    /// A line round it, in this color (a pill's edge), nil for none.
+    public var stroke: NSColor?
+    /// Whether that line is dashed: what's named but matches nothing yet (a body's type before its note exists).
+    public var isDashed: Bool
+    /// How tall it is and how round its corners, where the owner draws the same mark at rest in a shape of its own (an
+    /// endpoint's method chip, 18 tall with corners of 3), so nothing moves as editing starts; nil: a pill's, from the font.
+    public var height: CGFloat?
+    public var cornerRadius: CGFloat?
+    /// How far it reaches past its text at each end, where the owner's mark at rest has room of its own there (an endpoint's
+    /// method chip, 6 either side of its word); nil: a pill's (`TextEditingStyle.highlightPadding`). The view must leave that
+    /// room before a range at its text's start (a text container inset), or it is cut there.
+    public var padding: CGFloat?
 
-    public init(range: NSRange, fill: NSColor, symbol: String? = nil) {
+    public init(range: NSRange, fill: NSColor, symbol: String? = nil, stroke: NSColor? = nil, isDashed: Bool = false,
+                height: CGFloat? = nil, cornerRadius: CGFloat? = nil, padding: CGFloat? = nil) {
         self.range = range
         self.fill = fill
         self.symbol = symbol
+        self.stroke = stroke
+        self.isDashed = isDashed
+        self.height = height
+        self.cornerRadius = cornerRadius
+        self.padding = padding
     }
 }
 
@@ -35,11 +53,11 @@ extension EditingTextView {
               let range = NSTextRange(location: start, end: end) else { return [] }
         layout.ensureLayout(for: range)
         let origin = textContainerOrigin
-        let padding = TextEditingStyle.highlightPadding
+        let padding = highlight.padding ?? TextEditingStyle.highlightPadding
         let highlightHeight = (highlightFontSize * TextEditingStyle.highlightHeight).rounded()
         var frames: [CGRect] = []
         layout.enumerateTextSegments(in: range, type: .standard, options: []) { _, segment, _, _ in
-            let height = min(segment.height, highlightHeight)
+            let height = highlight.height ?? min(segment.height, highlightHeight)
             let frame = CGRect(x: segment.minX - padding + origin.x, y: segment.midY - height / 2 + origin.y,
                                width: segment.width + 2 * padding, height: height)
             // A line can come in more than one segment (a wrapped line's trailing space, a run of other
@@ -61,6 +79,7 @@ extension EditingTextView {
         let radius = (highlightFontSize * TextEditingStyle.highlightCornerRadius).rounded(.up)
         let room = symbolRoom
         for highlight in highlights {
+            let radius = highlight.cornerRadius ?? radius
             var frames = frames(of: highlight)
             var image: NSImage?
             var symbolCenter: CGFloat?
@@ -69,7 +88,7 @@ extension EditingTextView {
                 // whose gap TextKit 2 splits between the two characters' segments, so the range's starts halfway in.
                 let onLine = startsLine(highlight.range.location)
                 let reach = onLine ? room : room / 2
-                let glyphStart = frames[0].minX + TextEditingStyle.highlightPadding + (onLine ? 0 : room / 2)
+                let glyphStart = frames[0].minX + (highlight.padding ?? TextEditingStyle.highlightPadding) + (onLine ? 0 : room / 2)
                 symbolCenter = glyphStart - room / 2
                 frames[0].origin.x -= reach
                 frames[0].size.width += reach
@@ -80,6 +99,18 @@ extension EditingTextView {
             highlight.fill.setFill()
             for frame in frames where frame.intersects(dirtyRect) {
                 NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).fill()
+            }
+            if let stroke = highlight.stroke {
+                // Inside the fill's edge, so a line one wide stays in the rect the fill is.
+                let width = TextEditingStyle.highlightStrokeWidth
+                stroke.setStroke()
+                for frame in frames where frame.intersects(dirtyRect) {
+                    let line = frame.insetBy(dx: width / 2, dy: width / 2)
+                    let path = NSBezierPath(roundedRect: line, xRadius: max(0, radius - width / 2), yRadius: max(0, radius - width / 2))
+                    path.lineWidth = width
+                    if highlight.isDashed { path.setLineDash(TextEditingStyle.highlightDash, count: TextEditingStyle.highlightDash.count, phase: 0) }
+                    path.stroke()
+                }
             }
             if let image, let symbolCenter, let first = frames.first, first.intersects(dirtyRect) {
                 let size = image.size

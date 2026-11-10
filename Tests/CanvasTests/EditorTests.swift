@@ -346,6 +346,30 @@ import TestKit
         expectEqual(h.editor.camera.origin.x, 0, "190 at 200%: 380 points in, in view")
         expect(!h.editor.canUndo, "the camera's moves are no step")
     },
+    test("a rect an editing view keeps in view that is in the clear view already is not nudged the margin in by a few points when the caller skips nudges (a pick); one cut by the edge is; a caret typed toward the edge pans for every character (UX walk 5 firstminute-5-2)") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        let card = h.add(Card(CGRect(x: 100, y: 562, width: 100, height: 60)))
+        h.editor.replaceDocument(with: h.editor.document)
+        expect(h.editor.beginEditing(card))
+        let field = try require(h.editor.makeEditingView()?.view as? CardField)
+        // 572 to 588: in the view, 4 points into the 16-point margin.
+        field.context.keepInView(CGRect(x: 10, y: 10, width: 1, height: 16), skippingNudges: true)
+        expectEqual(h.editor.camera.origin, .zero, "in view: a 4-point pan would only move the board")
+        // 9 points in: past the least pan, it's brought the margin in.
+        field.context.keepInView(CGRect(x: 10, y: 15, width: 1, height: 16), skippingNudges: true)
+        expectEqual(h.editor.camera.origin, CGPoint(x: 0, y: 9), "593, its bottom, to 584")
+        // Cut by the edge by a point: brought the margin in.
+        h.editor.camera = Camera(origin: .zero, zoom: 1)
+        field.context.keepInView(CGRect(x: 10, y: 22, width: 1, height: 17), skippingNudges: true)
+        expectEqual(h.editor.camera.origin, CGPoint(x: 0, y: 17), "601 to 584")
+        // A caret typed toward the edge: each character follows it, however few points it moves.
+        h.editor.camera = Camera(origin: .zero, zoom: 1)
+        field.context.keepInView(CGRect(x: 10, y: 10, width: 1, height: 16))
+        expectEqual(h.editor.camera.origin, CGPoint(x: 0, y: 4), "4 points into the margin: followed")
+        field.context.keepInView(CGRect(x: 10, y: 14, width: 1, height: 16))
+        expectEqual(h.editor.camera.origin, CGPoint(x: 0, y: 8), "and 4 more: no character skipped, none panned twice")
+    },
     test("the root board is called what the host says, nothing until it does; whoever reads the name hears it change, and only then") {
         let h = try EditorHarness(plugins: [CardsPlugin()])
         expectEqual(h.editor.rootName, "")

@@ -95,14 +95,18 @@ public struct ShapePart {
     /// What an arrow key does to it, for a part that is moved (a handle): whether it took the step. Nil, or a
     /// step it doesn't take, nudges the shape as the arrow keys do.
     public var adjust: (@MainActor (CanvasEditor, PartStep) -> Bool)?
+    /// Shapes the part stands for, outlined as the selection is while it has the focus, besides its ring (a connection's
+    /// arrow, drawn whole in the focus color, so the ring at its end is read as the arrow's).
+    public var lights: [ShapeID]
 
-    public init<ID: Hashable & Sendable>(id: ID, title: String, role: PartRole = .button, rect: CGRect,
+    public init<ID: Hashable & Sendable>(id: ID, title: String, role: PartRole = .button, rect: CGRect, lights: [ShapeID] = [],
                                          press: @escaping @MainActor (CanvasEditor) -> Void,
                                          adjust: (@MainActor (CanvasEditor, PartStep) -> Bool)? = nil) {
         self.id = AnyHashable(id)
         self.title = title
         self.role = role
         self.rect = rect
+        self.lights = lights
         self.press = press
         self.adjust = adjust
     }
@@ -157,10 +161,10 @@ extension PluginRegistrar {
 // MARK: Reading them
 
 extension CanvasEditor {
-    /// A shape's parts (`ShapeParts`), in reading order of their rects' middles (`StopOrder.reading`, as
-    /// Tab reads shapes, a row being parts level within half the shortest one's height, so a note's rows are
-    /// read top to bottom), parts whose middles are level in `order`, then plugin order; a part two plugins
-    /// list (the same id) once. None for a shape not on the board shown, nor for the shape being edited,
+    /// A shape's parts (`ShapeParts`): its own (chips, pills, buttons, handles) and then its arrows (`.connection`), each in
+    /// reading order of their rects' middles (`StopOrder.reading`, as Tab reads shapes, a row being parts level within half
+    /// the shortest one's height, so a note's rows are read top to bottom), parts whose middles are level in `order`, then
+    /// plugin order; a part two plugins list (the same id) once. None for a shape not on the board shown, nor for the shape being edited,
     /// whose parts are its editor's.
     public func shapeParts(of id: ShapeID) -> [ShapePart] {
         guard editingShapeID != id, editingStandIn != id, let record = document[id] else { return [] }
@@ -171,9 +175,14 @@ extension CanvasEditor {
             .sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }
             .flatMap { $0.element.parts(self, record) }
             .filter { !$0.rect.isNull && seen.insert($0.id).inserted }
+        // The shape's own parts first (chips, pills, buttons, handles), then its arrows (keyboard navigation's principle 3),
+        // each in reading order: ⌥⇧Tab from the shape reaches its last arrow at once, and ⌥Tab still starts at its first chip.
         // A row of parts is level within half the shortest one's height: a note's rows, a field's height apart, are rows of their own.
-        let range = max(1, (listed.map(\.rect.height).min() ?? 0) / 2)
-        return StopOrder.reading(listed, rowRange: range) { CGPoint(x: $0.rect.midX, y: $0.rect.midY) }
+        func reading(_ parts: [ShapePart]) -> [ShapePart] {
+            let range = max(1, (parts.map(\.rect.height).min() ?? 0) / 2)
+            return StopOrder.reading(parts, rowRange: range) { CGPoint(x: $0.rect.midX, y: $0.rect.midY) }
+        }
+        return reading(listed.filter { $0.role != .connection }) + reading(listed.filter { $0.role == .connection })
     }
 
     /// The focused part of the only selected shape (⌥Tab), as listed now; nil when none is.
@@ -200,21 +209,42 @@ extension CanvasEditor {
     public var canFocusParts: Bool { session == nil && editingShapeID == nil && selection != nil }
 
     /// ⌥Tab (`.next`) and ⌥⇧Tab (`.previous`): with no part focused, the only selected shape's first or
-    /// last part; with one, the next or previous, round from the last to the first. Brought into view if
-    /// it is not (`revealIfOffscreen`). A shape with no parts focuses none. Any other direction does nothing.
+    /// last stop; with one, the next or previous, round from the last to the first. A shape with items (`ShapeItems`: a
+    /// table's rows) has them as its first stop, one stop whose items ↑ ↓ walk, as a list is one stop of a panel's loop:
+    /// ⌥Tab from the shape selects its first item, and from the items goes on to its first part; coming back to the items
+    /// (⌥⇧Tab from the first part, ⌥Tab round from the last) selects the items that were left, so each key's opposite lands
+    /// where it was. Brought into view if it is not (`revealIfOffscreen`). A shape with no parts and no items focuses none.
+    /// Any other direction does nothing.
     public func focusAdjacentPart(_ direction: AdjacentDirection) {
         guard canFocusParts, let id = selection, let state = selectionState, direction == .next || direction == .previous else { return }
         let parts = shapeParts(of: id)
-        guard !parts.isEmpty else { return }
+        let items = shapeItems(of: id)
+        // The ring: the items as one stop (0) where the shape lists any, then each part.
+        let first = items.isEmpty ? 0 : 1, count = first + parts.count
+        guard count > 0 else { return }
         let forward = direction == .next
-        let index: Int
-        if let focus = state.partFocus, focus.shape == id, let at = parts.firstIndex(where: { $0.id == focus.part }) {
-            index = (at + (forward ? 1 : parts.count - 1)) % parts.count
+        let at: Int?
+        if !items.isEmpty, let held = state.items, held.shape == id {
+            at = 0
+        } else if let focus = state.partFocus, focus.shape == id, let part = parts.firstIndex(where: { $0.id == focus.part }) {
+            at = first + part
         } else {
-            index = forward ? 0 : parts.count - 1
+            at = nil
         }
-        state.focusPart(parts[index], of: id)
-        revealIfOffscreen(rect: parts[index].rect)
+        let index = at.map { ($0 + (forward ? 1 : count - 1)) % count } ?? (forward ? 0 : count - 1)
+        guard index != at else { return }
+        if index < first {
+            // Back to the items: those left by ⌥Tab, while the shape still lists one of them; else its first.
+            let left = state.itemsLeft.flatMap { $0.shape == id ? $0 : nil }
+            state.setItems(left?.ids ?? [items[0].id], of: id, anchor: left?.anchor)
+            if selectedItems == nil { state.setItems([items[0].id], of: id, anchor: nil) }
+            if let rect = items.first(where: { selectedItems?.ids.first == $0.id })?.rect { revealIfOffscreen(rect: rect) }
+            return
+        }
+        if at == 0, first == 1 { state.itemsLeft = state.items }
+        let part = parts[index - first]
+        state.focusPart(part, of: id)
+        revealIfOffscreen(rect: part.rect)
     }
 
     /// Presses the focused part, as a click on it does: whether there was one to press. The focus stays on
@@ -252,15 +282,17 @@ extension CanvasEditor {
     /// An arrow key on the canvas: with a selection, `arrow`; with none, the view panned that way a step, a page
     /// with ⇧ (`pan`).
     func arrowKey(_ direction: CGPoint, large: Bool) {
+        if arrowOnItems(direction, extending: large) { return }
         if canNudge { return arrow(direction, large: large) }
         guard canPanByKeys else { return }
         pan(direction.x < 0 ? .left : direction.x > 0 ? .right : direction.y < 0 ? .up : .down, far: large)
     }
 
     /// Return and Enter on the canvas: the focused part pressed (⌥Tab), else the placing tool's shape put down and
-    /// edited (`placeAtKeyboard`), else the selection opened (`.openSelection`).
+    /// edited (`placeAtKeyboard`), else the first selected item opened (a row edited), else the selection opened
+    /// (`.openSelection`).
     func returnKey() {
-        if pressFocusedPart() || placeAtKeyboard() { return }
+        if pressFocusedPart() || placeAtKeyboard() || openSelectedItem() { return }
         perform(.openSelection)
     }
 }
@@ -270,8 +302,9 @@ extension CanvasEditor {
 extension SelectionState {
     /// The focus moves to `part` of `shape`; the ring is drawn there.
     func focusPart(_ part: ShapePart, of shape: ShapeID) {
+        items = nil
         partFocus = PartFocus(shape: shape, part: part.id)
-        focusedPartRing = PartRing(rect: part.rect, revision: editor.revision, layout: editor.layoutRevision, zoom: editor.camera.zoom)
+        focusedPartRing = PartRing(rect: part.rect, lights: part.lights, revision: editor.revision, layout: editor.layoutRevision, zoom: editor.camera.zoom)
         editor.setNeedsDisplay()
     }
 
@@ -288,13 +321,18 @@ extension SelectionState {
     /// Where the focused part is drawn, in world units: kept from the last listing until the board, the layout
     /// or the zoom changes (an adornment's size is in view points), then listed again. Nil with none focused, one
     /// that is gone, and while the shape is edited.
-    var focusedPartRect: CGRect? {
+    var focusedPartRect: CGRect? { focusedRing?.rect }
+
+    /// What the focused part lights besides its ring (`ShapePart.lights`), outlined with the selection. Empty with none.
+    var focusedPartLights: [ShapeID] { focusedRing?.lights ?? [] }
+
+    private var focusedRing: PartRing? {
         guard let focus = partFocus, editor.editingShapeID == nil else { return nil }
         let revision = editor.revision, layout = editor.layoutRevision, zoom = editor.camera.zoom
-        if let ring = focusedPartRing, ring.revision == revision, ring.layout == layout, ring.zoom == zoom { return ring.rect }
-        let rect = editor.shapeParts(of: focus.shape).first { $0.id == focus.part }?.rect
-        focusedPartRing = rect.map { PartRing(rect: $0, revision: revision, layout: layout, zoom: zoom) }
-        return rect
+        if let ring = focusedPartRing, ring.revision == revision, ring.layout == layout, ring.zoom == zoom { return ring }
+        let part = editor.shapeParts(of: focus.shape).first { $0.id == focus.part }
+        focusedPartRing = part.map { PartRing(rect: $0.rect, lights: $0.lights, revision: revision, layout: layout, zoom: zoom) }
+        return focusedPartRing
     }
 
     /// A commit has been taken in by every service: a focused part it took away (a lock chip whose shape was
@@ -317,6 +355,7 @@ struct PartFocus: Equatable {
 /// Where the focused part's ring was drawn, and what that was worked out from.
 struct PartRing {
     let rect: CGRect
+    let lights: [ShapeID]
     let revision: Int
     let layout: Int
     let zoom: CGFloat

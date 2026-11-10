@@ -14,7 +14,7 @@ import Publishing
 import References
 import Selection
 import ShippedTesting
-import Stickers
+import Engineering
 import StickyNotes
 import Subboards
 import TestKit
@@ -46,7 +46,7 @@ extension NeighborList {
 
     /// The lists the panel shows now: those with something in them, with the rows it draws.
     var panel: [ConnectionGroup] {
-        groups.indices.compactMap { index in
+        order.compactMap { index in
             let listed = shown(in: index)
             guard listed.count > 0 else { return nil }
             return ConnectionGroup(title: groups[index].title, count: listed.count, rows: listed.rows.map { row in
@@ -134,18 +134,22 @@ extension ConnectionGroup {
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 0, y: 300)), end: .free(CGPoint(x: 200, y: 400))))
         let reference = editor.add(Reference(frame: CGRect(x: 300, y: 300, width: Reference.defaultSize.width, height: Reference.defaultSize.height)))
         let type = editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 600, y: 300, width: 200, height: 200))
-        let sticker = editor.add(Sticker(frame: CGRect(x: 900, y: 300, width: 96, height: 96), emoji: "🎉"))
+        let table = editor.add(DatabaseTable(frame: CGRect(x: 900, y: 300, width: 260, height: 44), columns: DatabaseTable.starter().columns))
+        let enumType = editor.add(DatabaseEnum(frame: CGRect(x: 900, y: 400, width: 220, height: 44)))
+        let database = editor.add(Database(frame: CGRect(x: 1200, y: 300, width: 400, height: 300)))
+        let api = editor.add(API(frame: CGRect(x: 1700, y: 300, width: 420, height: 78)))
+        let endpoint = editor.add(StandaloneEndpoint(frame: CGRect(x: 2200, y: 300, width: 420, height: 44), endpoint: Endpoint(method: "GET", path: "/a")))
         let panel = try require(editor.detailPanel)
         var kinds: Set<ShapeKind> = []
         var tabs: [[String]] = []
-        for id in [note, subboard, frame, arrow, reference, type, sticker] {
+        for id in [note, subboard, frame, arrow, reference, type, table, enumType, database, api, endpoint] {
             let record = try require(editor.document[id])
             kinds.insert(record.kind)
             tabs.append(panel.layout(for: record).tabs.map(\.title))
         }
         expectEqual(kinds, Set(editor.registry.kinds), "every kind there is")
         expectEqual(tabs, [["Connections", "Style"], ["Description", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"],
-                           ["Connections", "Schema", "Rules", "Style"], ["Connections"]])
+                           ["Connections", "Schema", "Rules", "Style"], ["Connections"], ["Connections"], ["Connections"], ["Connections"], ["Connections"]])
     },
 
     test("a note with an arrow out and an arrow in lists the notes at the other ends under Points To and Pointed To By, and no arrow, with a count each") {
@@ -279,8 +283,11 @@ extension ConnectionGroup {
             link(from: x, to: b), link(from: c, to: x),
         ], pasteboard)
         let list = try require(h.editor.neighborList)
-        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes", "Inside", "Contains"])
-        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, true, true, false, false], "a light's list has its color; the two besides have none")
+        // The engineering kit's lists are a row's alone (`serves: .rows`): a shape's panel never shows them.
+        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes",
+                                               "Calls It", "Writes", "Reads", "Keys To", "Keyed By", "Inside", "Contains"])
+        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, true, true, true, true, true, true, true, false, false],
+                    "a light's list has its color; the two besides have none")
         let hub = try h.editor.connections(of: x)
         expectEqual(hub.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Inside"])
         expectEqual(hub.map(\.ids), [[b], [c], [d], [e], [o]])
@@ -370,12 +377,13 @@ extension ConnectionGroup {
         expectEqual(pill.map(\.title), ["Points To"])
         expectEqual(pill[0].ids, [target])
         expectEqual(pill[0].names, ["Orders"])
-        // An arrow from Checkout into the pill is, to the graph, an arrow into the note: both are what it points to, the pill as drawn.
+        // An arrow from Checkout into the pill is, to the graph, an arrow into the note: the note is what it points to, the pill
+        // its way there, no row of its own (a key's pill and its table are one row: U8, W-connect-1).
         let into = ShapeID()
         h.editor.transact("Arrow") { $0.insert(link(into, from: x, to: r)) }
         let checkout = try h.editor.connections(of: x)
         expectEqual(checkout.map(\.title), ["Points To"])
-        expectEqual(Set(checkout[0].ids), [target, r])
+        expectEqual(checkout[0].ids, [target])
         expectEqual(Set(try h.editor.connections(of: target)[0].ids), [x, r], "the note is pointed to by Checkout and the pill")
         let drawn = try h.editor.connections(of: r)
         expectEqual(drawn.map(\.title), ["Points To", "Pointed To By"])
@@ -587,18 +595,18 @@ extension ConnectionGroup {
         let list = try require(w.editor.neighborList)
         expectEqual(list.subject, nil, "nothing is asked while no list is on screen")
         w.editor.selection = a
-        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == a && list.hasLanded && !list.isAsking }
         expectEqual(list.panel.map(\.names), [["Beta"], ["Gamma"]])
         w.window.spin { w.connectionRows.count == 2 }
         // A click on the first row, Beta, goes to it.
         w.connectionRows[0].performClick(nil)
         w.window.spin { w.editor.selection == b }
-        expectEqual(list.subject, b, "the list is of the shape selected now")
+        expectEqual(list.subject?.shape, b, "the list is of the shape selected now")
         w.editor.goBack()
         expectEqual(w.editor.selection, a)
         // Nothing selected, nothing watched.
         w.editor.selection = nil
-        w.window.spin { list.subject == nil }
+        w.window.spin { list.subject?.shape == nil }
     },
     test("a locked note's Connections rows are enabled all the same: going to what it is connected to changes nothing of it") {
         let (a, b) = (ShapeID(), ShapeID())
@@ -607,7 +615,7 @@ extension ConnectionGroup {
         let w = try InspectorWindow(file: CanvasFile(root: CanvasDocument(shapes: [locked, card(b, "Beta", 2, 0), link(from: a, to: b)])))
         let list = try require(w.editor.neighborList)
         w.editor.selection = a
-        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == a && list.hasLanded && !list.isAsking }
         w.window.spin { w.connectionRows.count == 1 }
         w.connectionRows[0].performClick(nil)
         w.window.spin { w.editor.selection == b }
@@ -622,7 +630,7 @@ extension ConnectionGroup {
             + zip(ids, names).enumerated().map { card($1.0, $1.1, $0 + 1, 1) } + ids.map { link(from: hub, to: $0) })))
         let list = try require(w.editor.neighborList)
         w.editor.selection = hub
-        w.window.spin { list.subject == hub && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == hub && list.hasLanded && !list.isAsking }
         expectEqual(list.total, 20)
         w.window.spin { w.fields.count == 1 }
         w.window.spin { w.connectionRows.count > 0 }
@@ -655,7 +663,7 @@ extension ConnectionGroup {
         ])))
         let list = try require(w.editor.neighborList)
         w.editor.selection = a
-        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == a && list.hasLanded && !list.isAsking }
         w.window.spin { w.connectionRows.count == 2 }
         let table = try require(w.connectionTable)
         let driver = KeyDriver(w.window)

@@ -29,6 +29,7 @@ struct QueryEvalCase: Sendable {
         case evalBoard = "eval-board"
         case fields
         case school
+        case kit
     }
 
     /// What a right answer is.
@@ -42,7 +43,7 @@ struct QueryEvalCase: Sendable {
     }
 
     static let categories = ["kinds", "titles", "mentions", "inside", "direction", "transitive", "state", "combined", "unanswerable",
-                             "robustness", "types"]
+                             "robustness", "types", "engineering"]
 
     let id: String
     let file: File
@@ -73,7 +74,7 @@ func queryEvalCases() throws -> [QueryEvalCase] {
     return try lines.dropFirst().filter { !$0.isEmpty }.map { line in
         let cells = line.components(separatedBy: "\t")
         _ = try require(cells.count == 7 ? true : nil, "seven columns: \(line)")
-        let file = try require(QueryEvalCase.File(rawValue: cells[1]), "a file, story, eval-board, fields or school: \(line)")
+        let file = try require(QueryEvalCase.File(rawValue: cells[1]), "a file, story, eval-board, fields, school or kit: \(line)")
         let selection = QueryEvalCase.names(cells[3])
         let board = selection.first { $0.hasPrefix("in ") }.map { String($0.dropFirst(3)) }
         let expected: QueryEvalCase.Expected = switch cells[4] {
@@ -104,6 +105,7 @@ func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboa
     case .evalBoard: QueryEvalBoard.file(in: registry)
     case .fields: QueryFieldsBoard.file(in: registry)
     case .school: QuerySchoolBoard.file(in: registry)
+    case .kit: QueryKitBoard.file(in: registry)
     }
     let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
     editor.viewportDidResize(to: QueryStory.viewport)

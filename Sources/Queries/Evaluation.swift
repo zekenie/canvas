@@ -397,7 +397,7 @@ final class Evaluation {
             switch node.op {
             case .title: titles.append(node)
             case .id: ids.append(node)
-            case .edges(let word, let anchor, let second, let types):
+            case .edges(let word, let anchor, let second, let types, _):
                 if let end = AnchorEnd(word) {
                     for title in anchor.subjectTitles { anchoring[title, default: []].append((types, end)) }
                 }
@@ -795,8 +795,23 @@ final class Evaluation {
             return onBoard(snapshot.shown, among: candidates)
         case .scope(let word):
             return try bound(word, among: candidates)
-        case .edges(let word, let anchor, let second, let types):
+        case .edges(let word, let anchor, let second, let types, let part):
             let anchors = try await matches(anchor, among: .all)
+            // A row's edges alone, where the anchor names one: an edge into it is at the row when its target's part is the row, one
+            // out of it when its source's is; a connection read at its ends (`:start-of`, `:end-of`) when the end read is the row.
+            if let part {
+                switch word {
+                case .edgeTo: return try adjacent(.outgoing, to: anchors, types: types, among: candidates) { $0.targetPart == part }
+                case .edgeFrom: return try adjacent(.incoming, to: anchors, types: types, among: candidates) { $0.sourcePart == part }
+                case .startsAt:
+                    return try connections(from: anchors, .outgoing, types: types, among: candidates) { anchors.contains($0.source) && $0.sourcePart == part }
+                case .endsAt:
+                    return try connections(from: anchors, .incoming, types: types, among: candidates) { anchors.contains($0.target) && $0.targetPart == part }
+                case .startOf: return try ends(of: anchors, .outgoing, types: types, among: candidates) { $0.sourcePart == part }
+                case .endOf: return try ends(of: anchors, .incoming, types: types, among: candidates) { $0.targetPart == part }
+                default: return []
+                }
+            }
             switch word {
             case .edgeTo: return try adjacent(.outgoing, to: anchors, types: types, among: candidates)
             case .edgeFrom: return try adjacent(.incoming, to: anchors, types: types, among: candidates)
@@ -873,7 +888,7 @@ final class Evaluation {
         for (index, node) in rest.enumerated() {
             let anchor: PlanList
             switch node.op {
-            case .edges(let word, let list, _, _) where Self.oneStep.contains(word): anchor = list
+            case .edges(let word, let list, _, _, _) where Self.oneStep.contains(word): anchor = list
             case .relation(_, let list, _, _), .fileRelation(_, let list): anchor = list
             default: continue
             }
@@ -916,6 +931,14 @@ final class Evaluation {
             }
             try await readNames(named)
         }
+        // A test that reads a value as the name of the shape it names (a column's type, an enum's name now) reads those names first.
+        var named: [ShapeID] = []
+        for id in pool {
+            guard let entry = entry(id), let index = readerOf[entry.record.kind], case .property(let shape) = readers[index].source,
+                  case .path(let path) = readers[index].test.comparison, path.namedBy != nil else { continue }
+            named += path.namedShapes(in: value(attribute, of: entry, shape: shape))
+        }
+        if !named.isEmpty { try await readNames(named) }
         var found: Set<ShapeID> = []
         for id in pool {
             try tick()
@@ -926,7 +949,7 @@ final class Evaluation {
                 if reader.test.holds(name: name(id)) { found.insert(id) }
             case .property(let shape):
                 read.insert(id)
-                if reader.test.holds(value(attribute, of: entry, shape: shape), shape: shape) { found.insert(id) }
+                if reader.test.holds(value(attribute, of: entry, shape: shape), shape: shape, names: { self.name($0) }) { found.insert(id) }
             }
         }
         if found.isEmpty {
@@ -1219,13 +1242,13 @@ final class Evaluation {
     /// → the anchor; `.incoming`: the anchor → the shape): from the candidates' own edges when they're
     /// fewer than the anchors, else from the anchors'.
     private func adjacent(_ direction: EdgeDirection, to anchors: Set<ShapeID>, types: PlanEdgeTypes,
-                          among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
+                          among candidates: Candidates, at end: (Edge) -> Bool = { _ in true }) throws(QueryError) -> Set<ShapeID> {
         let topology = snapshot.topology, filter = types.filter
         var found: Set<ShapeID> = []
         if case .only(let ids) = candidates, ids.count <= anchors.count {
             for id in ids {
                 try tick()
-                if topology.hasEdges(of: id, direction, types: filter, where: { anchors.contains(Self.far($0, from: id, direction)) }) {
+                if topology.hasEdges(of: id, direction, types: filter, where: { anchors.contains(Self.far($0, from: id, direction)) && end($0) }) {
                     found.insert(id)
                 }
             }
@@ -1238,7 +1261,7 @@ final class Evaluation {
         }
         for anchor in anchors {
             try tick()
-            for edge in topology.edges(of: anchor, reverse, types: filter) {
+            for edge in topology.edges(of: anchor, reverse, types: filter) where end(edge) {
                 let shape = Self.far(edge, from: anchor, reverse)
                 if admits(shape, candidates), entry(shape) != nil { found.insert(shape) }
             }
@@ -1358,13 +1381,13 @@ final class Evaluation {
     /// A shape with no edge in slot `""` is no connection and has no ends: an arrow with a free end
     /// (it carries none), a note whose text mentions (its edges are in the text's slot).
     private func ends(of anchors: Set<ShapeID>, _ direction: EdgeDirection, types: PlanEdgeTypes,
-                      among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
+                      among candidates: Candidates, at end: (Edge) -> Bool = { _ in true }) throws(QueryError) -> Set<ShapeID> {
         let topology = snapshot.topology
         var found: Set<ShapeID> = []
         if case .only(let ids) = candidates, ids.count <= anchors.count {
             for id in ids {
                 try tick()
-                if topology.hasEdges(of: id, direction, types: types.filter, where: { types.admitsConnection($0) && anchors.contains($0.carrier) }) {
+                if topology.hasEdges(of: id, direction, types: types.filter, where: { types.admitsConnection($0) && anchors.contains($0.carrier) && end($0) }) {
                     found.insert(id)
                 }
             }
@@ -1372,7 +1395,7 @@ final class Evaluation {
         }
         for anchor in anchors {
             try tick()
-            for edge in topology.edges(carriedBy: anchor) where types.admitsConnection(edge) {
+            for edge in topology.edges(carriedBy: anchor) where types.admitsConnection(edge) && end(edge) {
                 let end = direction == .incoming ? edge.target : edge.source
                 if admits(end, candidates), entry(end) != nil { found.insert(end) }
             }
@@ -1446,10 +1469,12 @@ final class Evaluation {
                                inside: ancestors(id).reversed().map(containerName), at: entry.record.box)
             (row.properties, row.cut) = listed(entry, kind: kind, wanted)
             if let edges = runs[id], let first = edges.first {
-                row.connection = QueryConnection(type: first.type, from: end(first.source), to: end(first.target))
+                row.connection = QueryConnection(type: first.type, from: end(first.source, part: first.sourcePart), to: end(first.target, part: first.targetPart))
                 if case .forwarded(let source, let target) = first.origin {
-                    row.connection?.via = QueryVia(from: source.map(end), to: target.map(end))
-                    if edges.count > 1 { row.connection?.more = edges.dropFirst().map { QueryPair(from: end($0.source), to: end($0.target)) } }
+                    row.connection?.via = QueryVia(from: source.map { end($0) }, to: target.map { end($0) })
+                    if edges.count > 1 {
+                        row.connection?.more = edges.dropFirst().map { QueryPair(from: end($0.source, part: $0.sourcePart), to: end($0.target, part: $0.targetPart)) }
+                    }
                 }
             }
             if id == snapshot.editing { row.editing = true }
@@ -1516,8 +1541,13 @@ final class Evaluation {
         return found
     }
 
-    /// An end of a connection, with its name if it has one (read already).
-    private func end(_ id: ShapeID) -> QueryEnd { QueryEnd(id: id, title: name(id)) }
+    /// An end of a connection, with its name if it has one (read already), and the row of it the edge reaches, by its name, where
+    /// its kind names its parts.
+    private func end(_ id: ShapeID, part: PartID? = nil) -> QueryEnd {
+        QueryEnd(id: id, title: name(id), row: part.flatMap { part in
+            entry(id).flatMap { entry in vocabulary.partNames[entry.record.kind]?(entry.record, part) }.flatMap { $0.isEmpty ? nil : $0 }
+        })
+    }
 
     /// What a shape carries in slot `""` as a connection, in the view the query reads: its first
     /// edge as emitted, or, when that was forwarded through a stand-in at an end, every copy of it
@@ -1629,7 +1659,7 @@ extension PlanNode {
             list.forEachNode(body)
         case .has(let items):
             for item in items { item.node.forEachNode(body) }
-        case .edges(_, let anchor, let second, _):
+        case .edges(_, let anchor, let second, _, _):
             anchor.forEachNode(body)
             second?.forEachNode(body)
         case .relation(_, let anchor, _, _), .fileRelation(_, let anchor):

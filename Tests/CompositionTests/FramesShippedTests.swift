@@ -554,6 +554,21 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expectEqual(notes.map { editor.holder(of: $0.id) }, bands.map(\.id))
         expectEqual(bands.map { editor.holder(of: $0.id) }, [nil, nil, nil])
     },
+    test("canvas draw slides a note placed against a sibling in a frame along the axis its placement leaves free, to stay inside: said, and only a script that was refused draws differently") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"frame "f1" size: 1400x900"#, on: editor)
+        let f1 = try require(editor.document.shapes.first { $0[TitleProperty.self] == "f1" }?.box)
+        _ = try drawnInProcess(#"sticky-note "n1" in "f1""#, on: editor)
+        let result = try drawnInProcess(#"sticky-note "n2" in "f1" right of "n1" size: 260x400"#, on: editor)
+        @MainActor func record(_ title: String) throws -> AnyShapeRecord { try require(editor.document.shapes.first { $0[TitleProperty.self] == title }) }
+        let n1 = try require(record("n1").box), n2 = try require(record("n2").box)
+        expectEqual(n1.origin, CGPoint(x: f1.minX + 40, y: f1.minY + 40), "the first at the frame's inset")
+        expectEqual(n2.minY, f1.minY + 40, "the taller one slid down to the inset, not refused")
+        expect(n2.minX > n1.maxX, "and kept its side of n1")
+        expectEqual(result["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [#""n2" was slid down to stay inside "f1""#])
+        expectEqual(editor.holder(of: try record("n2").id), try record("f1").id)
+    },
     test("in the app's canvas view, a note mentions a titled frame from the @ picker; the frame's panel lists it, its menu shows what does, and following it goes to it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
