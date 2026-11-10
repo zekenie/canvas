@@ -21,6 +21,8 @@ struct PartingStack: Equatable {
     let shift: CGFloat
     let along: CGFloat?
     let stub: CGFloat
+    /// The pill's height, kept inside the row as the end moves (0 for none at the row).
+    var keep: CGFloat = 0
 }
 
 extension ArrowDefinition {
@@ -38,7 +40,11 @@ extension ArrowDefinition {
         let stack = line == nil ? bundle.flatMap { Self.partingStack(of: shape, bundle: $0, marked: marked, in: context) } : nil
         if let stack {
             var parted = spread ?? ArrowSpread()
-            if stack.end == .start { (parted.startShift, parted.startStub) = (stack.shift, stack.stub) } else { (parted.endShift, parted.endStub) = (stack.shift, stack.stub) }
+            if stack.end == .start {
+                (parted.startShift, parted.startStub, parted.startKeep) = (stack.shift, stack.stub, stack.keep)
+            } else {
+                (parted.endShift, parted.endStub, parted.endKeep) = (stack.shift, stack.stub, stack.keep)
+            }
             spread = parted
         }
         let detail: ArrowDetail? = line == nil && look == nil && bundle == nil ? nil
@@ -57,14 +63,13 @@ extension ArrowDefinition {
     }
 
     /// Where a connection parting from a row with others (`ConnectionBundle.parting`) leaves it: moved along the row's side by
-    /// where its far end is among theirs, top to bottom, `partingLineSpacing` apart (a marked end `fanMarkSpacing`, a bar's height
-    /// and a gap, so two keys' bars at one row never merge), so each line leaves on its own. Its pill, slid to the row, stacks
+    /// where its far end is among theirs, top to bottom, `partingLineSpacing` apart, so each line leaves on its own; a marked end
+    /// stays (keys from different tables to one row lay their bars on each other: UX walk 2 structure new-2). Its pill, slid to the row, stacks
     /// past the pills of those before it in the stack whose pills are slid there too, on a straight stub of its line that turns
     /// after it, so it stays level with its row (alone, at the row, as any slid pill is, on its stub). Nil for one alone there.
     static func partingStack(of shape: ShapeRecord<Arrow>, bundle: ConnectionBundle, marked: Bool, in context: ShapeContext) -> PartingStack? {
         guard let parting = bundle.parting, parting.count > 1 else { return nil }
-        let spacing = marked ? ArrowStyle.fanMarkSpacing : ArrowStyle.partingLineSpacing
-        let shift = (CGFloat(parting.index) - CGFloat(parting.count - 1) / 2) * spacing
+        let shift = marked ? 0 : (CGFloat(parting.index) - CGFloat(parting.count - 1) / 2) * ArrowStyle.partingLineSpacing
         let own = labelWidth(of: shape, in: context)
         guard own > 0, slidToward(bundle, of: shape.props) == parting.end else { return PartingStack(end: parting.end, shift: shift, along: nil, stub: 0) }
         // The pills of those before it in the stack that are slid to the row too.
@@ -78,7 +83,9 @@ extension ArrowDefinition {
             if width > 0 { before += width + ArrowStyle.partingLabelGap }
         }
         let along = ArrowStyle.labelClearance + before + own / 2
-        return PartingStack(end: parting.end, shift: shift, along: along, stub: along + own / 2 + ArrowStyle.labelClearance)
+        // Its pill stays inside the row as its line moves (its neighbors' pills are in theirs).
+        let keep = context.layoutInput(AdornmentLead.faces, of: shape)?.sizes.first?.height ?? 0
+        return PartingStack(end: parting.end, shift: shift, along: along, stub: along + own / 2 + ArrowStyle.labelClearance, keep: keep)
     }
 
     /// A label laid along its line (`laid`, at `position`) moved out along it, away from the row it parts from with others, until no

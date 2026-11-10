@@ -164,8 +164,8 @@ public struct ArrowGeometry: Sendable {
             }
             // A parted end (a row's connections to different places, their pills stacked out from the row): moved along its side within
             // its row's band, and straight for as far as its pill sits (`ArrowSpread.startStub`), so the pill stays level with its row.
-            if spread.startShift != 0 { s = Self.moved(s, by: spread.startShift, part: startPart) }
-            if spread.endShift != 0 { e = Self.moved(e, by: spread.endShift, part: endPart) }
+            if spread.startShift != 0 { s = Self.moved(s, by: spread.startShift, keeping: spread.startKeep, part: startPart) }
+            if spread.endShift != 0 { e = Self.moved(e, by: spread.endShift, keeping: spread.endKeep, part: endPart) }
             if s.normal != nil { stubs.start = max(stubs.start, spread.startStub) }
             if e.normal != nil { stubs.end = max(stubs.end, spread.endStub) }
             let chord = e.point - s.point
@@ -361,11 +361,15 @@ public struct ArrowGeometry: Sendable {
         return ((anchor.point + across * (spread * span / 2), normal), normal, stagger)
     }
 
-    /// An end moved `shift` along its side, within its part's band where it has one (`part`: 0.4 of it either way).
-    private static func moved(_ anchor: (point: CGPoint, normal: CGPoint?), by shift: CGFloat, part: CGRect?) -> (point: CGPoint, normal: CGPoint?) {
+    /// An end moved `shift` along its side, within its part's band where it has one (`part`: 0.4 of it either way, or as far as
+    /// keeps something `keep` tall on the line inside it: a pill).
+    private static func moved(_ anchor: (point: CGPoint, normal: CGPoint?), by shift: CGFloat, keeping keep: CGFloat, part: CGRect?) -> (point: CGPoint, normal: CGPoint?) {
         guard let normal = anchor.normal else { return anchor }
         let across = abs(normal.x) >= abs(normal.y) ? CGPoint(x: 0, y: 1) : CGPoint(x: 1, y: 0)
-        let band = part.map { (abs(across.y) > 0 ? $0.height : $0.width) * 0.4 } ?? abs(shift)
+        let band = part.map { rect -> CGFloat in
+            let size = abs(across.y) > 0 ? rect.height : rect.width
+            return keep > 0 ? max(0, (size - keep) / 2) : size * 0.4
+        } ?? abs(shift)
         return (anchor.point + across * max(-band, min(band, shift)), normal)
     }
 
@@ -692,6 +696,9 @@ public struct ArrowSpread: Hashable, Sendable {
     /// a row's connections to different places apart as they leave it, each pill on its own line in the row's band.
     public var startShift: CGFloat = 0
     public var endShift: CGFloat = 0
+    /// How tall what sits on that end's line by its row is (its pill), kept inside the row as the end moves: 0 for nothing.
+    public var startKeep: CGFloat = 0
+    public var endKeep: CGFloat = 0
     public var startStub: CGFloat = 0
     public var endStub: CGFloat = 0
 

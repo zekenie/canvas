@@ -92,10 +92,10 @@ let sixtyScript: String = {
 
 extension EmptyBoardWindow {
     /// E8's board drawn, grouped by prefix with /group-by-prefix on the API (by the keys), then ⌃⌘↑ with nothing selected: every
-    /// shape written as lines folded.
-    func sixtyFolded() throws -> KeyWalk {
+    /// shape written as lines folded. `more`: lines drawn with it.
+    func sixtyFolded(more: String = "") throws -> KeyWalk {
         try turnKitOn()
-        try draw(sixtyScript)
+        try draw(more.isEmpty ? sixtyScript : sixtyScript + "\n" + more)
         let walk = walk()
         editor.selectedShapeIDs = [try require(sixtyAPI(editor)).id]
         walk.press(Chord("/"))
@@ -332,11 +332,13 @@ extension EmptyBoardWindow {
         expectEqual(keys.count, 2)
         let keyEnds = try keys.map { try require(editor.arrowGeometry(of: $0.id)).endHandle }
         expect(abs(keyEnds[0].y - keyEnds[1].y) >= 6, "they meet the row apart: \(keyEnds)")
-        // Level where their bars are (UX walk 3 tables-2), and at angles of their own past them.
-        let ways = try keys.map { try require(editor.arrowGeometry(of: $0.id)).inward(at: .end) }
+        // Level where their bars are (UX walk 3 tables-2), and their bars never on each other (UX walk 4 tables-2): a bar's height
+        // and a gap apart, or one's marks a stub further out.
+        let keyGeometries = try keys.map { try require(editor.arrowGeometry(of: $0.id)) }
+        let ways = keyGeometries.map { $0.inward(at: .end) }
         expect(ways.allSatisfy { abs($0.y) < 1e-6 }, "their bars level: \(ways)")
-        let beyond = try keys.map { try require(editor.arrowGeometry(of: $0.id)).point(40, along: .end).inward }
-        expect(abs(beyond[0].y - beyond[1].y) > 0.2, "and come in at angles of their own past them: \(beyond)")
+        let bars = keyGeometries.map { geometry in [12, 17.5].map { geometry.point($0 + geometry.markOffset.end, along: .end).point } }
+        for p in bars[0] { for q in bars[1] where abs(p.x - q.x) < 4 { expect(abs(p.y - q.y) > 18 + 2.5, "no bars on each other: \(bars)") } }
         // Drawn: each of the four lines is its own stroke of ink, and nothing else is inked a few points beside it.
         let everything = try relations.map { try require(editor.arrowGeometry(of: $0.id)) } + keys.map { try require(editor.arrowGeometry(of: $0.id)) }
         let bounds = try everything.map { try require($0.levelBody).bounds }.reduce(CGRect.null) { $0.union($1) }
@@ -523,6 +525,81 @@ extension EmptyBoardWindow {
         expectEqual(fromA.count, 2)
         let pills = try fromA.map { arrow in try require(editor.shapeContext.geometry(of: arrow.id)?.labelLead, "a pill on \(arrow[ChannelProperty.self] ?? "?")") }
         expect(!pills[0].intersects(pills[1]), "the writes and reads pills apart: \(pills)")
+    },
+    test("UX walk 4 evolve-1: one row's writes and reads to two tables stack their pills in the row's own band, never beside another row's") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        // Far below, as E8's payments is: a pill moved out along a line that falls to it would land beside the rows below.
+        try w.draw(#"""
+            table "orders" columns: "id uuid pk\ntotal_cents int"
+            table "payments" below "orders" (gap: 400) columns: "id uuid pk\namount_cents int"
+            api "orders API" left of "orders" (gap: 300) endpoints: "POST /a\nPOST /b\nPOST /c\nPOST /d"
+            edge "orders API"."POST /a" -> "orders" channel: writes
+            edge "orders API"."POST /b" -> "orders" channel: writes
+            edge "orders API"."POST /c" -> "orders" channel: writes
+            edge "orders API"."POST /a" -> "payments" channel: reads
+            edge "orders API"."POST /d" -> "payments" channel: reads
+            """#)
+        let editor = w.editor
+        w.window.settle()
+        let api = try require(sixtyAPIAny(editor, "orders API"))
+        let row = try require(editor.shapeContext.geometry(of: api.id)?.parts.frame(api.props.endpoints[0].id)?.rect)
+        let arrows = sixtyArrows(editor)
+        let fromA = arrows.filter { $0.props.start.binding?.part == api.props.endpoints[0].id }
+        expectEqual(fromA.count, 2)
+        let pills = try fromA.map { try require(editor.shapeContext.geometry(of: $0.id)?.labelLead) }
+        expect(!pills[0].intersects(pills[1]), "apart: \(pills)")
+        for pill in pills { expect(pill.midY > row.minY && pill.midY < row.maxY, "level with POST /a (\(row.minY) to \(row.maxY)): \(pill)") }
+        let others = try arrows.filter { !fromA.map(\.id).contains($0.id) }.map { try require(editor.shapeContext.geometry(of: $0.id)?.labelLead) }
+        for pill in pills { expect(others.allSatisfy { !$0.intersects(pill) }, "clear of the other rows' pills: \(pill) among \(others)") }
+        // The reads, whose table is farther from the row, nearest it; each line leaves the row on its own, top to bottom as they go.
+        let reads = try require(fromA.firstIndex { $0[ChannelProperty.self] == Reads.id })
+        expect(pills[reads].midX < pills[1 - reads].midX, "the reads nearest the row: \(pills)")
+        let starts = try fromA.map { try require(editor.arrowGeometry(of: $0.id)).start.y }
+        // As far apart as keeps each pill inside the row (24 tall, its pills 18): 6.
+        expect(starts[reads] > starts[1 - reads] + 5, "the reads leaves below the writes: \(starts)")
+    },
+    test("UX walk 4 evolve-1, folded: a closed header's lone reads keeps its pill at the header's line, clear of the bundles' pills") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        _ = try w.sixtyFolded(more: #"edge "orders API"."POST /orders" -> "payments" channel: reads"#)
+        let editor = w.editor
+        let api = try require(sixtyAPI(editor))
+        let header = try require(api.props.endpoints.first { $0.header?.prefix == "/orders" })
+        let line = try require(editor.shapeContext.geometry(of: api.id)?.parts.frame(header.id)?.rect)
+        let arrows = sixtyArrows(editor).filter { editor.shapeContext.geometry(of: $0.id)?.isHidden != true }
+        let lone = try require(arrows.first { $0[ChannelProperty.self] == Reads.id && editor.connectionBundle(of: $0.id)?.count == 1 })
+        let pill = try require(editor.shapeContext.geometry(of: lone.id)?.labelLead)
+        expect(pill.midY > line.minY && pill.midY < line.maxY, "level with /orders (\(line.minY) to \(line.maxY)): \(pill)")
+        let others = arrows.filter { $0.id != lone.id }.compactMap { editor.shapeContext.geometry(of: $0.id)?.labelLead }
+        expect(others.allSatisfy { !$0.intersects(pill.insetBy(dx: -2, dy: -2)) }, "on no bundle's pill: \(pill) among \(others)")
+    },
+    test("UX walk 3 connect-4: a row's pill laid along its line keeps clear of the other lines leaving the row, its lit ring too") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "orders API" endpoints: "GET /orders/{id}\nPOST /orders/{id}/refunds"
+            table "refunds" right of "orders API" (gap: 300) columns: "id uuid pk\namount_cents int"
+            table "payments" below "refunds" (gap: 80) columns: "id uuid pk\namount_cents int"
+            api "Stripe API" below "orders API" (gap: 420) endpoints: "POST /v1/refunds"
+            edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
+            edge "orders API"."POST /orders/{id}/refunds" -> "payments" channel: reads
+            edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
+            """#)
+        let editor = w.editor
+        w.window.settle()
+        let api = try require(sixtyAPIAny(editor, "orders API"))
+        let fromRow = sixtyArrows(editor).filter { $0.props.start.binding?.shapeID == api.id && $0.props.start.binding?.part == api.props.endpoints[1].id }
+        expectEqual(fromRow.count, 3)
+        for arrow in fromRow {
+            guard let pill = editor.shapeContext.geometry(of: arrow.id)?.labelLead else { continue }
+            for other in fromRow where other.id != arrow.id {
+                let line = try require(editor.arrowGeometry(of: other.id))
+                expect(!line.crosses(pill.insetBy(dx: -5, dy: -5).polygon), "\(arrow[ChannelProperty.self] ?? "?")'s pill clear of the \(other[ChannelProperty.self] ?? "?") line: \(pill)")
+            }
+        }
     },
     test("a line to a table as a whole comes in at a row clear of the key ending at its side; a reads arrow at a database's left inset stays inside it") {
         let w = try EmptyBoardWindow()

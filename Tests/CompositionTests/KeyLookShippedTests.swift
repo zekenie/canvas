@@ -120,6 +120,44 @@ private let billing = #"""
             }
         }
     },
+    test("UX walk 4 tables-1 and tables-2: in a 75 gap two keys into one row keep their bars apart, and keys between the two tables cross once, where their ends swap") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\nemail text unique\nname text"
+            table "orders" right of "customers" (gap: 75) columns: "id uuid pk\ncustomer_id uuid? → customers.id\nbilling_customer_id uuid? → customers.email\nshipping_customer_id uuid → customers.id"
+            """#)
+        w.window.settle()
+        let editor = w.editor
+        @MainActor func key(_ column: String) throws -> ArrowGeometry {
+            let orders = try table(editor, "orders"), part = try require(orders.props.columns.first { $0.name == column }?.id)
+            let arrow = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { [$0.props.start.binding?.part, $0.props.end.binding?.part].contains(part) })
+            return try require(editor.arrowGeometry(of: arrow.id))
+        }
+        let (customer, billing, shipping) = (try key("customer_id"), try key("billing_customer_id"), try key("shipping_customer_id"))
+        // At customers.id, the customer and shipping keys' bars (12 and 17.5 out, 9 either side of the line) are never on each other.
+        @MainActor func bars(_ geometry: ArrowGeometry, at end: ArrowEnd) -> [CGPoint] {
+            let offset = end == .start ? geometry.markOffset.start : geometry.markOffset.end
+            return [12, 17.5].map { geometry.point($0 + offset, along: end).point }
+        }
+        @MainActor func idEnd(_ geometry: ArrowGeometry) -> ArrowEnd { geometry.start.x < geometry.end.x ? .start : .end }
+        let a = bars(customer, at: idEnd(customer)), b = bars(shipping, at: idEnd(shipping))
+        for p in a { for q in b where abs(p.x - q.x) < 4 { expect(abs(p.y - q.y) > 18 + 2.5, "no bars on each other at customers.id: \(a) \(b)") } }
+        // billing leaves email (below id) for a row above shipping's: they swap, and cross once; customer and billing keep their order.
+        @MainActor func crossings(_ g: ArrowGeometry, _ h: ArrowGeometry) throws -> Int {
+            let p = try require(g.levelBody).flattened(segments: 160), q = try require(h.levelBody).flattened(segments: 160)
+            func cross(_ o: CGPoint, _ u: CGPoint, _ v: CGPoint) -> CGFloat { (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x) }
+            var count = 0
+            for i in 1..<p.count { for j in 1..<q.count {
+                let d1 = cross(q[j - 1], q[j], p[i - 1]), d2 = cross(q[j - 1], q[j], p[i]), d3 = cross(p[i - 1], p[i], q[j - 1]), d4 = cross(p[i - 1], p[i], q[j])
+                if (d1 > 0) != (d2 > 0), (d3 > 0) != (d4 > 0) { count += 1 }
+            } }
+            return count
+        }
+        expectEqual(try crossings(billing, shipping), 1, "swapped: once")
+        expectEqual(try crossings(customer, billing), 0, "in order: never")
+    },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {
         let editor = try billingEditor()
         let unique = try key(editor, from: "payments", "order_id"), nullable = try key(editor, from: "refunds", "payment_id")
