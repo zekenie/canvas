@@ -27,7 +27,7 @@ final class SelectionState {
     /// the step closes (`settleNudge`).
     @ObservationIgnored var nudged: Nudged?
     private(set) var selectedIDs: [ShapeID] = []
-    /// `selectedIDs`, for asking whether a shape is among them.
+    /// `selectedIDs`, for asking whether a shape is among them (observed through `observeSelection()`).
     @ObservationIgnored private(set) var selectedSet: Set<ShapeID> = []
     /// +1 each time `selectedIDs` changes.
     private(set) var revision = 0
@@ -164,6 +164,9 @@ final class SelectionState {
         faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()
         popoverSources = editor.registry.contributions(to: ShapePopovers.self).map(\.value).reversed()
     }
+
+    /// Tells Observation the selection was read, as reading `selectedIDs` does, for what asks `selectedSet` instead.
+    func observeSelection() { access(keyPath: \.selectedIDs) }
 
     /// Looks for the button under the pointer once every service has settled the change being delivered, at
     /// once outside one (`onceSettled`); asked again before it has, it looks once.
@@ -688,7 +691,15 @@ extension CanvasEditor {
     /// same shapes have been deselected and selected again. Without the Selection plugin, 0.
     public var selectionRevision: Int { selectionState?.revision ?? 0 }
 
-    public func isSelected(_ id: ShapeID) -> Bool { selectedShapeIDs.contains(id) }
+    /// Whether `id` is selected, from the set the selection keeps: a lookup, never a pass over the selection, so a check a
+    /// shape in view (a title bar zoomed out) costs nothing with every shape selected. Observed as reading the selection is (the
+    /// set itself isn't), so what asks it while observing hears the selection change: a hovered shape's row in the table of
+    /// contents, tinted only while its shape isn't selected.
+    public func isSelected(_ id: ShapeID) -> Bool {
+        guard let state = selectionState else { return false }
+        state.observeSelection()
+        return state.selectedSet.contains(id)
+    }
 
     /// Whether going back (`goBack`) would change the selection or the view: there's a place to go back
     /// to whose shapes aren't all gone, and aren't what's selected or, for a place a way around left,
@@ -903,7 +914,9 @@ extension CanvasEditor {
         let outlined = selectedItems.map { held in selectedShapeIDs.filter { $0 != held.shape || editingShapeID == held.shape } } ?? selectedShapeIDs
         // A focused part that stands for a shape (an arrow from the table, ⌥Tab) lights it as a selected one is drawn.
         let lit = selectionState?.focusedPartLights.filter { !outlined.contains($0) } ?? []
-        return Outlines(shapes: outlined + lit, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
+        // The selection handed over as it is where nothing is added: `+` copies it, and a copy each frame makes every lookup
+        // in it a comparison of the whole list (⌘A with 10,000 shapes a hover lights: they added 43 ms to a frame, some 8 since).
+        return Outlines(shapes: lit.isEmpty ? outlined : outlined + lit, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
                         color: selectionOutlineColor)
     }
 

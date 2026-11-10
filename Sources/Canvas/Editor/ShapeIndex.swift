@@ -194,16 +194,8 @@ final class ShapeIndex {
 
     // MARK: Paint order
 
-    /// Whether `id` is painted just below its anchor (`PaintOrderAnchored.paintsBelowAnchor`) in the paint list as it is, brought up
-    /// to date first (one a commit dropped is built again here, so a frame's first answer is never the empty list's, review U9-C5).
-    func paintsBelowAnchor(_ id: ShapeID, in context: ShapeContext) -> Bool {
-        paintList(in: context).belowAnchor.contains(id)
-    }
-
-    /// Whether any shape is painted just below its anchor: nothing to draw over the cards with none, a check that costs nothing.
-    func hasShapesBelowAnchor(in context: ShapeContext) -> Bool { !paintList(in: context).belowAnchor.isEmpty }
-
-    /// The shapes painted just below their anchor.
+    /// The shapes painted just below their anchor (`PaintOrderAnchored.paintsBelowAnchor`) in the paint list as it is, brought up to
+    /// date first (one a commit dropped is built again here, so a frame's first answer is never the empty list's, review U9-C5).
     func belowAnchor(in context: ShapeContext) -> Set<ShapeID> { paintList(in: context).belowAnchor }
 
     /// Up to date: rebuilt if the stack changed, with the extents of whatever else changed redone.

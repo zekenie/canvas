@@ -35,20 +35,30 @@ extension Budget {
     /// about 4 and the marks and link marks about 12 over level arrows with none; the budget some two and a half times the
     /// quiet figure.
     static let levelArrowsFrame = 50.0
-    /// How much more the same frame over 450 level arrows (no channel: no marks) may cost than over 450 plain arrows bound to
+    /// How much more the same frame over 450 level arrows (no channel: no marks) may cost than over 450 plain arrows between
     /// the same points of the same tables (which each render works out again, where a level arrow draws what it keeps). Never
     /// measured before: 31 ms against 26 to 27, release, under load; Core Graphics rasterizes a short cubic about half again as
-    /// slowly as a line (a probe of 450 strokes: 14 to 16 ms against 9 to 10), so the plan's "no worse" is held at 1.3.
-    static let levelArrowsSlack = 1.3
+    /// slowly as a line (a probe of 450 strokes: 14 to 16 ms against 9 to 10), so the plan's "no worse" was held at 1.3 (13.3 ms
+    /// against 10.9 on 2026-11-08). By 2026-11-09 the level frame was 19.4 to 21.2 against 10.8 to 11.6 (release, load 3 to 9),
+    /// all of it Core Graphics stroking the kept paths: the bundles give a level arrow among others at its rows a path of its own
+    /// (K17's fans, U12's partings), which these arrows, several from each row, take. The plain arrows' 66 ms hid it from K17 on
+    /// (bound to the tables as wholes, bowed into arcs as one path: they are free now), so the budget moved from 1.3 to 2.
+    static let levelArrowsSlack = 2.0
     /// A table with 150 keys (of 450 between four tables, nearly every column nullable: a bar and a circle, the line cut inside
     /// it) moved a unit and drawn: the commit that lays the 150 out again and the next frame, the thread's CPU time. Never
     /// measured before: 36 to 40 ms release on 2026-11-07 (46 to 50 under a load of 19), against 20 to 22 for plain arrows and 27
-    /// for level ones with no marks; of it the geometries worked out again are 2.5 ms (below), the rest the frame's rasterizing of
-    /// the marks and link marks, as the pan's frame is. The budget half as much again as the quiet figure.
+    /// for level ones with no marks; of it the geometries worked out again were 2.5 ms (below), the rest the frame's rasterizing
+    /// of the marks and link marks, as the pan's frame is. The budget half as much again as the quiet figure. With the fix
+    /// landings' layout, 33 to 37.8 on 2026-11-09 (release, load 3 to 9), of which the geometries are 8.5 to 11.7, against 28.2
+    /// for level arrows; the plain arrows, free since, stay where they are as the table moves, so theirs is the frame alone.
     static let keyedTableMove = 60.0
     /// The same move and the 450 arrows' geometries worked out again, without the frame: the keys' look asked, their marks and
     /// cut body made. Never measured before: 2.5 ms for keys (1.9 level arrows, 1.3 plain) at both sizes, release, 2026-11-07.
-    static let keyedTableRelay = 10.0
+    /// The fix landings' keys cost more to lay out: a level stub at each marked end (U9), partings and a run's turn columns
+    /// (U12), a run's marks said once and stood clear of each other (U13): 8.5 to 11.7 ms on 2026-11-09 (release, load 1 to 9),
+    /// some 70 µs a key, inside a move and its frame of 33 to 37.8 (`keyedTableMove`, which holds the two at 60); the budget
+    /// moved from 10 to 15.
+    static let keyedTableRelay = 15.0
 }
 
 /// `count` tables of `rows` rows each, laid in a row from `origin`, 360 apart, each titled `t<n>`, and `keys` keys between
@@ -75,9 +85,11 @@ extension Budget {
     return (tables.map(AnyShapeRecord.init), arrows)
 }
 
-/// What the arrows between the tables are: plain arrows bound to the tables as wholes, precisely at the rows' sides (tldraw's,
-/// straight, worked out again by each render); the same bound to the rows, on no channel (level curves, kept); or keys, on
-/// foreign-key (level curves with their marks, and the columns' link marks the key index gives the tables).
+/// What the arrows between the tables are: plain arrows from the rows' sides to the rows' sides, free at both ends (tldraw's,
+/// straight, worked out again by each render; bound to the tables as wholes, as they were, the bundles read the 150 between two
+/// tables as one path since K17 and bowed them apart by 150 slots into arcs thousands of units across, no baseline, so a moved
+/// table leaves them where they are); the same bound to the rows, on no channel (level curves, kept); or keys, on foreign-key
+/// (level curves with their marks, and the columns' link marks the key index gives the tables).
 private enum Arrows450: CaseIterable { case plain, level, keys }
 
 /// Four 40-row tables in a row from `origin`, 360 apart (100 between them), and 450 arrows between neighbors' rows, from row
@@ -92,15 +104,16 @@ private enum Arrows450: CaseIterable { case plain, level, keys }
         table[TitleProperty.self] = "g\(index)"
         tables.append(table)
     }
-    func binding(_ table: ShapeRecord<DatabaseTable>, row: Int, side: CGFloat) -> ArrowBinding {
+    func end(_ table: ShapeRecord<DatabaseTable>, row: Int, side: CGFloat) -> ArrowTerminal {
         let frame = table.props.frame, rect = KitStyle.rowRect(row, in: frame)
+        guard kind != .plain else { return .free(CGPoint(x: frame.minX + side * frame.width, y: rect.midY)) }
         let anchor = CGPoint(x: side, y: (rect.midY - frame.minY) / frame.height)
-        return ArrowBinding(shapeID: table.id, normalizedAnchor: anchor, isPrecise: true, isExact: true, part: kind == .plain ? nil : table.props.columns[row].id)
+        return .bound(ArrowBinding(shapeID: table.id, normalizedAnchor: anchor, isPrecise: true, isExact: true, part: table.props.columns[row].id))
     }
     var arrows: [AnyShapeRecord] = []
     for k in 0..<450 {
         let from = tables[k % 3], to = tables[k % 3 + 1]
-        var arrow = ShapeRecord(Arrow(start: .bound(binding(from, row: (k / 3) % rows, side: 1)), end: .bound(binding(to, row: (k / 7) % rows, side: 0))))
+        var arrow = ShapeRecord(Arrow(start: end(from, row: (k / 3) % rows, side: 1), end: end(to, row: (k / 7) % rows, side: 0)))
         if kind == .keys { arrow[ChannelProperty.self] = ForeignKey.id }
         arrows.append(AnyShapeRecord(arrow))
     }

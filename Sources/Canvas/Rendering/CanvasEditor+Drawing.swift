@@ -76,10 +76,13 @@ extension CanvasEditor {
         var outlines = asked
         let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
         var beneath: [ShapeID: [TintedOutlines]] = [:]
-        if !outlines.tinted.isEmpty {
+        // The set read once a frame, never once a lit shape (each ask brings the paint list up to date), and nothing walked on a
+        // board with no shape painted below its anchor.
+        let belowAnchor = outlines.tinted.isEmpty ? [] : shapeIndex.belowAnchor(in: shapes)
+        if !belowAnchor.isEmpty {
             for index in outlines.tinted.indices {
                 let group = outlines.tinted[index]
-                let under = group.shapes.filter { shapeIndex.paintsBelowAnchor($0, in: shapes) }
+                let under = group.shapes.filter { belowAnchor.contains($0) }
                 guard !under.isEmpty else { continue }
                 for id in under { beneath[id, default: []].append(group) }
                 let lifted = Set(under)
