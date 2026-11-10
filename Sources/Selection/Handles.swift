@@ -54,7 +54,7 @@ extension CanvasEditor {
     /// has none: a press there is a press on the shape. Nor does the shape being edited (an arrow's
     /// label), as in tldraw: its editing view is over them.
     func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
-        guard let id = selection, id != editingShapeID, let record = document[id], !isReadOnly(id) else { return [] }
+        guard let id = selection, id != editingShapeID, id != editingStandIn, let record = document[id], !isReadOnly(id) else { return [] }
         var handles: [(handle: AnyHashable, point: CGPoint)] = []
         if let definition = registry.definition(for: record.kind) as? any HandleProviding {
             handles = definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }

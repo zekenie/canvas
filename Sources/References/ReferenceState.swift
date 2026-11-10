@@ -56,6 +56,10 @@ public final class ReferenceState {
     /// without reading one (each read makes an observation's key path, a cost a frame of a thousand
     /// pills shouldn't pay).
     private var drawnMismatches: [ShapeID: ChannelID?] = [:]
+    /// The references shown as mirrors, on every board the app can show (`ReferenceMirror.swift`), and what each showed
+    /// when it was last laid out: a change to that shape lays the mirror out again.
+    var mirrorIDs: Set<ShapeID> = []
+    var mirrorShows: [ShapeID: ShapeID] = [:]
     /// Following Topology's changes to the edges, for `drawnMismatches`.
     private var following: TopologyFollowing?
     /// The shapes each direct reference's row in the table of contents read its path from (the shapes
@@ -696,6 +700,17 @@ public final class ReferenceState {
     /// What VoiceOver says of a pill: its name, "reference" (the kind), and where its original is, the whole place, never folded
     /// ("in Shop › Policies › Refunds"); a query its words and what it found; a gone original "Deleted" or "Not available".
     func accessibleTraits(of reference: ShapeRecord<Reference>) -> AccessibleTraits {
+        var traits = pillTraits(of: reference)
+        // A mirror is said as its pill is, Mirror in Reference's place, then what its original says of itself.
+        guard reference.props.look == .mirror, let original = mirrorOriginal(of: reference.props, id: reference.id),
+              let described = editor.accessibleDescription(of: original) else { return traits }
+        traits.kind = ReferenceStyle.mirrorKind
+        traits.value = [described.label, described.value].compactMap { $0 }.joined(separator: ". ")
+        return traits
+    }
+
+    /// What VoiceOver says of a reference as its pill shows it.
+    private func pillTraits(of reference: ShapeRecord<Reference>) -> AccessibleTraits {
         let condition = state(of: reference.props, id: reference.id)
         func place(of target: ShapeID) -> String? {
             let steps = placeOfPick(from: reference.id, target)
@@ -842,8 +857,15 @@ extension ReferenceState: EditorService {
         let touched = referencesTouched(by: changes)
         forgetDrawn(changes, touched: touched)
         hearDynamic(changes, touched: touched)
+        hearMirrors(changes, touched: touched)
         // Its row, made again for the reference as it is now, notes what its path reads then.
         for id in touched.keys { forgetPath(of: id) }
+    }
+
+    /// Shapes laid out again with no commit (a type that gained a field, a note being edited): the mirrors that show them
+    /// are laid out again too.
+    public func shapesDidChangeLayout(_ ids: Set<ShapeID>, in editor: CanvasEditor) {
+        layOutMirrors(showing: ids)
     }
 
     /// Editing ended: nothing is being handed off.

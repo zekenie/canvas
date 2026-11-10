@@ -46,12 +46,15 @@ struct TabContent: View, Equatable {
     let editor: CanvasEditor
     let record: AnyShapeRecord
     let isReadOnly: Bool
+    /// What the stand-in shows, whose sections bind that shape (`ResolvedSection.onShown`).
+    var through: ShownThrough?
     let lines: [DetailStatus]
     let sections: [ResolvedSection]
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         MainActor.assumeIsolated {
-            a.record == b.record && a.isReadOnly == b.isReadOnly && a.lines == b.lines && a.sections.map(\.key) == b.sections.map(\.key)
+            a.record == b.record && a.isReadOnly == b.isReadOnly && a.through == b.through && a.lines == b.lines
+                && a.sections.map(\.id) == b.sections.map(\.id)
         }
     }
 
@@ -66,12 +69,14 @@ struct TabContent: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if !sections.isEmpty { Divider() }
             }
-            ForEach(sections, id: \.key) { resolved in
-                SectionView(resolved: resolved, editor: editor, record: record, isReadOnly: isReadOnly,
+            ForEach(sections, id: \.id) { resolved in
+                let onShown = resolved.onShown ? through : nil
+                SectionView(resolved: resolved, editor: editor, record: onShown?.record ?? record,
+                            isReadOnly: isReadOnly || onShown?.isReadOnly == true,
                             isCollapsed: state.isCollapsed(resolved.key),
                             toggle: { state.setCollapsed(resolved.key, !state.isCollapsed(resolved.key)) })
                     .equatable()
-                if resolved.key != sections.last?.key { Divider() }
+                if resolved.id != sections.last?.id { Divider() }
             }
         }
     }

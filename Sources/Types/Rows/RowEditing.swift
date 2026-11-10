@@ -83,9 +83,10 @@ struct EditedRows {
 }
 
 extension RowBook {
-    /// The rows of the shape being used, as they are now; nil for a shape that has none or is a type.
+    /// The rows of the shape being used, as they are now, wherever it is (edited through a mirror, on another board); nil for
+    /// a shape that has none or is a type.
     func editedRows(of id: ShapeID) -> EditedRows? {
-        editor?.document[id].flatMap { editedRows(for: $0) }
+        editor?.shape(inFile: id).flatMap { editedRows(for: $0) }
     }
 
     func editedRows(for record: AnyShapeRecord) -> EditedRows? {

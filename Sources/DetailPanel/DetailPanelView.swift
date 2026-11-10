@@ -125,7 +125,8 @@ public struct DetailPanelView: View {
                     // depth)) and its board (a locked subboard's), so they're read here, on every
                     // commit: the panel below draws again only when they, or its shape, change.
                     ShapePanel(state: state, editor: editor, record: record, isReadOnly: editor.isReadOnly(id),
-                               statuses: state.statuses(of: record), hidden: state.hiddenSections(of: record), contentChanged: reclaimSoon, place: window)
+                               statuses: state.statuses(of: record), hidden: state.hiddenSections(of: record),
+                               through: state.shown(through: id), contentChanged: reclaimSoon, place: window)
                         .equatable()
                         .id(id)
                 } else {
@@ -471,6 +472,8 @@ struct ShapePanel: View, Equatable {
     let isReadOnly: Bool
     let statuses: ShapeStatuses
     let hidden: Set<DetailSectionKey>
+    /// What a stand-in shows (a mirror's original): its tabs follow the stand-in's own, bound to it. Nil for any other shape.
+    let through: ShownThrough?
     let contentChanged: @MainActor () -> Void
     /// Where the panel is in its window: the area under the strip is told to it.
     let place: WindowBox
@@ -478,6 +481,7 @@ struct ShapePanel: View, Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
         MainActor.assumeIsolated {
             a.record == b.record && a.isReadOnly == b.isReadOnly && a.statuses == b.statuses && a.hidden == b.hidden
+                && a.through == b.through
         }
     }
 
@@ -485,7 +489,7 @@ struct ShapePanel: View, Equatable {
         #if DEBUG
         let _ = (state.panelsDrawn += 1)
         #endif
-        let layout = state.layout(for: record, statuses: statuses.tabs, hidden: hidden)
+        let layout = state.layout(for: record, statuses: statuses.tabs, hidden: hidden, through: through)
         let current = state.currentTab(in: layout, for: record.kind)
         let sections = current.map { layout.resolved(in: $0) } ?? []
         let lines = current.map { layout.statuses(in: $0) } ?? []
@@ -507,7 +511,7 @@ struct ShapePanel: View, Equatable {
                 }
                 Divider()
                 ScrollView {
-                    TabContent(state: state, editor: editor, record: record, isReadOnly: isReadOnly, lines: lines, sections: sections)
+                    TabContent(state: state, editor: editor, record: record, isReadOnly: isReadOnly, through: through, lines: lines, sections: sections)
                         .equatable()
                 }
                 .background(ContentReader(box: place))

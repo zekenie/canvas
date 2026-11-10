@@ -47,6 +47,8 @@ public struct Registry {
     /// Those drawn as a line (`StrokedShape`), found once: a tinted outline of an open shape is
     /// stroked to cover its line, and asks only these.
     let strokedShapes: [ShapeKind: any StrokedShape]
+    /// Kinds whose shapes show another shape in their place (`ShowingShapes`: a mirror), found once.
+    let showingShapes: [ShapeKind: any ShowingShapes]
     /// Kinds laid out at another size than their box (`LaidOutBox`), found once: every shape's frame asks.
     let laidOutBoxes: [ShapeKind: any LaidOutBox]
     /// Kinds whose shapes take a frame they're given their own way (`CustomSizing`), found once.
@@ -123,6 +125,7 @@ public struct Registry {
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         strokedShapes = definitions.compactMapValues { $0 as? any StrokedShape }
+        showingShapes = definitions.compactMapValues { $0 as? any ShowingShapes }
         layoutProviders = Dictionary((byPoint[ObjectIdentifier(CorePoints.LayoutProviders.self)] ?? []).map {
             let provider = $0.value as! LayoutProvider
             return (provider.name, provider)

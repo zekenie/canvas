@@ -490,7 +490,7 @@ public final class RowBook {
     /// The extent as it is while the shape is edited (`true`) or at rest (`false`): the same rows, with or without the lead and
     /// the words' line editing gives. A kind that lays a press made at rest out against the rows edited asks both.
     public func extent(ofShape id: ShapeID, edited: Bool) -> RowsExtent? {
-        editor?.document[id].flatMap { extent(of: $0, edited: edited) }
+        editor?.shape(inFile: id).flatMap { extent(of: $0, edited: edited) }
     }
 
     private func extent(of record: AnyShapeRecord, edited: Bool) -> RowsExtent? {
@@ -559,9 +559,10 @@ public final class RowBook {
 
     // MARK: The rows as shown
 
-    /// Where the shape's rows are drawn on the board shown (its kind's `typeRows(drawnIn:)`), world units.
+    /// Where the shape's rows are drawn (its kind's `typeRows(drawnIn:)`), in the world units of its board: the board shown's,
+    /// or another's for a shape edited through a mirror there.
     public func rowsRect(of id: ShapeID) -> CGRect? {
-        editor?.document[id].flatMap { rowsRect(of: $0) }
+        editor?.shape(inFile: id).flatMap { rowsRect(of: $0) }
     }
 
     func rowsRect(of record: AnyShapeRecord) -> CGRect? {
@@ -572,7 +573,7 @@ public final class RowBook {
     /// The rows as they are drawn now, top to bottom, with their rects (world units): tests, the gallery.
     /// Empty for a shape with none, and for a type's note not showing `.rows`.
     public func rows(of id: ShapeID) -> [ShownRow] {
-        guard let editor, let record = editor.document[id], let subject = subject(of: record), kinds.contains(record.kind),
+        guard let editor, let record = editor.shape(inFile: id), let subject = subject(of: record), kinds.contains(record.kind),
               let block = rowsRect(of: id) else { return [] }
         let template = template(subject)
         if !subject.isType {

@@ -891,7 +891,7 @@ extension RowBook {
     /// the kind's editing view (it calls `reposition()` as the editing view changes size). Nil for a kind
     /// that shows no rows. The book keeps one: the session's.
     public func makeRowsView(for shape: ShapeID, host: RowsHost) -> RowsView? {
-        guard let record = editor?.document[shape], kinds.contains(record.kind) else { return nil }
+        guard let record = editor?.shape(inFile: shape), kinds.contains(record.kind) else { return nil }
         let view = RowsView(shape: shape, book: self, host: host)
         rowsView = view
         return view

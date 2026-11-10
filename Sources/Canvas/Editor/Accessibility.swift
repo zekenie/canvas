@@ -22,9 +22,14 @@ public struct AccessibleTraits: Sendable, Equatable {
     public var states: [String]
     /// What can be done with it, said after a pause. The first plugin's that says one.
     public var help: String?
+    /// What it is said to be in its kind's label's place ("Mirror", for a reference shown as one): the first plugin's that
+    /// says one; nil, its kind's label.
+    public var kind: String?
 
-    public init(name: String? = nil, labelParts: [String] = [], value: String? = nil, states: [String] = [], help: String? = nil) {
+    public init(name: String? = nil, kind: String? = nil, labelParts: [String] = [], value: String? = nil, states: [String] = [],
+                help: String? = nil) {
         self.name = name
+        self.kind = kind
         self.labelParts = labelParts
         self.value = value
         self.states = states
@@ -139,16 +144,21 @@ extension CanvasEditor {
     }
 
     /// What VoiceOver says of a shape: every plugin's traits that reach its kind joined (the first
-    /// name, value and help; every label part and state), after its kind's label: "Checkout, Note,
-    /// Person, locked". A shape kept aside is its kind alone. Worked out each time it's asked.
+    /// name, value and help; every label part and state), after its kind's label (or what the first
+    /// plugin says it is in that place: "Mirror"): "Checkout, Note, Person, locked". A shape kept aside
+    /// is its kind alone. Worked out each time it's asked.
     public func accessibleDescription(of record: AnyShapeRecord) -> AccessibleDescription {
-        let kind = registry.label(of: record.kind).name
+        var kind = registry.label(of: record.kind).name, kindSaid = false
         var name: String?, value: String?, help: String?
         var parts: [String] = [], states: [String] = []
         if !record.isOpaque {
             for describe in registry.contributions(to: CorePoints.ShapeAccessibility.self, for: record.kind) {
                 guard let traits = describe(record, self) else { continue }
                 if name == nil, let said = Self.said(traits.name) { name = said }
+                if !kindSaid, let said = Self.said(traits.kind) {
+                    kind = said
+                    kindSaid = true
+                }
                 if value == nil, let said = Self.said(traits.value) { value = said }
                 if help == nil, let said = Self.said(traits.help) { help = said }
                 parts += traits.labelParts.compactMap(Self.said)

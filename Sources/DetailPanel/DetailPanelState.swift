@@ -36,6 +36,10 @@ public struct DetailLayout {
     /// The tab's shown sections, in order: the kind's own, then every-box ones, each in plugin order.
     public func sections(in tab: DetailTabID) -> [DetailSectionKey] { resolved(in: tab).map(\.key) }
 
+    /// Of the tab's shown sections, those of the shape the stand-in shows (a mirror's original), which come after the
+    /// stand-in's own.
+    public func sectionsShownThrough(in tab: DetailTabID) -> [DetailSectionKey] { resolved(in: tab).filter(\.onShown).map(\.key) }
+
     func resolved(in tab: DetailTabID) -> [ResolvedSection] { sectionsByTab[tab] ?? [] }
 
     /// The tab's status lines (`DetailStatuses`), shown above its sections: the kind's
@@ -65,6 +69,25 @@ struct ShapeStatuses: Equatable {
 struct ResolvedSection {
     let key: DetailSectionKey
     let section: ErasedSection
+    /// The section is the shape shown through the selected stand-in's, not the stand-in's own: it binds that shape.
+    var onShown = false
+
+    /// What a list of sections is keyed by: a stand-in and the shape it shows may both have a section under one key.
+    struct ID: Hashable {
+        let key: DetailSectionKey
+        let onShown: Bool
+    }
+    var id: ID { ID(key: key, onShown: onShown) }
+}
+
+/// What the panel of a stand-in that shows another shape reads of that shape (`CanvasEditor.shown(through:)`): its record,
+/// status lines, the sections `shownWhile` hides and whether it can change, read once on every commit, as the stand-in's
+/// own are, so the panel draws again for the original's commits wherever it is and for no other.
+struct ShownThrough: Equatable {
+    let record: AnyShapeRecord
+    let statuses: [ShapeStatuses.TabLines]
+    let hidden: Set<DetailSectionKey>
+    let isReadOnly: Bool
 }
 
 /// Per editor (so per window): each kind's contributions, gathered once (the registry is frozen),
@@ -103,19 +126,57 @@ public final class DetailPanelState {
         layout(for: record, statuses: statuses(of: record).tabs, hidden: hiddenSections(of: record))
     }
 
-    /// With the shape's status lines for tabs, and the sections `shownWhile` hides, read already.
-    func layout(for record: AnyShapeRecord, statuses: [ShapeStatuses.TabLines], hidden: Set<DetailSectionKey>) -> DetailLayout {
+    /// What the panel shows for the shape `id`: its own layout, and, when it's a stand-in that shows another shape
+    /// (`editor.shown(through:)`: a reference expanded into a mirror), then that shape's tabs, their sections bound to it.
+    /// Nil for no such shape.
+    public func panelLayout(for id: ShapeID) -> DetailLayout? {
+        guard let record = editor.document[id] else { return nil }
+        return layout(for: record, statuses: statuses(of: record).tabs, hidden: hiddenSections(of: record), through: shown(through: id))
+    }
+
+    /// What the stand-in shows, read for its panel; nil for a shape that shows none now.
+    func shown(through id: ShapeID) -> ShownThrough? {
+        guard let (shownID, _) = editor.shown(through: id), let record = editor.shape(inFile: shownID) else { return nil }
+        return ShownThrough(record: record, statuses: statuses(of: record).tabs, hidden: hiddenSections(of: record),
+                            isReadOnly: editor.isReadOnly(inFile: shownID))
+    }
+
+    /// With the shape's status lines for tabs, and the sections `shownWhile` hides, read already; and, for a stand-in, what
+    /// it shows: the stand-in's own tabs that shape's panel doesn't have (a reference's Reference), then that shape's tabs,
+    /// so a tab both have (Connections, every shape's) is the shape's alone, said once.
+    func layout(for record: AnyShapeRecord, statuses: [ShapeStatuses.TabLines], hidden: Set<DetailSectionKey>,
+                through: ShownThrough? = nil) -> DetailLayout {
         let all = candidates[record.kind] ?? resolve(record.kind)
         let shown = all.sections.filter { $0.section.isShown(record) && !hidden.contains($0.key) }
-        var firstSeen: [DetailTabID] = []
-        for tab in shown.map(\.key.tab) + statuses.map(\.tab) where !firstSeen.contains(tab) { firstSeen.append(tab) }
-        let tabs = OrderRule.arranged(firstSeen) { ($0.anchor, $0.order) }
+        let tabs = arranged(shown, statuses)
+        var sectionsByTab = Dictionary(grouping: shown, by: \.key.tab)
+        var statusesByTab = Dictionary(uniqueKeysWithValues: statuses.map { ($0.tab, $0.lines) })
+        var allTabs = tabs
+        if let through {
+            let original = candidates[through.record.kind] ?? resolve(through.record.kind)
+            let more = original.sections.filter { $0.section.isShown(through.record) && !through.hidden.contains($0.key) }
+                .map { var section = $0; section.onShown = true; return section }
+            let theirs = arranged(more, through.statuses)
+            allTabs = tabs.filter { !theirs.contains($0) } + theirs
+            for tab in theirs {
+                sectionsByTab[tab] = nil
+                statusesByTab[tab] = nil
+            }
+            for (tab, sections) in Dictionary(grouping: more, by: \.key.tab) { sectionsByTab[tab] = sections }
+            for lines in through.statuses { statusesByTab[lines.tab, default: []] += lines.lines }
+        }
         // The kind's header, else the kind's label (`registry.label(of:)`).
         let label = editor.registry.label(of: record.kind)
         let header = all.headers.lazy.compactMap { [editor] in $0(record, editor) }.first ?? ResolvedHeader(DetailHeader(label.name))
-        return DetailLayout(resolvedHeader: header, kindName: label.name, kindSymbol: label.systemImage, tabs: tabs,
-                            sectionsByTab: Dictionary(grouping: shown, by: \.key.tab),
-                            statusesByTab: Dictionary(uniqueKeysWithValues: statuses.map { ($0.tab, $0.lines) }))
+        return DetailLayout(resolvedHeader: header, kindName: label.name, kindSymbol: label.systemImage, tabs: allTabs,
+                            sectionsByTab: sectionsByTab, statusesByTab: statusesByTab)
+    }
+
+    /// The tabs sections and status lines fill, each where its `order` puts it, counted from where it first appears.
+    private func arranged(_ sections: [ResolvedSection], _ statuses: [ShapeStatuses.TabLines]) -> [DetailTabID] {
+        var firstSeen: [DetailTabID] = []
+        for tab in sections.map(\.key.tab) + statuses.map(\.tab) where !firstSeen.contains(tab) { firstSeen.append(tab) }
+        return OrderRule.arranged(firstSeen) { ($0.anchor, $0.order) }
     }
 
     /// The kind's own contributions, then those whose scope reaches it, each in plugin order. Once per
@@ -206,7 +267,7 @@ public final class DetailPanelState {
     private func shownTabs() -> (kind: ShapeKind, tabs: [DetailTabID], index: Int)? {
         guard editor.selectedShapeIDs.count == 1, let id = editor.selection, let record = editor.document[id],
               editor.registry.activeDetailTakeover(in: editor) == nil else { return nil }
-        let layout = layout(for: record)
+        guard let layout = panelLayout(for: id) else { return nil }
         guard layout.tabs.count > 1, let current = currentTab(in: layout, for: record.kind),
               let index = layout.tabs.firstIndex(of: current) else { return nil }
         return (record.kind, layout.tabs, index)

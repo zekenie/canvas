@@ -255,6 +255,12 @@ public final class CanvasEditor {
         }
     }
     public private(set) var editingShapeID: ShapeID?
+    /// The shape on the board shown that the shape being edited is edited through, where a stand-in shows it in its place
+    /// (`beginEditing(_:through:at:clickCount:)`: a mirror of its original); nil for a shape edited where it is. The shape
+    /// edited is then on any board (`shape(inFile:)`), its view laid over the stand-in (`editingFrame`).
+    public private(set) var editingStandIn: ShapeID?
+    /// The kind of the shape edited through a stand-in, as editing began: a commit that turns it into another ends editing.
+    @ObservationIgnored var editingThroughKind: ShapeKind?
     /// While a shape is edited, where the press that began it was, in world units
     /// (`beginEditing(_:at:)`); nil if none said, and once editing ends.
     public private(set) var editingStartPoint: CGPoint?
@@ -335,6 +341,8 @@ public final class CanvasEditor {
     /// The indexes of the boards shown lately, for when they're shown again (while they haven't
     /// changed).
     @ObservationIgnored var warmIndexes = BoardStash<ShapeIndex>()
+    /// What drawing shapes in another shape's place keeps of the boards they're on (`RenderContext.drawShape(inFile:…)`).
+    @ObservationIgnored let shownBoards = ShownBoards()
     /// Where the camera was on each board shown this session, as it was left.
     @ObservationIgnored private var leftCameras: [BoardID: Camera] = [:]
     /// The boards left this session, in the order they were last left (`boardsLeft`).
@@ -929,6 +937,7 @@ public final class CanvasEditor {
         // After what services saved as they heard it: a board the file had then has a revision past it.
         newFile.restamp(after: storedFile)
         warmIndexes.removeAll()
+        shownBoards.removeAll()
         laidOutSizes.forgetAll()
         let fileValues = newFile.fileValues.keysDiffering(from: storedFile.fileValues)
         if target == board {
@@ -1120,7 +1129,8 @@ public final class CanvasEditor {
 
     /// The shown board is now `newDocument`, `changes` from what it was: everything that follows it.
     private func documentDidChange(to newDocument: CanvasDocument, changes: ChangeSet) {
-        // What the shape being edited was, for its editing view is that kind's.
+        // What the shape being edited was, for its editing view is that kind's (one edited through a stand-in keeps its
+        // kind as editing began: `editingThroughKind`).
         let editedKind = editingShapeID.flatMap { storedDocument[$0]?.kind }
         withMutation(keyPath: \.document) { storedDocument = newDocument }
         revision += 1
@@ -1143,7 +1153,10 @@ public final class CanvasEditor {
         hintedShapeID = hintedID
         // A shape that's gone, can no longer change (it, a container it's in, or its board), or is of
         // another kind now (turned, `Transaction.turn`), isn't edited.
-        if let editing = editingShapeID,
+        // One edited through a stand-in, likewise, and while the stand-in is still there showing it, neither read-only.
+        if editingStandIn != nil {
+            if !editingThroughStandInHolds() { endEditing(discarding: false) }
+        } else if let editing = editingShapeID,
            document[editing].map({ isBoardReadOnly || registry.isReadOnly($0, in: newDocument) || $0.kind != editedKind }) ?? true {
             endEditing(discarding: false)
         }
@@ -1611,6 +1624,41 @@ public final class CanvasEditor {
         return true
     }
 
+    /// Edits a shape where a stand-in on the board shown shows it (`placement(of:through:)`): its kind's own editing view,
+    /// laid over where the stand-in draws it, at the stand-in's scale (`editingFrame`), writing the shape on whichever board
+    /// it is (`EditContext.update`), in an editing step made on the board shown, so ⌘Z here takes it back without leaving.
+    /// `point` is where the press that began it was, in the board shown's world units (the view reads it in the shape's own,
+    /// `EditContext.startPoint`). Returns false for a shape the stand-in doesn't show, one kept aside or of a kind that isn't
+    /// `Editable`; and for a read-only stand-in or shape, which is refused: the stand-in shakes, the one the person sees
+    /// (services hear it, `didRefuseChanges`). Editing ends as it does for any shape, and with the stand-in: gone, read-only,
+    /// or no longer showing it.
+    @discardableResult
+    public func beginEditing(_ id: ShapeID, through standIn: ShapeID, at point: CGPoint? = nil, clickCount: Int = 1) -> Bool {
+        guard standIn != id else { return beginEditing(id, at: point, clickCount: clickCount) }
+        endEditing()
+        guard let transform = placement(of: id, through: standIn), let record = shape(inFile: id), !record.isOpaque,
+              let definition = registry.definition(for: record.kind) as? any Editable else { return false }
+        guard !isReadOnly(standIn), !isReadOnly(inFile: id) else {
+            refuseChanges(to: [standIn])
+            return false
+        }
+        letWaitingShapesGo()
+        editingStartPoint = point.map { $0.applying(transform.inverted()) }
+        editingStartClickCount = point == nil ? 1 : clickCount
+        editingShapeID = id
+        editingStandIn = standIn
+        editingThroughKind = record.kind
+        // Laid out afresh as editing begins, as any shape edited is (`beginEditing(_:at:clickCount:)`), and the stand-in
+        // with it: it's drawn in full under the editing view.
+        shapesDidChangeLayout([id, standIn])
+        undoHistory.editingBegan(stepName: definition.editingStepName)
+        dismissPopover()
+        closeCard(.editing)
+        delegate?.editorEditingDidChange(self)
+        setNeedsDisplay()
+        return true
+    }
+
     /// The text selected in the shape being edited's view, while one is edited and its view is text
     /// with something selected (nil otherwise, and with no view: headless): what a search seeds its
     /// query with, as a browser's ⌘F takes what's selected.
@@ -1630,11 +1678,15 @@ public final class CanvasEditor {
         // While the editing view still stands, so the keyboard goes back to it, and the host then
         // takes it from there.
         closeCard(.editing)
-        let mayDiscard = discarding && !undoHistory.isInAction
+        // A shape edited through a stand-in is never discarded from there: it's another board's, whole without it.
+        let standIn = editingStandIn
+        let mayDiscard = discarding && !undoHistory.isInAction && standIn == nil
         editingShapeID = nil
+        editingStandIn = nil
+        editingThroughKind = nil
         editingStartPoint = nil
         editingStartClickCount = 1
-        shapesDidChangeLayout([id])
+        shapesDidChangeLayout(standIn.map { [id, $0] } ?? [id])
         dismissPopover()
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
@@ -1644,6 +1696,11 @@ public final class CanvasEditor {
         }
         undoHistory.editingEnded()
         for service in serviceOrder { service.editingDidEnd(id, in: self) }
+    }
+
+    /// Every service hears shapes laid out again with no commit (`shapesDidChangeLayout`), in order.
+    func tellShapesDidChangeLayout(_ ids: Set<ShapeID>) {
+        for service in serviceOrder { service.shapesDidChangeLayout(ids, in: self) }
     }
 
     // MARK: Hit testing and order

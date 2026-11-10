@@ -118,7 +118,7 @@ extension CanvasEditor {
         guard session == nil, let box = editingFrame(of: id) else { return }
         let view = unobscuredViewport.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
         guard view.width > 0, view.height > 0 else { return }
-        let delta = Self.shift(bringing: camera.toView(rect.offsetBy(dx: box.minX, dy: box.minY)), into: view)
+        let delta = Self.shift(bringing: camera.toView(shownOnBoard(rect.offsetBy(dx: box.minX, dy: box.minY))), into: view)
         guard delta != .zero else { return }
         camera.pan(by: delta)
     }

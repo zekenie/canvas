@@ -5,4 +5,4 @@ import TestKit
 // stops while the screen is locked or asleep: here it scrolls at once.
 UserDefaults.standard.setVolatileDomain(["NSScrollAnimationEnabled": false], forName: UserDefaults.argumentDomain)
 runTests([layoutTests, bindingTests, propertySectionTests, stateTests, windowTests, readOnlyPanelTests, textViewTests, coalescingTests, boardPanelTests,
-          textBoxTests, shownWhileTests, completionTests, takeoverTests, listRowTests, panelWalkTests, boardHeadingTests, tabViewTests, titleRowPanelTests, placeLineTests])
+          textBoxTests, shownWhileTests, completionTests, takeoverTests, listRowTests, panelWalkTests, boardHeadingTests, tabViewTests, titleRowPanelTests, placeLineTests, shownThroughPanelTests])

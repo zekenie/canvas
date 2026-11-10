@@ -49,6 +49,15 @@ extension Editable {
     }
 }
 
+extension ShowingShapes {
+    func erasedShownShape(of record: AnyShapeRecord, in context: ShapeContext) -> ShapeID? {
+        record.typed(as: Props.self).flatMap { shownShape(of: $0, in: context) }
+    }
+    func erasedShownTransform(of record: AnyShapeRecord, in context: ShapeContext) -> CGAffineTransform? {
+        record.typed(as: Props.self).flatMap { shownTransform(of: $0, in: context) }
+    }
+}
+
 extension LaidOutBox {
     func erasedLaidOut(of record: AnyShapeRecord, in context: ShapeContext) -> LaidOutSize? {
         record.typed(as: Props.self).map { LaidOutSize(size: laidOutSize(of: $0, in: context), anchor: laidOutAnchor(of: $0, in: context)) }

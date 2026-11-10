@@ -85,7 +85,7 @@ import Types
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let directory = "Tests/CompositionTests/Fixtures/kinds"
-        expectEqual(codec.version(of: Reference.kind), 1)
+        expectEqual(codec.version(of: Reference.kind), 2)
         let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/reference.v0.json"))
         let old = try require(codec.decodeRecord(props: before, kind: Reference.kind, version: 0).typed(as: Reference.self))
         expectEqual(old.props.frame, CGRect(x: 0, y: -4, width: 160, height: 40), "32 tall at y 0 is 40 tall at y -4: the same middle")
@@ -95,6 +95,18 @@ import Types
         let now = try require(codec.decodeRecord(props: data, kind: Reference.kind, version: 1).typed(as: Reference.self))
         expectEqual(now.props.frame, CGRect(x: 0, y: 0, width: 160, height: 40))
         expectEqual(now.props.words, "every note")
+        expectEqual(now.props.look, .pill, "a pill before mirrors")
+        expectEqual(now.props.scale, 1)
+    },
+    // Since its second version a reference may be a mirror: its look and its scale.
+    test("a reference's fixture of mirrors reads its look and its scale") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/kinds/reference.v2.json"))
+        let mirror = try require(codec.decodeRecord(props: data, kind: Reference.kind, version: 2).typed(as: Reference.self))
+        expectEqual(mirror.props.look, .mirror)
+        expectEqual(mirror.props.scale, 0.6)
+        expectEqual(mirror.props.frame, CGRect(x: 0, y: 0, width: 160, height: 40), "its frame is the pill's")
     },
     // A type's schema (Types' added property) is its text, one string, whose `$ref`s to other types
     // name them, as a note's mentions do.

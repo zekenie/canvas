@@ -56,7 +56,9 @@ Called Reference, placed by the Reference tool
 |---|---|
 | `all` | true\|false |
 | `locked` | true\|false |
+| `look` | pill\|mirror |
 | `query` | text (≤ 8192) |
+| `scale` | number 0.1…4 |
 
 **edges**: none
 

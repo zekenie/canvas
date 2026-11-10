@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Geometry
 import Palette
 import Publishing
 
@@ -17,14 +18,41 @@ extension ReferenceDefinition: ShapeDefinition {
         let handsOff = context.isEditing && state?.isHandingOff(shape.id) == true
         // The place and the colors it wears are kept with the condition, so a frame looks up neither for a pill again.
         let colors = state?.drawnColors(of: shape, standing)
+        // A mirror: the mat and its original under the pill, which is drawn over them as ever.
+        if shape.props.look == .mirror { _ = drawMirror(shape, colors: colors, state: state, skeleton: false, in: context) }
         let look = context.isEditing ? ReferenceLook(editing: standing, handsOff: handsOff, colors: colors)
             : ReferenceLook(standing, mismatch: state?.drawnMismatch(of: shape.id) != nil,
                             place: state?.drawnPlace(for: standing, of: shape), colors: colors)
         draw(look, in: shape.frame, editing: context.isEditing, context)
     }
 
+    /// A pill's frame is its box; a mirror's, the pill and the mat it's laid out in (`LaidOutBox`).
+    func geometry(of shape: ShapeRecord<Reference>, in context: ShapeContext) -> ShapeGeometry {
+        let frame = context.frame(of: shape)
+        return ShapeGeometry(outline: frame.polygon, bounds: frame)
+    }
+
+    /// A pill's capsule; a mirror's laid-out frame, its corners the mat's.
     func indicatorPath(of shape: ShapeRecord<Reference>, in context: ShapeContext) -> CGPath {
-        ReferenceStyle.capsule(shape.frame)
+        guard let mat = Self.mat(of: shape, in: context) else { return ReferenceStyle.capsule(shape.frame) }
+        let frame = CGRect(x: mat.minX, y: shape.frame.minY, width: mat.width, height: mat.maxY - shape.frame.minY)
+        let radius = ReferenceStyle.mirrorRadius
+        return CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    /// A pill is hit inside its box; a mirror on its pill or its mat, not beside the pill above the mat.
+    func hitTest(_ point: CGPoint, on shape: ShapeRecord<Reference>, in context: ShapeContext) -> Bool {
+        guard let mat = Self.mat(of: shape, in: context) else { return polygonContains(shape.frame.polygon, point) }
+        return mat.contains(point) || ReferenceStyle.capsule(shape.frame).contains(point)
+    }
+
+    /// The mat of a reference laid out as a mirror (its kept laid-out frame, under the pill's middle); nil for a pill, and for
+    /// a mirror that shows nothing now, which is laid out as its pill.
+    static func mat(of shape: ShapeRecord<Reference>, in context: ShapeContext) -> CGRect? {
+        guard shape.props.look == .mirror else { return nil }
+        let frame = context.frame(of: shape), pill = shape.frame
+        guard frame != pill, frame.maxY > pill.midY else { return nil }
+        return CGRect(x: frame.minX, y: pill.midY, width: frame.width, height: frame.maxY - pill.midY)
     }
 }
 
@@ -39,6 +67,8 @@ extension ReferenceDefinition: CustomSkeleton {
         let asks = shape.props.mode == .dynamic
         let nothing = ReferenceCondition.standsForNothing(shape.props, status: asks ? state?.answer(of: shape.id) : nil,
                                                           registry: context.shapes.registry, lookup: { context.shape(inFile: $0) })
+        // A mirror zoomed out: its mat and its original's skeleton, quieted, under the pill's block.
+        if shape.props.look == .mirror { _ = drawMirror(shape, colors: state?.skeletonColors(of: shape), state: state, skeleton: true, in: context) }
         if let colors = state?.skeletonColors(of: shape) {
             cg.setFillColor(colors.parts(dark: ReferenceStyle.surface.dark).skeleton)
             cg.setAlpha(nothing ? ReferenceStyle.missingStrength : 1)
@@ -63,6 +93,9 @@ extension ReferenceDefinition: Editable {
     }
 
     func discardsWhenEditingEnds(_ props: Reference) -> Bool { props.mode == .empty }
+
+    /// The pill's own editor is over the pill, a mirror's too (its original is edited through it, `ShowingShapes`).
+    func editingFrame(of shape: ShapeRecord<Reference>, in context: ShapeContext) -> CGRect? { shape.frame }
 
     var editingStepName: String? { "Edit Reference" }
 }

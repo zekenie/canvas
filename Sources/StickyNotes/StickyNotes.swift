@@ -479,7 +479,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     /// A new note beside this one, edited; editing ends here (⇧↩ in the words or in a row).
     private func addNoteBeside() {
         let id = context.shapeID
-        guard let hops = context.service(NoteHops.self) else { return }
+        guard let hops = context.service(NoteHops.self), !hops.refusesThroughStandIn() else { return }
         context.end()
         hops.addNote(beside: id)
     }

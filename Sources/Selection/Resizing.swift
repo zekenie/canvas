@@ -378,7 +378,7 @@ extension CanvasEditor {
     /// anywhere along a side whose handle shows, from just inside it to just past the outline drawn off it
     /// (`ResizeHandle.side`). Nil off them, and where the shape has no resize handles (`visibleHandles`).
     func resizeSide(atViewPoint point: CGPoint) -> ResizeHandle? {
-        guard let id = selection, id != editingShapeID, let record = document[id], let box = resizeFrame(of: record),
+        guard let id = selection, id != editingShapeID, id != editingStandIn, let record = document[id], let box = resizeFrame(of: record),
               !isReadOnly(id) else { return nil }
         return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap)
     }
@@ -386,7 +386,7 @@ extension CanvasEditor {
     /// The only selected shape's resize handles as parts (`ResizeHandle.parts`): those shown on its frame, as
     /// `visibleHandles` shows them; none on a shape not selected alone, a read-only one, or one being edited.
     func resizeHandleParts(of shape: AnyShapeRecord) -> [ShapePart] {
-        guard selection == shape.id, editingShapeID != shape.id, !isReadOnly(shape.id), let box = resizeFrame(of: shape) else { return [] }
+        guard selection == shape.id, editingShapeID != shape.id, editingStandIn != shape.id, !isReadOnly(shape.id), let box = resizeFrame(of: shape) else { return [] }
         let id = shape.id, radius = SelectionStyle.handleRadius / camera.zoom
         return ResizeHandle.shown(on: camera.toView(box)).map { handle in
             let point = handle.point(on: box)

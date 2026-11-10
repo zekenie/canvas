@@ -88,7 +88,7 @@ The other way round, the shapes with a `stands-for` edge from a reference are wh
 :edge-from(#00000000-0000-4000-8000-000000000005, stands-for)
 ```
 
-A reference has no title, so a query names it by its kind, or by the `id` of its row (`#00000000-…`), and its row says nothing else of it in `title`. `properties` has what it holds: `target` (the `id` and the `label`, the name it had when it was picked, of the shape it names, for a direct one), `words` (what was typed), `query` (once it has one) and `all` (every match, or the first).
+A reference has no title, so a query names it by its kind, or by the `id` of its row (`#00000000-…`), and its row says nothing else of it in `title`. `properties` has what it holds: `target` (the `id` and the `label`, the name it had when it was picked, of the shape it names, for a direct one), `words` (what was typed), `query` (once it has one), `all` (every match, or the first), `look` (`pill` or `mirror`) and `scale` (how big a mirror draws what it stands for, 1 being its size). A reference reads as any shape's attributes do: `reference[look="mirror"]` is the ones expanded into mirrors, `reference[scale>0.5]` the ones drawn bigger than half size, and `reference[look="pill"]` the rest.
 
 ## Which shapes can be stood for
 
@@ -129,4 +129,4 @@ A private shape can't be stood for, so `via:` for one is refused:
 edge "Checkout" -> "Drafts" via: reference
 ```
 
-What a script writes on a statement of a reference's own is `query:`, a query in the language of [query.md](query.md), and `all:`, and the app refuses a query it can't read, or one that reads what the person is doing. Its row gives the new reference's `id`, which a later script draws arrows into, restates and deletes it by. See [language.md](language.md#references).
+What a script writes on a statement of a reference's own is `query:`, a query in the language of [query.md](query.md), `all:`, and `look:` and `scale:` (`look: mirror` draws what it stands for again under the pill, live; a mirror shows a direct reference's shape, or a first match, so a pill that stands for every match, `all: true`, stays a pill whatever its look; a `look` that isn't `pill` or `mirror` is `invalid_value`, and a `scale` past `0.1` to `4` is drawn with a warning). A direct pill, the stand-in of an edge, takes none of them: its id is `invalid_value`, and `look:` on its edge is `unknown_attribute`. To mirror one shape, draw a reference of its own with a query that finds it alone, by its id (`reference right of "Checkout" query: "#<id>" look: mirror scale: 0.5`). The app refuses a query it can't read, or one that reads what the person is doing. Its row gives the new reference's `id`, which a later script draws arrows into, restates and deletes it by. See [language.md](language.md#references).

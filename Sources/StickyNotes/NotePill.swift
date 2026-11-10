@@ -32,7 +32,7 @@ extension StickyNoteDefinition {
     /// to the previous note at its last stop (`NoteHops`), or with no other note round to the card's last stop. Nil for a note that
     /// is no pill.
     func pillEditor(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> TypePillEditor? {
-        guard let book = context.service(RowBook.self), let pill = book.pill(of: shape.id) else { return nil }
+        guard let book = context.service(RowBook.self), let pill = book.pill(of: AnyShapeRecord(shape)) else { return nil }
         let ink = context.service(TypeIndex.self)?.look(of: shape.id).rowInk ?? .white
         let editor = TypePillEditor(title: pill.title, ink: ink)
         let id = shape.id
@@ -40,7 +40,8 @@ extension StickyNoteDefinition {
             let title = TitleProperty.folded(text)
             // A change that changes nothing (the same blank twice) is no step.
             guard context.shape?[TitleProperty.self] != title else { return }
-            context.transact(TypesStyle.nameRelationshipType) { $0.update(id) { $0[TitleProperty.self] = title } }
+            // On the board it is on, typed into through a mirror or not.
+            context.transact(TypesStyle.nameRelationshipType) { $0.update(inFile: id) { $0[TitleProperty.self] = title } }
         }
         editor.finished = { ending in
             context.end()
