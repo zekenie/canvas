@@ -119,12 +119,19 @@ extension CanvasEditor {
         return true
     }
 
-    /// The shapes of a board whose extent touches `rect`, back to front: the board shown's by its own index, another's by
-    /// one kept for it.
+    /// The shapes of a board whose extent touches `rect`, back to front, the ones drawn as part of another left out: the board
+    /// shown's by its own index, another's by one kept for it.
     private func shownPaintOrder(on board: BoardID, contents: CanvasDocument, touching rect: CGRect) -> [AnyShapeRecord] {
         let (index, context) = shownIndex(of: board, contents: contents)
         let list = index.paintList(in: context), all = contents.shapes
-        return index.positions(touching: rect, in: context).map { all[list.order[$0]] }
+        let positions = index.positions(touching: rect, in: context)
+        // A shape drawn as part of another (`ShapeGeometry.isHidden`: a bundle's member arrow) is drawn and hit there as its lead,
+        // never itself, as the board's own shapes are (`forEachShape`, `shape(at:)`).
+        let hidden = index.hidden
+        return positions.compactMap { position in
+            let record = all[list.order[position]]
+            return hidden.contains(record.id) ? nil : record
+        }
     }
 
     /// An index over a board's shapes, for their paint order and extents, with the context it's read in.

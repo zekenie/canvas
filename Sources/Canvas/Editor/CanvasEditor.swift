@@ -317,6 +317,9 @@ public final class CanvasEditor {
     public private(set) var editingStandIn: ShapeID?
     /// The kind of the shape edited through a stand-in, as editing began: a commit that turns it into another ends editing.
     @ObservationIgnored var editingThroughKind: ShapeKind?
+    /// The stand-in's frame as editing through it began, at rest: what it is lifted beyond while the shape shown in it is laid
+    /// out larger (`liftedWhileEdited`).
+    @ObservationIgnored var editingStandInRest: CGRect?
     /// While a shape is edited, where the press that began it was, in world units
     /// (`beginEditing(_:at:)`); nil if none said, and once editing ends.
     public private(set) var editingStartPoint: CGPoint?
@@ -1720,8 +1723,8 @@ public final class CanvasEditor {
     /// laid over where the stand-in draws it, at the stand-in's scale (`editingFrame`), writing the shape on whichever board
     /// it is (`EditContext.update`), in an editing step made on the board shown, so ⌘Z here takes it back without leaving.
     /// `point` is where the press that began it was, in the board shown's world units (the view reads it in the shape's own,
-    /// `EditContext.startPoint`). Returns false for a shape the stand-in doesn't show, one kept aside or of a kind that isn't
-    /// `Editable`; and for a read-only stand-in or shape, which is refused: the stand-in shakes, the one the person sees
+    /// `EditContext.startPoint`). Returns false for a shape the stand-in doesn't show, one kept aside, of a kind that isn't
+    /// `Editable` or whose editor reaches only the board shown (`Editable.editsThroughStandIn`); and for a read-only stand-in or shape, which is refused: the stand-in shakes, the one the person sees
     /// (services hear it, `didRefuseChanges`). Editing ends as it does for any shape, and with the stand-in: gone, read-only,
     /// or no longer showing it.
     @discardableResult
@@ -1729,7 +1732,7 @@ public final class CanvasEditor {
         guard standIn != id else { return beginEditing(id, at: point, clickCount: clickCount) }
         endEditing()
         guard let transform = placement(of: id, through: standIn), let record = shape(inFile: id), !record.isOpaque,
-              let definition = registry.definition(for: record.kind) as? any Editable else { return false }
+              let definition = registry.definition(for: record.kind) as? any Editable, definition.editsThroughStandIn else { return false }
         guard !isReadOnly(standIn), !isReadOnly(inFile: id) else {
             refuseChanges(to: [standIn])
             return false
@@ -1737,6 +1740,7 @@ public final class CanvasEditor {
         letWaitingShapesGo()
         editingStartPoint = point.map { $0.applying(transform.inverted()) }
         editingStartClickCount = point == nil ? 1 : clickCount
+        editingStandInRest = document[standIn].flatMap { shapeContext.frame(of: $0) }
         editingShapeID = id
         editingStandIn = standIn
         editingThroughKind = record.kind
@@ -1776,6 +1780,7 @@ public final class CanvasEditor {
         editingShapeID = nil
         editingPart = nil
         editingStandIn = nil
+        editingStandInRest = nil
         editingThroughKind = nil
         editingStartPoint = nil
         editingStartClickCount = 1
@@ -1861,6 +1866,14 @@ public final class CanvasEditor {
     /// set for it while it's handled, as `makeRoom()` measures it, never its stored box, whose height a kind laid out by its rows
     /// keeps from when it was made (review R25: a table typed to ten rows stores one).
     func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
+        // Edited through a stand-in (a mirror), it is the stand-in that grows with what is typed, and the stand-in that is lifted,
+        // from the frame it had as editing began; the shape edited (on any board) is never lifted from here.
+        if let standIn = editingStandIn {
+            guard let record = document[standIn], record.box != nil, !registry.isContainer(record), let rest = editingStandInRest,
+                  let frame = context.frame(of: record),
+                  frame.width > rest.width + Self.liftSlack || frame.height > rest.height + Self.liftSlack else { return nil }
+            return (standIn, frame, rest)
+        }
         guard let id = editingShapeID, let record = document[id], record.box != nil, !registry.isContainer(record),
               let frame = context.frame(of: record), let rest = restingFrame(of: record),
               frame.width > rest.width + Self.liftSlack || frame.height > rest.height + Self.liftSlack else { return nil }

@@ -85,6 +85,9 @@ public enum ReferenceEdits {
                 let label = target.row == nil ? transaction.part(at: to).map { $0.standsAlone ? $0.name : target.label + "." + $0.name } ?? target.label : target.label
                 transaction.update(pill.id, on: pill.board, as: Reference.self) {
                     $0.props.target = ReferenceTarget(id: to.shape, label: label, row: to.part)
+                    // A pill for a row is never a mirror (`mirrorOriginal`): it is the pill it is drawn as, so Collapse isn't offered
+                    // for it, and an undo of this step brings the mirror back whole.
+                    if to.part != nil { $0.props.look = .pill }
                     if label != target.label { fit(&$0.props) }
                 }
             }

@@ -39,6 +39,62 @@ extension PatchDefinition: CustomSkeleton {
     }
 }
 
+/// A box drawn blue that a plugin hides (`ShapeGeometry.isHidden`: drawn as part of another, as a bundle's member arrow is).
+struct Ghost: BoxShapeProps {
+    static let kind: ShapeKind = "ghost"
+    static let properties = Properties<Ghost> {
+        Property("frame", \.frame).required()
+    }
+    var frame: CGRect
+    init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Ghost {
+    init() { self.init(.zero) }
+}
+
+struct GhostDefinition {}
+
+extension GhostDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Ghost>, in context: RenderContext) {
+        context.cg.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        context.cg.fill(shape.frame)
+    }
+
+    func geometry(of shape: ShapeRecord<Ghost>, in context: ShapeContext) -> ShapeGeometry {
+        ShapeGeometry(outline: shape.frame.polygon, bounds: shape.frame, isHidden: true)
+    }
+}
+
+/// An editable box whose editor reaches only the board shown (`Editable.editsThroughStandIn`: the rows written as lines).
+struct Stuck: BoxShapeProps {
+    static let kind: ShapeKind = "stuck"
+    static let properties = Properties<Stuck> {
+        Property("frame", \.frame).required()
+    }
+    var frame: CGRect
+    init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Stuck {
+    init() { self.init(.zero) }
+}
+
+struct StuckDefinition {}
+
+extension StuckDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Stuck>, in context: RenderContext) {}
+}
+
+extension StuckDefinition: Editable {
+    func makeEditingView(for shape: ShapeRecord<Stuck>, context: EditContext<Stuck>) -> EditingView {
+        let view = NSView(frame: .zero)
+        return EditingView(view: view, firstResponder: view)
+    }
+
+    var editsThroughStandIn: Bool { false }
+}
+
 /// Every layout change services heard (`EditorService.shapesDidChangeLayout`).
 @MainActor final class LayoutHearing {
     var heard: [Set<ShapeID>] = []
@@ -51,7 +107,8 @@ extension LayoutHearing: EditorService {
 @MainActor private func shownHarness(log: LensLog = LensLog(), refusals: RefusalLog = RefusalLog(), hearing: LayoutHearing? = nil,
                                      root: [AnyShapeRecord], pocket: ShapeID, inside: [AnyShapeRecord]) throws -> EditorHarness {
     var plugins: [any CanvasPlugin] = [FixturesPlugin(), PocketsPlugin(), CorralsPlugin(), LensesPlugin(log: log), CardsPlugin(),
-                                       FreezingPlugin(log: refusals), Contributor(id: "patches") { $0.shape(PatchDefinition()) }]
+                                       FreezingPlugin(log: refusals), Contributor(id: "patches") { $0.shape(PatchDefinition()) },
+                                       Contributor(id: "ghosts") { $0.shape(GhostDefinition()) }, Contributor(id: "stucks") { $0.shape(StuckDefinition()) }]
     if let hearing { plugins.append(Contributor(id: "hearing") { $0.service { _ in hearing } }) }
     return try EditorHarness(plugins: plugins, file: CanvasFile(root: CanvasDocument(shapes: ShapeStack(root)),
                                                                 children: [pocket: CanvasDocument(shapes: ShapeStack(inside))]))
@@ -237,6 +294,34 @@ private let canvas = [246, 246, 246, 255]
         e.transact { $0.delete([lens]) }
         expectEqual(e.editingShapeID, nil, "the lens deleted")
         expectEqual(e.editingStandIn, nil)
+    },
+    test("a shape drawn as part of another (a bundle's member) is neither drawn nor hit where a lens shows its container, as on its own board") {
+        let lens = ShapeID(), pocket = ShapeID(), corral = ShapeID(), plain = ShapeID(), ghost = ShapeID()
+        let h = try shownHarness(root: [
+            record(pocket, Pocket(CGRect(x: -300, y: 0, width: 100, height: 100))),
+            record(lens, Lens(CGRect(x: 200, y: 200, width: 200, height: 100), shows: corral, scale: 0.5)),
+        ], pocket: pocket, inside: [
+            record(corral, Corral(CGRect(x: 0, y: 0, width: 400, height: 200))),
+            record(plain, Patch(CGRect(x: 10, y: 10, width: 100, height: 100))),
+            record(ghost, Ghost(CGRect(x: 210, y: 10, width: 100, height: 100))),
+        ])
+        h.editor.transact(on: BoardID(owner: pocket), "Hold") { $0.setContainer([plain, ghost], to: corral) }
+        let picture = renderBitmap(h.editor, size: CGSize(width: 500, height: 400))
+        let blue = [0, 0, 255, 255]
+        expectEqual(pixel(picture, at: CGPoint(x: 230, y: 230)), blue, "the plain box is drawn")
+        expect(pixel(picture, at: CGPoint(x: 330, y: 230)) != blue, "the hidden one isn't")
+        expectEqual(h.editor.shownShape(at: CGPoint(x: 230, y: 230), in: lens)?.id, plain)
+        expectEqual(h.editor.shownShape(at: CGPoint(x: 330, y: 230), in: lens)?.id, corral, "nor is it hit: the corral is")
+    },
+    test("a shape whose editor reaches only the board shown is never edited through a lens, and nothing is left set") {
+        let lens = ShapeID(), pocket = ShapeID(), stuck = ShapeID()
+        let h = try shownHarness(root: [
+            record(pocket, Pocket(CGRect(x: -300, y: 0, width: 100, height: 100))),
+            record(lens, Lens(CGRect(x: 200, y: 200, width: 200, height: 120), shows: stuck)),
+        ], pocket: pocket, inside: [record(stuck, Stuck(CGRect(x: 0, y: 0, width: 100, height: 60)))])
+        expect(!h.editor.beginEditing(stuck, through: lens))
+        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.editingStandIn, nil)
     },
     test("the lens edited through is drawn in full zoomed out, and told so") {
         let lens = ShapeID(), pocket = ShapeID(), card = ShapeID()

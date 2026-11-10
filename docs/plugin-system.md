@@ -12566,7 +12566,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   (`ShowingShapes`, `editor.shownShape(at:in:)`): the original's own editor laid over it at its scale
   (`editor.beginEditing(_:through:)`), so a note's words and a typed note's rows are typed into where they show, each
   keystroke written to the original on its board in a step made on the board shown; a subboard's board, one step back;
-  a note a frame holds, typed into through the frame's mirror. Return does the same; a double-click on the pill
+  a note a frame holds, typed into through the frame's mirror; a table, an enum or an API, whose rows are typed in the line editor that reaches the board shown only, is not (`Editable.editsThroughStandIn`), and a mirror of one lends its columns where it draws them, so a key through the pill meets the drawn row. Return does the same; a double-click on the pill
   re-points it, as a pill's does. Its handles scale it in proportion (`CustomSizing`), never the original. Its panel is
   its Reference tab, then the original's own tabs, each section bound to the original wherever it is (the panel's own
   rule for a stand-in, `editor.shown(through:)`, every binding reading and writing the file: [The detail panel](#the-detail-panel)),
@@ -15053,7 +15053,7 @@ it, the core or a horizontal.
 
 | Capability | For | Used by |
 |---|---|---|
-| `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape's editing frame (`editingFrame(of:in:)`, world units, looked at again as the shape or the camera changes: a box kind's box by default; a kind without one says where); writes go through `EditContext.update`. Only a box kind has an editing placement. | StickyNotes, Arrows (its label, which grows with what's typed) |
+| `Editable` | Edited in place: an editing placement, or opening it (Selection's double-click, Return and ⌘↓), unless its kind has an opener of its own. Supplies an `NSView` laid over the shape's editing frame (`editingFrame(of:in:)`, world units, looked at again as the shape or the camera changes: a box kind's box by default; a kind without one says where); writes go through `EditContext.update`. Only a box kind has an editing placement. `editsThroughStandIn` (default true) says whether its editor reaches the shape on another board, so a mirror may be typed into: false for a kind written as lines. | StickyNotes, Arrows (its label, which grows with what's typed) |
 | `LabeledShape` (Selection's) | An `Editable` kind with a label, text on part of the shape (`labelFrame(of:in:)`, nil while it has none; an arrow's is its kept geometry's `label`, `ShapeGeometry.label`, tldraw's `isLabel` geometry): a click on the only selected shape edits it only on its label, and a drag from its label, past the threshold, is `labelDragSession`'s (the shape selected alone first, ⇧ adding it), not the selection's; a read-only shape's drag is the selection's, refused as ever. tldraw's arrow labels. | Arrows (a drag slides the label along the arrow) |
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
@@ -15088,7 +15088,7 @@ the stand-in at its scale (`editor.editingFrame` is where it is on the board sho
 bounds in the shape's own units, so AppKit scales it), its `EditContext` writing the shape wherever it is
 (`update`, and `transact`'s `transaction.update(inFile:)`), in an editing step made on the board shown, so
 ⌘Z there takes it back without leaving; a read-only stand-in or shape is refused, the stand-in shaking, and
-editing ends with the stand-in as with the shape. `editor.editingStandIn` names the stand-in, which is drawn
+editing ends with the stand-in as with the shape; a kind whose editor reads and writes the board shown only says so (`Editable.editsThroughStandIn`, default true) and is never edited through one. `editor.editingStandIn` names the stand-in, which is drawn
 in full under the editor (no skeleton, no handles). Services hear editing end, however it ends (Escape, a click elsewhere,
 another shape edited, another board shown, an undo), what it wrote committed
 (`EditorService.editingDidEnd`), its step closed unless what ended it is an action still under way

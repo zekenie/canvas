@@ -90,11 +90,17 @@ public protocol Editable: ShapeDefinition {
     /// Reference. Nil is "Typing". A step an action holds open (a placement's "Add ...") keeps the
     /// action's name.
     var editingStepName: String? { get }
+    /// Whether the shape can be edited where a stand-in shows it (`editor.beginEditing(_:through:)`): its editing view writes
+    /// through `EditContext.update` and reads `EditContext.shape`, which reach it on whichever board it is. A kind whose editor
+    /// reads and writes only the board shown (the rows written as lines) answers false, and is never edited through a mirror
+    /// (`beginEditing(_:through:)` returns false, so what asks first, Return on a mirror, finds nothing to open). Default true.
+    var editsThroughStandIn: Bool { get }
 }
 
 extension Editable {
     public func discardsWhenEditingEnds(_ props: Props) -> Bool { false }
     public var editingStepName: String? { nil }
+    public var editsThroughStandIn: Bool { true }
 }
 
 extension Editable where Props: BoxShapeProps {

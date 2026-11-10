@@ -223,6 +223,10 @@ extension APIDefinition: Editable {
     }
 
     var editingStepName: String? { APIStyle.renameStep }
+
+    /// Its rows are typed in the line editor, which reads and writes the board shown only: not edited where a mirror shows it
+    /// (`Editable.editsThroughStandIn`, [mirrors](references.md)).
+    var editsThroughStandIn: Bool { false }
 }
 
 /// What an API's lines draw at rest, world units: the server, a header, an endpoint.

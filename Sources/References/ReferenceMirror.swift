@@ -136,6 +136,24 @@ extension ReferenceDefinition: CustomSizing {
     func isResizable(_ shape: ShapeRecord<Reference>, in context: ShapeContext) -> Bool { Self.mat(of: shape, in: context) != nil }
 }
 
+extension ReferenceDefinition {
+    /// The parts of what a mirror shows and where it draws them, in the mirror's own board's world units, each part's rect and
+    /// the original's entries mapped through the mirror's transform: what a binding to (the mirror, a part) reads. Nothing for
+    /// a pill, a mirror showing nothing and one showing a shape without parts.
+    static func shownParts(of shape: ShapeRecord<Reference>, in context: ShapeContext) -> (parts: PartFrames, entries: [ShapeEntry]) {
+        guard shape.props.look == .mirror, let state = context.service(ReferenceState.self),
+              let original = state.mirrorOriginal(of: shape.props, id: shape.id), let kind = state.editor.shape(inFile: original)?.kind,
+              context.registry.isParted(kind), let transform = ReferenceDefinition().shownTransform(of: shape, in: context),
+              let geometry = context.shape(original) != nil ? context.geometry(of: original) : state.editor.geometry(inFile: original),
+              !geometry.parts.isEmpty else { return (PartFrames(), []) }
+        let parts = PartFrames(geometry.parts.frames.map {
+            PartFrame(id: $0.id, rect: $0.rect.applying(transform), isShown: $0.isShown, isConnectable: $0.isConnectable)
+        })
+        let entries = geometry.entries.map { ShapeEntry(point: $0.point.applying(transform), normal: $0.normal) }
+        return (parts, entries)
+    }
+}
+
 /// What a mirror shows in its place, and where: the core draws, edits and finds it there.
 extension ReferenceDefinition: ShowingShapes {
     func shownShape(of shape: ShapeRecord<Reference>, in context: ShapeContext) -> ShapeID? {
@@ -315,16 +333,22 @@ extension ReferenceState {
         guard let record = editor.shape(inFile: id), !record.isOpaque else { return }
         if editor.registry.boardOwningKinds.contains(record.kind) {
             editor.navigate { _ = editor.showBoard(BoardID(owner: id)) }
-        } else if editor.registry.definition(for: record.kind) is any Editable {
+        } else if Self.editsThroughMirror(editor.registry.definition(for: record.kind)) {
             editor.beginEditing(id, through: mirror, at: point, clickCount: clickCount)
         }
+    }
+
+    /// Whether a kind is edited where a mirror shows it: `Editable`, with an editor that reaches the shape on another board
+    /// (`Editable.editsThroughStandIn`: not the rows written as lines, which reach the board shown only).
+    private static func editsThroughMirror(_ definition: (any ShapeDefinition)?) -> Bool {
+        (definition as? any Editable)?.editsThroughStandIn == true
     }
 
     /// Whether `open(mirror:at:)` does something with a mirror: it shows something that opens or is edited (Return's rule).
     func opens(mirror shape: ShapeRecord<Reference>) -> Bool {
         guard shape.props.look == .mirror, let original = mirrorOriginal(of: shape.props, id: shape.id),
               let record = editor.shape(inFile: original) else { return false }
-        return editor.registry.boardOwningKinds.contains(record.kind) || editor.registry.definition(for: record.kind) is any Editable
+        return editor.registry.boardOwningKinds.contains(record.kind) || Self.editsThroughMirror(editor.registry.definition(for: record.kind))
     }
 
     // MARK: Following the original

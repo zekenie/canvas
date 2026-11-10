@@ -207,6 +207,23 @@ private let ledgers = Contributor(id: "ledgers") { registrar in
         b.h.editor.undo()
         expectEqual(b.h.reference(pill)?.target?.id, b.ledger)
     },
+    test("a mirror of a shape that goes into another as a row (an endpoint put back into its API) is a pill for that row, its look a pill; undone, the mirror is back") {
+        let b = try Books()
+        let whole = b.h.addReference(to: b.other, label: "Ledger Two", at: CGPoint(x: 600, y: 300))
+        b.h.editor.perform(.expandReference, on: [whole])
+        expectEqual(b.h.reference(whole)?.look, .mirror)
+        let row = RosterRow(name: "GET /charges")
+        b.h.editor.transact("Put Back") { tx in
+            tx.update(b.ledger, as: Ledger.self) { $0.props.rows = [b.refund, b.charge, row] }
+            tx.moveParts([PartAddress(b.other): PartAddress(b.ledger, part: row.id)])
+        }
+        expectEqual(b.h.reference(whole)?.target?.row, row.id, "it stands for the row now")
+        expectEqual(b.h.reference(whole)?.look, .pill, "drawn as a pill, so it says it is one")
+        expect(!b.h.editor.canPerform(.collapseReference, on: [whole]), "and there's nothing to collapse")
+        b.h.editor.undo()
+        expectEqual(b.h.reference(whole)?.look, .mirror, "undone, the mirror is back")
+        expectEqual(b.h.reference(whole)?.target?.row, nil)
+    },
     test("an arrow into a row pill is an edge into its shape at the row") {
         let b = try Books()
         let pill = b.pill(for: b.charge.id, label: "POST /charges")

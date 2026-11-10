@@ -239,6 +239,10 @@ extension TableDefinition: Editable {
     }
 
     var editingStepName: String? { TableStyle.renameStep }
+
+    /// Its rows are typed in the line editor, which reads and writes the board shown only: not edited where a mirror shows it
+    /// (`Editable.editsThroughStandIn`, [mirrors](references.md)).
+    var editsThroughStandIn: Bool { false }
 }
 
 /// Where a column's row puts what it says, world units: at the right its nullable's `?`, then its type (an enum's pill, or

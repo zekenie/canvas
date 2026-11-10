@@ -165,4 +165,8 @@ extension EnumDefinition: Editable {
     }
 
     var editingStepName: String? { EnumStyle.renameStep }
+
+    /// Its rows are typed in the line editor, which reads and writes the board shown only: not edited where a mirror shows it
+    /// (`Editable.editsThroughStandIn`, [mirrors](references.md)).
+    var editsThroughStandIn: Bool { false }
 }
