@@ -2730,9 +2730,10 @@ as lines, worked out from Topology's literal connections at the shapes a change 
 it says. The first in the board's order leads, its pill counting the rest ("writes · 9"), which keep its outline under
 the core's `ShapeGeometry.isHidden` (not drawn, hit or spoken); a press on it selects them all (Selection's
 `SelectionUnits`). The same answer bows apart connections with the same two ends, fans those that end together from
-one shape's rows (their pills slid to their starts), parts those that leave one row for different places (each line
-leaving the row on its own, their pills stacked out from it in the row's band, each on a straight stub of its own line),
-and brings a line to a table as a whole in at a row clear of the keys at its side:
+one shape's rows (their pills slid to their starts, a lone one on a straight stub of its line so it stays in its row's
+band), parts those that leave one row for different places (each line leaving the row on its own, in the row's inner
+band, their pills stacked out from it in the row's band, each on a straight stub of its own line), hands the connections
+between the same two shapes in their order with the marks they end with at each (`run`, `runMarks`, which a narrow gap's turns keep clear of), and brings a line to a table as a whole in at a row clear of the keys at its side:
 
 ```swift
 registrar.layoutInput(ConnectionBundle.input) { record, reading in reading.service(RowBundles.self)?.answer(for: record, in: reading) }
@@ -6404,8 +6405,17 @@ right end keeps the room it had, running on past the shape's edge, so a name isn
 zoom: a tab keeps its size on screen and a shape's inset in its container doesn't, so zoomed out a note at its
 frame's top-left would have its pill over the frame's tab. Titles' bars zoomed out sit just above their own shape, clear
 of a selected shape's outline and corner handles, and start where the row does (`editor.adornmentRowStart(of:)`) while
-some of the bar is still over the shape; a shape too narrow for that has its bar just inside its own top edge, below the
-tab where the tab reaches over it (`editor.adornmentRowTabs(of:)`). No kind is named.
+some of the bar is still over the shape; for a shape too narrow for that the tab gives way instead, up off its container's
+edge (a turned one left), and the bar stays at the shape's top as every bar is. A plugin says what its shapes keep in that
+row zoomed out on the kinds a scope reaches, as Titles does for its bars:
+
+```swift
+registrar.forShapes(adopting: .titlePill) { pilled in
+    pilled.rowZoomedOut { shape, shapes in TitleBar.kept(of: shape, in: shapes) }  // RowZoomedOut(rect:least:), or nil
+}
+```
+
+No kind is named.
 
 ### Plain text and a number
 
@@ -7570,9 +7580,10 @@ head, and Toggle Arrowhead leaves it. A marked end leaves its row on a straight 
 clearance whatever its own (`ArrowStyle.levelStub`, 36), the curve starting at the stub's end, so the mark lies level
 whatever the line does after it (a C between stacked tables, a fan, rows far across), two keys at one row end lay their
 marks on each other, and keys between the same two shapes cross only where their ends' order swaps, once (in a narrow gap
-each turns at a column of its own); the line is then a `CubicChain` (Geometry's: the stubs and the curve),
+each turns at a column of its own, past every key's marks at either side, so none runs through another's circle); the line is then a `CubicChain` (Geometry's: the stubs and the curve),
 `ArrowGeometry.levelBody`. Keys fanned into one row come in level, a bar's height and a gap apart, or where the row is too
-short each one's marks a stub further out than its neighbor's, on the side its line turns away from. Where the ends face each
+short each one's marks a stub further out than its neighbor's, on the side its line turns away from (in a narrow gap, every
+other one's a nudge out, so no two bars stand in one column). Where the ends face each
 other neither reach passes the way between them, so the curve never swings back behind where it starts. A key passing under
 a card it isn't bound to is drawn faint across the whole of it, edge to edge, in a gray that reads on light and dark cards (`ArrowUnderCardsOverlay`, quieter through the words of a row; far out, below 15%, a key whose ends face each other is one straight line, and a C stays its curve), and lit, its light goes under the cards with it
 (the core strokes a tinted outline of a shape painted below its anchor where it is painted). Which side of its row an end
@@ -16561,7 +16572,7 @@ context-menus        service ContextMenuState · secondary-click menu · selecti
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
 slash-bar            service SlashBar · command runSlashCommand · shortcut / → command runSlashCommand · SelectionObservers
 table-of-contents    service ContentsState · host sidebar
-titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
+titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title · row zoomed out → every shape with a title pill
 mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
 mention-slash-bar    slash bar field
 board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle

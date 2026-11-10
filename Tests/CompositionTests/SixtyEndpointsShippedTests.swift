@@ -561,6 +561,67 @@ extension EmptyBoardWindow {
         // As far apart as keeps each pill inside the row (24 tall, its pills 18): 6.
         expect(starts[reads] > starts[1 - reads] + 5, "the reads leaves below the writes: \(starts)")
     },
+    test("UX walk 5 evolve-1: a row's only pill in a fan into a table far above or far below sits in its own row's band, its line level past it, drawn in the window") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "orders API" endpoints: "GET /a\nPOST /b\nGET /c\nPOST /d\nGET /e\nPATCH /f"
+            table "payments" right of "orders API" (gap: 260) columns: "id uuid pk\namount_cents int"
+            table "refunds" right of "orders API" (gap: 260) columns: "id uuid pk\namount_cents int"
+            edge "orders API"."POST /b" -> "payments" channel: writes
+            edge "orders API"."POST /d" -> "payments" channel: writes
+            edge "orders API"."PATCH /f" -> "payments" channel: writes
+            edge "orders API"."GET /a" -> "refunds" channel: reads
+            edge "orders API"."GET /c" -> "refunds" channel: reads
+            edge "orders API"."GET /e" -> "refunds" channel: reads
+            """#)
+        let editor = w.editor
+        let api = try require(sixtyAPIAny(editor, "orders API"))
+        let frame = try require(editor.shapeContext.frame(of: api.id))
+        // payments well above the API, refunds well below: each row's line turns up or down to its table.
+        editor.transact("Move") { tx in
+            for (title, y) in [("payments", frame.minY - 420), ("refunds", frame.maxY + 300)] {
+                guard let table = editor.document.shapes.first(where: { $0[TitleProperty.self] == title }) else { continue }
+                tx.update(table.id, as: DatabaseTable.self) { $0.props.frame.origin = CGPoint(x: frame.maxX + 260, y: y) }
+            }
+        }
+        w.window.settle()
+        let arrows = sixtyArrows(editor)
+        expectEqual(arrows.count, 6)
+        let rep = renderAll(editor)
+        for arrow in arrows {
+            let part = try require(arrow.props.start.binding?.part)
+            let row = try require(editor.shapeContext.geometry(of: api.id)?.parts.frame(part)?.rect)
+            let pill = try require(editor.shapeContext.geometry(of: arrow.id)?.labelLead)
+            let line = try require(editor.arrowGeometry(of: arrow.id))
+            expect(pill.midY > row.minY && pill.midY < row.maxY, "\(arrow[ChannelProperty.self] ?? "?") pill level with its row (\(row.minY) to \(row.maxY)): \(pill)")
+            expect(line.start.y > row.minY && line.start.y < row.maxY, "its line leaves its own row: \(line.start)")
+            expect(abs(line.point(pill.maxX - line.start.x + 2, along: .start).point.y - line.start.y) < 0.5, "level past its pill: \(pill)")
+            // In the window's picture, the pill is drawn where its row is: its capsule's color across it, not paper.
+            let samples = stride(from: pill.minX + 4, through: pill.maxX - 4, by: 4).map { pixel(rep, at: editor.camera.toView(CGPoint(x: $0, y: pill.midY + 5))) }
+            let colored = samples.filter { abs($0[0] - $0[1]) > 30 || abs($0[1] - $0[2]) > 30 }
+            expect(colored.count * 2 >= samples.count, "a pill drawn at \(pill): \(samples)")
+        }
+    },
+    test("UX walk 5 evolve-1, folded: a closed header's bundle lead slid to it by a fan at its table keeps its pill in the header's band") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        // /orders' reads to payments fans /payments' "writes · 5" there, which slides its pill to the /payments line, as the walk's board.
+        _ = try w.sixtyFolded(more: #"edge "orders API"."POST /orders" -> "payments" channel: reads"#)
+        let editor = w.editor
+        let api = try require(sixtyAPI(editor))
+        var leads = 0
+        for arrow in sixtyArrows(editor) where editor.shapeContext.geometry(of: arrow.id)?.isHidden != true {
+            guard let bundle = editor.connectionBundle(of: arrow.id), case .lead(_, let standing) = bundle.role, let header = standing?.part,
+                  bundle.fan(at: .end) != nil else { continue }
+            leads += 1
+            let line = try require(editor.shapeContext.geometry(of: api.id)?.parts.frame(header)?.rect)
+            let pill = try require(editor.shapeContext.geometry(of: arrow.id)?.labelLead)
+            expect(pill.midY > line.minY && pill.midY < line.maxY, "a lead's pill level with its header (\(line.minY) to \(line.maxY)): \(pill)")
+        }
+        expect(leads >= 1, "a slid lead: \(leads)")
+    },
     test("UX walk 4 evolve-1, folded: a closed header's lone reads keeps its pill at the header's line, clear of the bundles' pills") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -594,6 +655,11 @@ extension EmptyBoardWindow {
         let api = try require(sixtyAPIAny(editor, "orders API"))
         let fromRow = sixtyArrows(editor).filter { $0.props.start.binding?.shapeID == api.id && $0.props.start.binding?.part == api.props.endpoints[1].id }
         expectEqual(fromRow.count, 3)
+        // Each line leaves well inside its own row, in its inner band, never on the line between it and GET's (UX walk 5 connect-1).
+        let row = try require(editor.shapeContext.geometry(of: api.id)?.parts.frame(api.props.endpoints[1].id)?.rect)
+        let starts = try fromRow.map { try require(editor.arrowGeometry(of: $0.id)).start.y }.sorted()
+        for y in starts { expect(abs(y - row.midY) <= row.height * 0.25 + 0.01, "in POST's inner band (\(row.minY) to \(row.maxY)): \(y)") }
+        for (a, b) in zip(starts, starts.dropFirst()) { expect(b > a + 4, "apart: \(starts)") }
         for arrow in fromRow {
             guard let pill = editor.shapeContext.geometry(of: arrow.id)?.labelLead else { continue }
             for other in fromRow where other.id != arrow.id {

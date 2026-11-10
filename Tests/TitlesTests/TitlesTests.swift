@@ -147,7 +147,7 @@ import Titles
         fixtures           shape box · shape disc · shape tag
         adornments         service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         slash-commands     service SlashCommandState · key hint / at a Line's Start Run a Command
-        titles             property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
+        titles             property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title · row zoomed out → every shape with a title pill
         table-of-contents  service ContentsState · host sidebar
         fixture-titles     ShapeTitles → box · ContentsTitles → box · ShapeTitles → disc
         """)

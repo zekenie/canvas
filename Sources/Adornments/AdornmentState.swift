@@ -27,6 +27,8 @@ final class AdornmentState {
     let hasTabs: Bool
     /// Each kind's tab contributions, found once.
     private var tabCandidatesKept: [ShapeKind: Bool] = [:]
+    /// Each kind's row kept zoomed out (`ShapeRowsZoomedOut`), found once.
+    private var rowCandidatesKept: [ShapeKind: RowZoomedOutContribution?] = [:]
     /// The tabs placed lately, newest last, and what each was placed for: the view's, and a few asked about
     /// a shape out of view, so asking about one doesn't throw the view's away.
     private var tabsKept: [(key: TabsKey, tabs: PlacedTabs)] = []
@@ -39,6 +41,9 @@ final class AdornmentState {
     private var generation = 0
     /// The shapes the tabs placed last are on, so a commit that removes one places them again.
     private var tabShapesPlaced: Set<ShapeID> = []
+    /// The shapes with a row kept zoomed out that the tabs placed last gave way to, in a container: a commit that removes one
+    /// places them again (it is gone from the document, and its container's record is as it was: a child names its container).
+    private var rowShapesPlaced: Set<ShapeID> = []
     /// Each kind's contributions in claim order: its own (and other plugins' for it), then those whose
     /// scope reaches it, less those of a type it has its own of; sorted by order, then first appearance.
     private var candidates: [ShapeKind: [AdornmentContribution]] = [:]
@@ -137,7 +142,15 @@ final class AdornmentState {
     /// Whether any of these shapes has, or had, a tab: what changes where tabs go.
     private func touchesTabs<S: Sequence>(_ ids: S) -> Bool where S.Element == ShapeID {
         guard hasTabs else { return false }
-        return ids.contains { id in tabShapesPlaced.contains(id) || editor.document[id].map { hasTab($0.kind) } == true }
+        return ids.contains { id in tabShapesPlaced.contains(id) || rowShapesPlaced.contains(id) || editor.document[id].map { hasTab($0.kind) || rowZoomedOut($0.kind) != nil } == true }
+    }
+
+    /// A kind's row kept zoomed out, which a container's tab gives way to: found once a kind.
+    private func rowZoomedOut(_ kind: ShapeKind) -> RowZoomedOutContribution? {
+        if let known = rowCandidatesKept[kind] { return known }
+        let found = editor.registry.contributions(to: ShapeRowsZoomedOut.self, for: kind).first
+        rowCandidatesKept[kind] = .some(found)
+        return found
     }
 
     // MARK: Tabs
@@ -178,7 +191,15 @@ final class AdornmentState {
             let request: AdornmentLayout.TabRequest
         }
         var asked: [Asked] = []
-        for (order, record) in editor.paintOrder(in: grown).enumerated() where hasTab(record.kind) {
+        // The shapes drawn zoomed out with a row kept there (a table's bar), in a container: its tab may give way to them.
+        var rows: [(record: AnyShapeRecord, row: RowZoomedOutContribution)] = []
+        var rowsSeen: Set<ShapeID> = []
+        for (order, record) in editor.paintOrder(in: grown).enumerated() {
+            if let row = rowZoomedOut(record.kind), document.container(of: record.id, containingKinds: kinds) != nil, editor.drawsSkeleton(of: record.id) {
+                rows.append((record, row))
+                rowsSeen.insert(record.id)
+            }
+            guard hasTab(record.kind) else { continue }
             guard let geometry = shapes.geometry(of: record.id), geometry.isClosed, !geometry.bounds.isNull,
                   let laidOut = laidOut(record, tabsOnly: editor.drawsSkeleton(of: record.id)),
                   let index = laidOut.shown.firstIndex(where: { $0.id.placement == .onTopEdge }) else { continue }
@@ -204,11 +225,71 @@ final class AdornmentState {
             tab.frame = tab.frame.offsetBy(dx: -asked.request.shape.minX, dy: -asked.request.shape.minY)
             placed[asked.id] = tab
         }
+        if !rows.isEmpty { giveWay(to: rows, placed: &placed, unit: unit) }
         let tabs = PlacedTabs(tabs: placed, shapes: asked.filter { placed[$0.id] != nil }.map(\.id), unit: unit)
         tabShapesPlaced.formUnion(asked.lazy.map(\.id))
+        rowShapesPlaced.formUnion(rowsSeen)
         if tabsKept.count >= 4 { tabsKept.removeFirst() }
         tabsKept.append((key, tabs))
         return tabs
+    }
+
+    /// The containers' tabs, given way to the rows kept zoomed out that meet them (`RowZoomedOut`) and can't start past them with
+    /// the least they keep: a flat tab up off its edge, its bottom `spacing` above the rows, a turned one left of them; a row that
+    /// starts past them keeps its place, as the pill's does at full zoom.
+    private func giveWay(to rows: [(record: AnyShapeRecord, row: RowZoomedOutContribution)], placed: inout [ShapeID: AdornmentLayout.Tab], unit: CGFloat) {
+        let shapes = editor.shapeContext, document = editor.document, kinds = editor.registry.containingKinds
+        let zoom = editor.camera.zoom, scale = AdornmentLayout.scale(atZoom: zoom), gap = AdornmentLayout.spacing * unit
+        for (record, contribution) in rows {
+            guard let row = contribution.row(record, shapes), let bounds = shapes.geometry(of: record.id)?.bounds, !bounds.isNull else { continue }
+            let anchored = Anchored(rect: bounds, slope: nil)
+            var meeting: [(container: ShapeID, rect: CGRect, origin: CGPoint)] = []
+            for container in document.containers(of: record.id, containingKinds: kinds) {
+                guard let tab = placed[container], let holder = shapes.geometry(of: container)?.bounds, !holder.isNull else { continue }
+                let rect = CGRect(x: holder.minX + tab.frame.minX * unit, y: holder.minY + tab.frame.minY * unit,
+                                  width: tab.frame.width * unit, height: tab.frame.height * unit)
+                if Self.meets(rect, anchor: anchored, scale: scale, overTab: placed[record.id] != nil) { meeting.append((container, rect, holder.origin)) }
+            }
+            guard !meeting.isEmpty else { continue }
+            // Where the row would start past them, as `giveWay(of:)` starts it.
+            let start = meeting.reduce(0) { max($0, $1.rect.maxX + AdornmentLayout.spacing * scale - bounds.minX) }
+            if bounds.width - start >= row.least { continue }
+            for (container, rect, origin) in meeting {
+                guard var tab = placed[container] else { continue }
+                if tab.isTurned {
+                    let right = row.rect.minX - gap
+                    if rect.maxX > right { tab.frame.origin.x = (right - origin.x) / unit - tab.frame.width }
+                } else {
+                    let bottom = row.rect.minY - gap
+                    if rect.maxY > bottom {
+                        // Up off the edge; where that lands on another shape or tab and left of the container's edge doesn't, left of it
+                        // (a shape's name over a neighbor's card takes its clicks); where both do, up still, the bar being the title.
+                        let original = tab.frame
+                        let ancestors = Set(document.containers(of: container, containingKinds: kinds))
+                        tab.frame.origin.y = (bottom - origin.y) / unit - tab.frame.height
+                        func clear(_ frame: CGRect) -> Bool {
+                            let world = CGRect(x: origin.x + frame.minX * unit, y: origin.y + frame.minY * unit, width: frame.width * unit, height: frame.height * unit)
+                            for other in editor.paintOrder(in: world) {
+                                guard other.id != container, !ancestors.contains(other.id), !document.containers(of: other.id, containingKinds: kinds).contains(container),
+                                      let geometry = shapes.geometry(of: other.id), geometry.isClosed, geometry.bounds.intersects(world) else { continue }
+                                return false
+                            }
+                            return !placed.contains { id, other in
+                                guard id != container, let holder = shapes.geometry(of: id)?.bounds, !holder.isNull else { return false }
+                                return CGRect(x: holder.minX + other.frame.minX * unit, y: holder.minY + other.frame.minY * unit,
+                                              width: other.frame.width * unit, height: other.frame.height * unit).intersects(world)
+                            }
+                        }
+                        if !clear(tab.frame) {
+                            var left = original
+                            left.origin.x = -AdornmentLayout.spacing - original.width
+                            if clear(left) { tab.frame = left }
+                        }
+                    }
+                }
+                placed[container] = tab
+            }
+        }
     }
 
     /// The tabs the overlay draws for the view it draws: kept as the region pointing goes by.
@@ -444,20 +525,25 @@ final class AdornmentState {
         let document = editor.document, kinds = editor.registry.containingKinds
         // Most shapes are in no container: a lookup, and nothing more.
         guard document.container(of: id, containingKinds: kinds) != nil else { return [] }
-        let shapes = editor.shapeContext, anchor = anchored.rect
-        let rowTop = anchor.minY - AdornmentLayout.rowReach * scale
-        let rowBottom = anchor.minY - (AdornmentLayout.rowGap + (overTab ? AdornmentLayout.tabRowLift : 0)) * scale
-        let gap = AdornmentLayout.spacing * scale
+        let shapes = editor.shapeContext
         var met: [CGRect] = []
         for container in document.containers(of: id, containingKinds: kinds) {
             guard let tab = tabs.tabs[container], let bounds = shapes.geometry(of: container)?.bounds, !bounds.isNull else { continue }
             let unit = tabs.unit
             let rect = CGRect(x: bounds.minX + tab.frame.minX * unit, y: bounds.minY + tab.frame.minY * unit,
                               width: tab.frame.width * unit, height: tab.frame.height * unit)
-            guard rect.maxY > rowTop, rect.minY < rowBottom, rect.maxX + gap > anchor.minX, rect.minX < anchor.maxX else { continue }
-            met.append(rect)
+            if Self.meets(rect, anchor: anchored, scale: scale, overTab: overTab) { met.append(rect) }
         }
         return met
+    }
+
+    /// Whether a container's tab (`rect`, world units) meets a closed shape's row above its top-left: the row gives way to it.
+    private static func meets(_ rect: CGRect, anchor anchored: Anchored, scale: CGFloat, overTab: Bool) -> Bool {
+        let anchor = anchored.rect
+        let rowTop = anchor.minY - AdornmentLayout.rowReach * scale
+        let rowBottom = anchor.minY - (AdornmentLayout.rowGap + (overTab ? AdornmentLayout.tabRowLift : 0)) * scale
+        let gap = AdornmentLayout.spacing * scale
+        return rect.maxY > rowTop && rect.minY < rowBottom && rect.maxX + gap > anchor.minX && rect.minX < anchor.maxX
     }
 
     /// `giveWay` for a shape on the board shown, at the zoom now, against the tabs placed around it: world units.
@@ -467,16 +553,6 @@ final class AdornmentState {
         guard let anchored = Self.anchored(of: id, in: editor.shapeContext, zoom: zoom) else { return 0 }
         let tabs = tabs(in: rowRegion(around: anchored.rect))
         return giveWay(of: id, anchor: anchored, scale: scale, overTab: tabs.tabs[id] != nil, tabs: tabs) * scale
-    }
-
-    /// The tabs `rowStart` gives way to, as one rect, world units at the zoom now; nil where none meets the row.
-    func rowTabs(of id: ShapeID) -> CGRect? {
-        guard editor.document.container(of: id, containingKinds: editor.registry.containingKinds) != nil else { return nil }
-        let zoom = editor.camera.zoom, scale = AdornmentLayout.scale(atZoom: zoom)
-        guard let anchored = Self.anchored(of: id, in: editor.shapeContext, zoom: zoom) else { return nil }
-        let tabs = tabs(in: rowRegion(around: anchored.rect))
-        let met = meetingTabs(of: id, anchor: anchored, scale: scale, overTab: tabs.tabs[id] != nil, tabs: tabs)
-        return met.isEmpty ? nil : met.dropFirst().reduce(met[0]) { $0.union($1) }
     }
 
     /// The lead of the shape's label, where its geometry kept room for it, in the face that room is the size of;
@@ -632,6 +708,7 @@ extension AdornmentState: EditorService {
         generation += 1
         tabsKept = []
         tabShapesPlaced = []
+        rowShapesPlaced = []
         drawnTabRegion = nil
     }
 

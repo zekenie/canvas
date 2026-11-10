@@ -580,5 +580,10 @@ public struct TitlesPlugin: ListedPlugin {
         registrar.forShapes(adopting: .titled) { titled in
             titled.accessibility { record, editor in AccessibleTraits(name: editor.registry.title(of: record)) }
         }
+        // Zoomed out, a kind drawn as a card of bars has its title's bar where its pill is: a container's tab gives way to it, as the
+        // pill gives way to the tab in full.
+        registrar.forShapes(adopting: .titlePill) { pilled in
+            pilled.rowZoomedOut { shape, shapes in TitleBar.kept(of: shape, in: shapes) }
+        }
     }
 }

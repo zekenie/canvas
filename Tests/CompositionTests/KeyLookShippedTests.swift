@@ -173,6 +173,94 @@ private let billing = #"""
             expect(other.distance(to: point) > 5, "the keys in order apart in the gap's middle: \(point) is \(other.distance(to: point)) from the other")
         }
     },
+    test("UX walk 5 tables-1: in a 75 gap no key runs through another's circle, open or with orders folded, and the two keys into customers.id stand their bars in columns of their own, drawn in the window") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\nemail text unique\nname text\ncreated_at timestamptz"
+            table "orders" right of "customers" (gap: 75) columns: "id uuid pk\ntotal_cents int\ncustomer_id uuid? → customers.id\nstatus text\nbilling_customer_id uuid? → customers.email\nshipping_customer_id uuid → customers.id"
+            """#)
+        w.window.settle()
+        let editor = w.editor
+        let customers = try table(editor, "customers"), orders = try table(editor, "orders")
+        @MainActor func check(_ state: String) throws {
+            let keys = editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.filter { editor.shapeContext.geometry(of: $0.id)?.isHidden != true }
+            let drawn = try keys.map { (look: editor.arrowLook(of: $0.id), geometry: try require(editor.arrowGeometry(of: $0.id))) }
+            // Every circle (25 out from its offset, radius 5), with the lines it is not on: clear of each by their half strokes and a point,
+            // and its middle paper in the window's picture.
+            var circles: [(centre: CGPoint, owner: Int)] = []
+            for (index, key) in drawn.enumerated() {
+                for end in [ArrowEnd.start, .end] where key.look?.mark(atStart: end == .start) == .zeroOrOne {
+                    let offset = end == .start ? key.geometry.markOffset.start : key.geometry.markOffset.end
+                    circles.append((key.geometry.point(25 + offset, along: end).point, index))
+                }
+            }
+            expectEqual(circles.count, 2, "\(state): the two nullable keys' circles")
+            for circle in circles {
+                for (index, key) in drawn.enumerated() where index != circle.owner {
+                    let distance = try require(key.geometry.levelBody).distance(to: circle.centre)
+                    expect(distance > 5 + 2.5 + 1, "\(state): a line clear of the circle at \(circle.centre): \(distance)")
+                }
+            }
+            let box = try require(editor.shapeContext.geometry(of: customers.id)?.bounds).union(try require(editor.shapeContext.geometry(of: orders.id)?.bounds))
+            editor.camera = Camera(origin: CGPoint(x: box.minX - 40, y: box.minY - 40), zoom: 1)
+            let rep = renderBitmap(editor, size: CGSize(width: box.width + 80, height: box.height + 80))
+            for circle in circles {
+                let middle = pixel(rep, at: editor.camera.toView(circle.centre))
+                expect(middle[0] > 200 && middle[1] > 200 && middle[2] > 200, "\(state): the circle at \(circle.centre) is hollow, no line through it: \(middle)")
+            }
+        }
+        try check("open")
+        // At customers.id the customer key's bar and the shipping key's two never stand in one column.
+        @MainActor func geometry(of column: String) throws -> ArrowGeometry {
+            let part = try require(orders.props.columns.first { $0.name == column }?.id)
+            let arrow = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { $0.props.start.binding?.part == part })
+            return try require(editor.arrowGeometry(of: arrow.id))
+        }
+        let (customer, shipping) = (try geometry(of: "customer_id"), try geometry(of: "shipping_customer_id"))
+        // LineRows says each key the marks its run ends with at either table, once a run: at customers the bars and circles, one of the
+        // two keys into customers.id at an odd place in their fan; at orders the crow's feet.
+        let billingPart = try require(orders.props.columns.first { $0.name == "billing_customer_id" }?.id)
+        let billingKey = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { $0.props.start.binding?.part == billingPart })
+        let marks = try require(editor.connectionBundle(of: billingKey.id)?.runMarks)
+        expectEqual(marks[.end], ConnectionBundle.RunMarks(marks: [.zeroOrOne, .one], nudges: 1), "at customers")
+        expectEqual(marks[.start], ConnectionBundle.RunMarks(marks: [.many]), "at orders")
+        let near = customer.point(12 + customer.markOffset.end, along: .end).point
+        for bar in [12, 17.5].map({ shipping.point($0 + shipping.markOffset.end, along: .end).point }) {
+            expect(abs(bar.x - near.x) >= 4, "bars in columns of their own: \(near) and \(bar)")
+        }
+        // Folded: orders' rows closed, their keys from its line.
+        editor.selectedShapeIDs = [orders.id]
+        let walk = w.walk()
+        walk.press(Chord(Key.up, [.control, .command]))
+        w.window.settle()
+        editor.selectedShapeIDs = []
+        w.window.settle()
+        try check("folded")
+    },
+    test("a run's marks are those of its own board, shown or not: the walk's tables read the same from another board (review U13-C3)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\nemail text unique"
+            subboard "Elsewhere" above "customers"
+            table "orders" right of "customers" (gap: 75) columns: "id uuid pk\ncustomer_id uuid? → customers.id\nshipping_customer_id uuid → customers.id"
+            """#)
+        w.window.settle()
+        let editor = w.editor
+        let orders = try table(editor, "orders")
+        let part = try require(orders.props.columns.first { $0.name == "customer_id" }?.id)
+        let key = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { $0.props.start.binding?.part == part })
+        let shown = try require(editor.connectionBundle(of: key.id)?.runMarks)
+        expectEqual(shown[.end]?.marks, [.zeroOrOne, .one], "shown: bars and a circle at customers")
+        let elsewhere = try require(editor.document.shapes.first { $0.kind == "subboard" })
+        expect(editor.showBoard(BoardID(owner: elsewhere.id)), "another board shown")
+        w.window.settle()
+        let away = try require(editor.connectionBundle(of: key.id)?.runMarks)
+        expectEqual(away, shown, "the tables' board, not shown, is read as when it is")
+    },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {
         let editor = try billingEditor()
         let unique = try key(editor, from: "payments", "order_id"), nullable = try key(editor, from: "refunds", "payment_id")

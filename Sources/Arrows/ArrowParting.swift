@@ -79,9 +79,10 @@ extension ArrowDefinition {
     /// where its far end is among theirs, top to bottom, (`shift`, steps from the middle one, `partingLineSpacing` a step or as many as the row's band holds), so each line leaves on its own; a marked end
     /// stays (keys from different tables to one row lay their bars on each other: UX walk 2 structure new-2). Its pill, slid to the row, stacks
     /// past the pills of those before it in the stack whose pills are slid there too, on a straight stub of its line that turns
-    /// after it, so it stays level with its row (alone, at the row, as any slid pill is, on its stub). Nil for one alone there.
+    /// after it, so it stays level with its row. A pill slid to its row alone there (no parting: one row's only relation in a fan
+    /// into one table, or a closed header's bundle lead) is a stack of one, on the same stub (`loneStack`). Nil for any other.
     static func partingStack(of shape: ShapeRecord<Arrow>, bundle: ConnectionBundle, marked: Bool, in context: ShapeContext) -> PartingStack? {
-        guard let parting = bundle.parting, parting.count > 1 else { return nil }
+        guard let parting = bundle.parting, parting.count > 1 else { return loneStack(of: shape, bundle: bundle, in: context) }
         let shift = marked ? 0 : CGFloat(parting.index) - CGFloat(parting.count - 1) / 2
         let steps = CGFloat(parting.count - 1)
         let own = labelWidth(of: shape, in: context)
@@ -100,6 +101,19 @@ extension ArrowDefinition {
         // Its pill stays inside the row as its line moves (its neighbors' pills are in theirs).
         let keep = context.layoutInput(AdornmentLead.faces, of: shape)?.sizes.first?.height ?? 0
         return PartingStack(end: parting.end, shift: shift, steps: steps, along: along, stub: along + own / 2 + ArrowStyle.labelClearance, keep: keep)
+    }
+
+    /// A pill slid to its row by a fan at its far end, with no other connection parting from that row: a stack of one, its line
+    /// straight past it before it turns (UX walk 5 evolve-1: on a curve that had already turned toward a table far above or below, a
+    /// row's only pill sat a whole row off, beside a row without that relation). Only at a row its shape lists, with a label.
+    static func loneStack(of shape: ShapeRecord<Arrow>, bundle: ConnectionBundle, in context: ShapeContext) -> PartingStack? {
+        guard let end = slidToward(bundle, of: shape.props) else { return nil }
+        guard let binding = shape.props[end == .start ? ArrowEnd.start : .end].binding, let part = binding.part,
+              context.geometry(of: binding.shapeID)?.parts.frame(part) != nil else { return nil }
+        let own = labelWidth(of: shape, in: context)
+        guard own > 0 else { return nil }
+        let along = ArrowStyle.labelClearance + own / 2
+        return PartingStack(end: end, shift: 0, steps: 0, along: along, stub: along + own / 2 + ArrowStyle.labelClearance)
     }
 
     /// A label laid along its line (`laid`, at `position`) moved out along it, away from the row it parts from with others, until no
