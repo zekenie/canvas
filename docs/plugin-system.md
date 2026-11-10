@@ -2730,8 +2730,9 @@ as lines, worked out from Topology's literal connections at the shapes a change 
 it says. The first in the board's order leads, its pill counting the rest ("writes · 9"), which keep its outline under
 the core's `ShapeGeometry.isHidden` (not drawn, hit or spoken); a press on it selects them all (Selection's
 `SelectionUnits`). The same answer bows apart connections with the same two ends, fans those that end together from
-one shape's rows (their pills slid to their starts), and brings a line to a table as a whole in at a row clear of
-the keys at its side:
+one shape's rows (their pills slid to their starts), parts those that leave one row for different places (each line
+leaving the row on its own, their pills stacked out from it in the row's band, each on a straight stub of its own line),
+and brings a line to a table as a whole in at a row clear of the keys at its side:
 
 ```swift
 registrar.layoutInput(ConnectionBundle.input) { record, reading in reading.service(RowBundles.self)?.answer(for: record, in: reading) }
@@ -6401,9 +6402,10 @@ A closed shape's row above its top-left starts past any container's tab it meets
 (`AdornmentLayout.frames(of:width:leftStart:)`, the left end from there and the right end where it was; a row with no
 right end keeps the room it had, running on past the shape's edge, so a name isn't cut by the tab), at every
 zoom: a tab keeps its size on screen and a shape's inset in its container doesn't, so zoomed out a note at its
-frame's top-left would have its pill over the frame's tab. Titles' bars zoomed out sit just above their own shape and
-start where the row does (`editor.adornmentRowStart(of:)`) while some of the bar is still over the shape; a shape too
-narrow for that has its bar just inside its own top edge, below the tab. No kind is named.
+frame's top-left would have its pill over the frame's tab. Titles' bars zoomed out sit just above their own shape, clear
+of a selected shape's outline and corner handles, and start where the row does (`editor.adornmentRowStart(of:)`) while
+some of the bar is still over the shape; a shape too narrow for that has its bar just inside its own top edge, below the
+tab where the tab reaches over it (`editor.adornmentRowTabs(of:)`). No kind is named.
 
 ### Plain text and a number
 
@@ -7564,12 +7566,15 @@ kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its mi
 arrow with no row end is drawn as it always was. How a connection looks, its ends' marks (`EndMark`: a
 crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLooks` when the geometry is
 worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
-head, and Toggle Arrowhead leaves it. A marked end leaves its row on a straight stub as long as its mark and a
-clearance (`ArrowStyle.levelStub`), the curve starting at the stub's end, so the mark lies level whatever the line does after
-it (a C between stacked tables, a fan's turn, rows far across) and two keys at one row end lay their marks on each other;
-the line is then a `CubicChain` (Geometry's: the stubs and the curve), `ArrowGeometry.levelBody`. Where the ends face each
+head, and Toggle Arrowhead leaves it. A marked end leaves its row on a straight stub as long as the longest mark and a
+clearance whatever its own (`ArrowStyle.levelStub`, 36), the curve starting at the stub's end, so the mark lies level
+whatever the line does after it (a C between stacked tables, a fan, rows far across), two keys at one row end lay their
+marks on each other, and keys between the same two shapes cross only where their ends' order swaps, once (in a narrow gap
+each turns at a column of its own); the line is then a `CubicChain` (Geometry's: the stubs and the curve),
+`ArrowGeometry.levelBody`. Keys fanned into one row come in level, a bar's height and a gap apart, or where the row is too
+short each one's marks a stub further out than its neighbor's, on the side its line turns away from. Where the ends face each
 other neither reach passes the way between them, so the curve never swings back behind where it starts. A key passing under
-a card it isn't bound to is drawn faint across it (`ArrowUnderCardsOverlay`, left out of the two ends of each row of a card written as rows, so it never strikes through a name or a type; far out, below 15%, a key whose ends face each other is one straight line, and a C stays its curve), and lit, its light goes under the cards with it
+a card it isn't bound to is drawn faint across the whole of it, edge to edge, in a gray that reads on light and dark cards (`ArrowUnderCardsOverlay`, quieter through the words of a row; far out, below 15%, a key whose ends face each other is one straight line, and a C stays its curve), and lit, its light goes under the cards with it
 (the core strokes a tinted outline of a shape painted below its anchor where it is painted). Which side of its row an end
 leaves by is Connections' `PartSide`, the one rule the connector draws by and the bundles pick rows by. A row's resting port
 dot is not drawn where a connection ends along that row's side, nor over another shape's face (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked

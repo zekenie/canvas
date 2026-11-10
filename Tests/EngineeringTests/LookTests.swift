@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -107,6 +108,27 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
         let table = try view(wide)
         expect(!bar(narrow, Int(table.minX) + 3..<Int(table.maxX) - 3, y: Int(table.minY) - 5), "none above it, where the tab would hide it")
         expect(bar(narrow, Int(table.minX) + 3..<Int(table.minX) + 30, y: Int(table.minY) + 3), "its bar just inside its top edge")
+        // Selected, its bar starts past the corner handle that sits on the corner (review U12-E9): gray, as the bar is, never the handle's.
+        h.editor.selection = wide
+        let selected = render(h.editor)
+        @MainActor func gray(_ rep: NSBitmapImageRep, _ x: Range<Int>, y: Int) -> Bool {
+            some(rep, in: CGRect(x: x.lowerBound, y: y, width: x.count, height: 1)) { $0[0] < 120 && abs($0[0] - $0[2]) < 12 }
+        }
+        expect(!gray(selected, Int(table.minX) + 3..<Int(table.minX) + 5, y: Int(table.minY) + 3), "no bar under the corner handle")
+        expect(gray(selected, Int(table.minX) + 9..<Int(table.minX) + 30, y: Int(table.minY) + 3), "its bar, past it")
+        h.editor.selection = nil
+        // Far out, with the table just below the database's top, the tab reaches over the table's top: the bar goes below the tab, as
+        // the pill gives way to it in full (UX walk 4 structure-3).
+        let more = (1...5).map { Column(name: "c\($0)", type: TypeRef("text")) }
+        h.editor.transact { $0.update(wide, as: DatabaseTable.self) { $0.props.frame.origin.y = 116; $0.props.columns = column + more } }
+        h.editor.camera = Camera(origin: .zero, zoom: 0.1)
+        let tab = try require(h.editor.adornmentRowTabs(of: wide), "the database's tab meets its row")
+        let far = render(h.editor)
+        let tableFar = try require(h.editor.shapeContext.frame(of: try require(h.editor.document[wide])))
+        expect(tab.maxY > tableFar.minY, "the tab reaches over the table's top: \(tab) over \(tableFar)")
+        // Just below the tab's bottom, inside the table (where it was, just inside the table's top, the tab lay over it).
+        let below = CGRect(x: Int(tableFar.minX * 0.1) + 2, y: Int((tab.maxY * 0.1).rounded(.up)), width: 6, height: 4)
+        expect(some(far, in: below) { $0[0] < 120 }, "its bar below the tab, inside the table: \(below)")
     },
     test("a table: its paper #EBEBEB, a key before a primary key, a 1 before a unique column, types grey at the right, an enum's pill, a nullable's ?") {
         let (h, _, _) = try board()

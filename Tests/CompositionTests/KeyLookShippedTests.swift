@@ -82,7 +82,7 @@ private let billing = #"""
             expect(p[0] < 120, "each key drawn in the gap: \(p) at \(middle)")
         }
     },
-    test("UX walk 3 structure-1: a key passing under a table it isn't bound to is drawn faint across that table, so it doesn't read as ending at its row") {
+    test("UX walk 3 and 4 structure-1: a key passing under a table it isn't bound to is drawn faint across the whole of it, joined where it goes under and comes out, in light and dark") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         try w.turnKitOn()
@@ -97,22 +97,80 @@ private let billing = #"""
         let orders = try require(editor.shapeContext.geometry(of: try table(editor, "orders").id)?.bounds)
         let key = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first)
         let body = try require(editor.arrowGeometry(of: key.id)?.levelBody)
-        let under = try require(body.flattened(segments: 400).min { abs($0.x - orders.midX) < abs($1.x - orders.midX) })
+        let points = body.flattened(segments: 800)
+        let under = try require(points.min { abs($0.x - orders.midX) < abs($1.x - orders.midX) })
         expect(orders.insetBy(dx: 4, dy: 4).contains(under), "the key passes under orders: \(under) in \(orders)")
+        // Just inside where it goes under and where it comes out: the faint line joins the line drawn outside.
+        let entering = try require(points.first { orders.insetBy(dx: 3, dy: 3).contains($0) })
+        let leaving = try require(points.last { orders.insetBy(dx: 3, dy: 3).contains($0) })
         editor.camera = Camera(origin: CGPoint(x: orders.minX - 40, y: orders.minY - 40), zoom: 1)
-        let rep = renderBitmap(editor, size: CGSize(width: orders.width + 80, height: orders.height + 80))
-        // Beside the line, the paper; on it, something darker than the paper and lighter than the line itself.
-        var paperPoint = under + CGPoint(x: 0, y: 8)
-        if !orders.insetBy(dx: 4, dy: 4).contains(paperPoint) { paperPoint = under - CGPoint(x: 0, y: 8) }
-        let on = pixel(rep, at: editor.camera.toView(under)), paper = pixel(rep, at: editor.camera.toView(paperPoint))
-        expect(on[0] < paper[0] - 15, "drawn across the table, faint: \(on) on paper \(paper)")
-        expect(on[0] > 90, "but faint: \(on)")
-        // Over a row's words (its two ends) the line is left out, so it never strikes through a name or a type; the middle shows.
-        let geometry = try require(editor.shapeContext.geometry(of: try table(editor, "orders").id))
-        let leftEnd = try require(body.flattened(segments: 400).first { $0.x >= orders.minX + 6 })
-        if let row = geometry.parts.shownFrames.first(where: { $0.rect.minY + 2 < leftEnd.y && leftEnd.y < $0.rect.maxY - 2 }) {
-            let word = pixel(rep, at: editor.camera.toView(leftEnd)), rowPaper = pixel(rep, at: editor.camera.toView(CGPoint(x: leftEnd.x, y: row.rect.minY + 1)))
-            expect(abs(word[0] - rowPaper[0]) <= 8, "no line through a row's name end: \(word) beside \(rowPaper)")
+        for dark in [false, true] {
+            var drawn: NSBitmapImageRep?
+            try require(NSAppearance(named: dark ? .darkAqua : .aqua)).performAsCurrentDrawingAppearance {
+                drawn = renderBitmap(editor, size: CGSize(width: orders.width + 80, height: orders.height + 80))
+            }
+            let rep = try require(drawn)
+            // Beside the line, the paper (light in both appearances); on it, darker than the paper and lighter than a line drawn whole.
+            for point in [entering, under, leaving] {
+                var paperPoint = point + CGPoint(x: 0, y: 8)
+                if !orders.insetBy(dx: 2, dy: 2).contains(paperPoint) { paperPoint = point - CGPoint(x: 0, y: 8) }
+                let on = pixel(rep, at: editor.camera.toView(point)), paper = pixel(rep, at: editor.camera.toView(paperPoint))
+                expect(on[0] < paper[0] - 15, "\(dark ? "dark" : "light"): drawn across the table at \(point), faint: \(on) on paper \(paper)")
+                expect(on[0] > 90, "\(dark ? "dark" : "light"): but faint: \(on)")
+            }
+        }
+    },
+    test("UX walk 4 tables-1 and tables-2: in a 75 gap two keys into one row keep their bars apart, and keys between the two tables cross once, where their ends swap") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\nemail text unique\nname text"
+            table "orders" right of "customers" (gap: 75) columns: "id uuid pk\ncustomer_id uuid? → customers.id\nbilling_customer_id uuid? → customers.email\nshipping_customer_id uuid → customers.id"
+            """#)
+        w.window.settle()
+        let editor = w.editor
+        @MainActor func key(_ column: String) throws -> ArrowGeometry {
+            let orders = try table(editor, "orders"), part = try require(orders.props.columns.first { $0.name == column }?.id)
+            let arrow = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { [$0.props.start.binding?.part, $0.props.end.binding?.part].contains(part) })
+            return try require(editor.arrowGeometry(of: arrow.id))
+        }
+        let (customer, billing, shipping) = (try key("customer_id"), try key("billing_customer_id"), try key("shipping_customer_id"))
+        // At customers.id, the customer and shipping keys' bars (12 and 17.5 out, 9 either side of the line) are never on each other.
+        @MainActor func bars(_ geometry: ArrowGeometry, at end: ArrowEnd) -> [CGPoint] {
+            let offset = end == .start ? geometry.markOffset.start : geometry.markOffset.end
+            return [12, 17.5].map { geometry.point($0 + offset, along: end).point }
+        }
+        @MainActor func idEnd(_ geometry: ArrowGeometry) -> ArrowEnd { geometry.start.x < geometry.end.x ? .start : .end }
+        let a = bars(customer, at: idEnd(customer)), b = bars(shipping, at: idEnd(shipping))
+        for p in a { for q in b where abs(p.x - q.x) < 4 { expect(abs(p.y - q.y) > 18 + 2.5, "no bars on each other at customers.id: \(a) \(b)") } }
+        // billing leaves email (below id) for a row above shipping's: they swap, and cross once; customer and billing keep their order.
+        @MainActor func crossings(_ g: ArrowGeometry, _ h: ArrowGeometry) throws -> Int {
+            let p = try require(g.levelBody).flattened(segments: 160), q = try require(h.levelBody).flattened(segments: 160)
+            func cross(_ o: CGPoint, _ u: CGPoint, _ v: CGPoint) -> CGFloat { (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x) }
+            var count = 0
+            for i in 1..<p.count { for j in 1..<q.count {
+                let d1 = cross(q[j - 1], q[j], p[i - 1]), d2 = cross(q[j - 1], q[j], p[i]), d3 = cross(p[i - 1], p[i], q[j - 1]), d4 = cross(p[i - 1], p[i], q[j])
+                if (d1 > 0) != (d2 > 0), (d3 > 0) != (d4 > 0) { count += 1 }
+            } }
+            return count
+        }
+        expectEqual(try crossings(billing, shipping), 1, "swapped: once")
+        expectEqual(try crossings(customer, billing), 0, "in order: never")
+        // In the gap too narrow to stagger, the two keys' ends spread across customers.id but stay inside it, never on the line
+        // between it and the next row (review U12-E3).
+        let customers = try table(editor, "customers")
+        let idRow = try require(editor.shapeContext.geometry(of: customers.id)?.parts.frame(try require(customers.props.columns.first { $0.name == "id" }?.id))?.rect)
+        for geometry in [customer, shipping] {
+            let y = geometry.point(0, along: idEnd(geometry)).point.y
+            expect(y > idRow.minY + 1 && y < idRow.maxY - 1, "inside customers.id: \(y) in \(idRow.minY)...\(idRow.maxY)")
+        }
+        // Keys that keep their order run a column apart through the gap, not on top of each other (review U12-E8): the customer and billing
+        // keys, where they pass the middle half of it, are at least a stroke and a gap apart.
+        let gap = try require(editor.shapeContext.geometry(of: customers.id)?.bounds).maxX
+        let (one, other) = (try require(customer.levelBody), try require(billing.levelBody))
+        for point in one.flattened(segments: 200) where point.x > gap + 75 * 0.3 && point.x < gap + 75 * 0.7 {
+            expect(other.distance(to: point) > 5, "the keys in order apart in the gap's middle: \(point) is \(other.distance(to: point)) from the other")
         }
     },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {

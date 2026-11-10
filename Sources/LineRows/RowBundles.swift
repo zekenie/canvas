@@ -258,10 +258,10 @@ final class RowBundles {
     private func join(_ arrow: ShapeID, in state: BoardState) -> Bool {
         var joined: ConnectionBundle?
         var led: [ShapeID]?
-        var partings: [ConnectionBundle.Fan] = []
+        var partings: [(fan: ConnectionBundle.Fan, parted: [ShapeID])] = []
         for shape in state.shapesOf[arrow] ?? [] {
             guard let partial = state.partials[shape], let part = partial.answers[arrow] else { continue }
-            if let parting = part.parting { partings.append(parting) }
+            if let parting = part.parting { partings.append((parting, part.parted)) }
             if led == nil, case .lead = part.role { led = partial.bundles[arrow] }
             guard var answer = joined else {
                 joined = part
@@ -269,11 +269,21 @@ final class RowBundles {
             }
             for fan in part.fans where answer.fan(at: fan.end) == nil { answer.fans.append(fan) }
             answer.entries.merge(part.entries) { first, _ in first }
+            if answer.run == nil { answer.run = part.run }
             joined = answer
         }
-        // Parting says something only beside a fan (it spaces pills a fan slides toward the other end): the one at the end that is
-        // not fanned, whichever of the ends' shapes said it first; alone, the connection is drawn as ever.
-        if let fanned = joined { joined?.parting = fanned.fans.isEmpty ? nil : partings.first { fanned.fan(at: $0.end) == nil } }
+        // One parting: the one at an end that is not fanned (where a fan slides its pill). Both of an arrow's ends may part (rows of
+        // two shapes each with connections to other places), and which shape said it first changes with every edit, so the start's
+        // is the one kept, whichever shape worked out first (review U12-C1). At a fanned end (two keys into one row, from rows of
+        // one table) the fan holds the lines apart, and a parting there says nothing.
+        if let answer = joined {
+            var chosen: (fan: ConnectionBundle.Fan, parted: [ShapeID])?
+            for end in [ConnectionBundle.End.start, .end] where chosen == nil && answer.fan(at: end) == nil {
+                chosen = partings.first { $0.fan.end == end }
+            }
+            joined?.parting = chosen?.fan
+            joined?.parted = chosen?.parted ?? []
+        }
         let answer = joined.flatMap { $0.isPlain ? nil : $0 }
         let before = state.answers[arrow]
         state.answers[arrow] = answer
@@ -383,8 +393,9 @@ final class RowBundles {
         var reads: Set<ShapeID> = []
 
         // Parting: those with their end here at one line and their other ends at different places (a row's writes and reads to two
-        // tables), ordered by where those are, top to bottom; their pills, slid toward this end by a fan at the other, are spaced
-        // apart along their lines rather than stacked (UX walk 3 evolve-5).
+        // tables), ordered by where those are, top to bottom: the order their lines leave the row in. Their pills stack out from the
+        // row in their own band (UX walk 4 evolve-1), the one whose far end is farthest above or below the row first (its line turns
+        // away soonest, and the others stay level past it), and a pill out along its line keeps clear of the others' lines.
         struct Here: Hashable { let here: Standing; let end: ConnectionBundle.End }
         var parting: [Here: [(arrow: ShapeID, far: Standing)]] = [:]
         for item in drawn where !members.contains(item.arrow) && item.source != item.target {
@@ -398,15 +409,51 @@ final class RowBundles {
         func height(of far: Standing) -> (CGFloat, Int, Int) {
             (document[far.shape]?.box?.midY ?? 0, document.index(of: far.shape) ?? 0, far.line ?? -1)
         }
+        // Where a row is, by its line among the shape's lines (never by a layout, which only the board shown has: the same board is
+        // stacked the same shown, captured or drawn on, review U12-C7); a line has no height of its own to read otherwise.
+        let lineCount = reader.lineCount(of: record)
+        func rowY(_ line: Int?) -> CGFloat {
+            guard let line, let box = record.box, lineCount > 0 else { return record.box?.midY ?? 0 }
+            return box.minY + box.height * (CGFloat(line) + 0.5) / CGFloat(lineCount)
+        }
         for (here, group) in parting {
             var fars: [Standing] = []
             for item in group where !fars.contains(item.far) { fars.append(item.far) }
             fars.sort { height(of: $0) < height(of: $1) }
             guard fars.count > 1 else { continue }
             for far in fars { reads.insert(far.shape) }
+            // Stacked from the row: the farthest above or below it first; ties top to bottom.
+            let y = rowY(here.here.line)
+            let stack = fars.indices.sorted { a, b in
+                let (da, db) = (abs(height(of: fars[a]).0 - y), abs(height(of: fars[b]).0 - y))
+                return da != db ? da > db : a < b
+            }
+            var parted: [ShapeID] = []
+            for index in stack { parted += group.filter { $0.far == fars[index] }.map(\.arrow).sorted { (document.index(of: $0) ?? 0) < (document.index(of: $1) ?? 0) } }
             for (arrow, far) in group {
                 guard let index = fars.firstIndex(of: far) else { continue }
                 answers[arrow]?.parting = ConnectionBundle.Fan(end: here.end, index: index, count: fars.count)
+                answers[arrow]?.parted = parted
+            }
+        }
+
+        // Run: connections between the same two shapes at rows of both, in the order they meet the one on the right (top to bottom),
+        // which Arrows turns their middles across a narrow gap in, each at a place of its own (UX walk 4 tables-1, review U12-E8).
+        // Read from both shapes' boxes (`reads`), the same from either end.
+        struct Between: Hashable { let ends: Set<ShapeID> }
+        var runs: [Between: [(arrow: ShapeID, end: ConnectionBundle.End, line: Int)]] = [:]
+        for item in drawn where !members.contains(item.arrow) && item.source != item.target {
+            guard let from = item.start.line, let to = item.end.line,
+                  let a = document[item.source]?.box, let b = document[item.target]?.box, a.midX != b.midX else { continue }
+            reads.insert(item.source == shape ? item.target : item.source)
+            let targetIsRight = b.midX > a.midX
+            runs[Between(ends: [item.source, item.target]), default: []]
+                .append((item.arrow, targetIsRight ? .end : .start, targetIsRight ? to : from))
+        }
+        for (_, group) in runs where group.count > 1 {
+            let ordered = group.sorted { ($0.line, document.index(of: $0.arrow) ?? 0) < ($1.line, document.index(of: $1.arrow) ?? 0) }
+            for (index, item) in ordered.enumerated() {
+                answers[item.arrow]?.run = ConnectionBundle.Fan(end: item.end, index: index, count: ordered.count)
             }
         }
 
@@ -517,6 +564,12 @@ private struct StandingReader {
         let hidden = !shown.isShown(index)
         let header = hidden ? shown.row(atLine: line).map { PartAddress(id, part: lines.rows[$0].id) } : nil
         return (.line(id, line), hidden, hidden ? header ?? PartAddress(id, part: nil) : nil)
+    }
+
+    /// How many lines a shape shows: its shown lines, else its rows; 0 for a shape not written as lines.
+    mutating func lineCount(of record: AnyShapeRecord) -> Int {
+        guard let lines = lines(of: record.id) else { return 0 }
+        return lines.shown?.lines.count ?? lines.rows.count
     }
 
     /// The lines of a shape a connection to it as a whole may come in at, each with the row drawn there: its rows shown, by line.

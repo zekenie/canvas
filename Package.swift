@@ -340,7 +340,7 @@ let package = Package(
         // Horizontals, shape traits: the interfaces verticals plug into that a shape has.
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "Draw", "Keyboard", "Palette", "Queries", "Selection", "TableOfContents", "Titles", "Topology"]), // layer: platform
-        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Palette", "Queries", "SlashCommands", "TableOfContents", "TextEditing"]),  // layer: platform
+        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Palette", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing"]),  // layer: platform
         .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "SlashCommands", "TableOfContents"]), // layer: platform
         .target(name: "Grouping", dependencies: ["Canvas", "ContextMenus", "Draw", "Keyboard", "Queries", "Selection"]), // layer: platform
         .target(name: "Connections", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Mentions", "Selection", "TextEditing", "Topology"]), // layer: platform

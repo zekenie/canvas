@@ -676,6 +676,14 @@ extension CanvasEditor {
         return state.rowStart(of: id)
     }
 
+    /// Where the containers' tabs that a closed shape's row above its top-left gives way to are (`adornmentRowStart`), as one
+    /// rect in world units at the zoom now; nil where none meets the row. What Titles' bar zoomed out keeps below when it goes
+    /// inside its shape's top edge, too narrow to start past them.
+    public func adornmentRowTabs(of id: ShapeID) -> CGRect? {
+        guard let state = adornmentState, state.hasTabs, document[id] != nil else { return nil }
+        return state.rowTabs(of: id)
+    }
+
     /// The rect a shape's adornment row is laid out against, in world units, at the zoom now: a closed
     /// shape's bounds (a note's top-left is the row's), an open shape's label's if it has one, else a zero-size
     /// rect at the middle of its outline, either widened about its center to what a row needs. What

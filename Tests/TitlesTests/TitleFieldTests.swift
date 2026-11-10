@@ -3,6 +3,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Geometry
+import Selection
 import TestKit
 import TextEditing
 import Titles
@@ -144,5 +145,23 @@ struct SignsPlugin: CanvasPlugin {
         expect(colored[1] > colored[0] + 40, "a look's tint: \(colored)")
         tinted.transact { $0.update(green) { $0[TitleProperty.self] = nil } }
         expect(pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 25))[1] > 200, "an untitled one has none")
+    },
+    test("zoomed out, a selected shape's bar clears its outline and corner handles, and stands nearer its own shape than the one above when it isn't (UX walk 4 apis-2, review U12-E1, R4)") {
+        let (editor, sign) = try signs()
+        editor.camera = Camera(origin: .zero, zoom: 0.3)
+        let plain = renderBitmap(editor, size: CGSize(width: 200, height: 120))
+        editor.selection = sign
+        let selected = renderBitmap(editor, size: CGSize(width: 200, height: 120))
+        // Selected, the bar is 6.5 clear of the sign's top (16.3 to 23.5), above the outline (4 off the edge, 1.5 wide) and the corner
+        // handle (4 across, a 1.5 stroke): its rows are the pill's gray from end to end and none of the selection's is among them.
+        for x in 36...45 { for y in [17, 19, 21] {
+            expect(pixel(selected, at: CGPoint(x: x, y: y))[0] < 120, "the bar is whole at (\(x), \(y)): \(pixel(selected, at: CGPoint(x: x, y: y)))")
+        } }
+        // The selection is drawn below it, round the sign.
+        var outlined = false
+        for y in 24...28 { for x in 31...88 where pixel(selected, at: CGPoint(x: x, y: y)) != pixel(plain, at: CGPoint(x: x, y: y)) && pixel(selected, at: CGPoint(x: x, y: y))[0] > 120 { outlined = true } }
+        expect(outlined, "the selection's outline or handle is drawn between the bar and the sign")
+        // Not selected, 1.5 clear: the bar is nearer its own shape than the shape above it could be.
+        expect(pixel(plain, at: CGPoint(x: 36, y: 27))[0] < 120, "unselected, down at the sign's top edge")
     },
 ])

@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 import Canvas
 import Palette
+import Selection
 
 /// A title on its shape, zoomed out: a shape the canvas draws as a skeleton (`editor.drawsSkeleton(of:)`,
 /// below the editor's `skeletonZoom`, 35%) shows no adornments, and so no pill, so its title is said
@@ -243,9 +244,10 @@ struct TitleCoverOverlay: CanvasOverlay {
         let reach = context.worldDrawingReach + TitleBar.reach / context.zoom
         let visible = context.visibleRect.insetBy(dx: -reach, dy: -reach)
         var bars = TitleBars()
+        let selected = editor.selectedShapeIDs
         for record in editor.paintOrder(in: visible) where context.drawsSkeleton(of: record.id) {
-            if let bar = TitleBar.bar(of: record, in: context.shapes, offset: context.worldDrawingOffset(of: record.id),
-                                      start: { editor.adornmentRowStart(of: record.id) }) {
+            if let bar = TitleBar.bar(of: record, in: context.shapes, offset: context.worldDrawingOffset(of: record.id), selected: selected.contains(record.id),
+                                      start: { editor.adornmentRowStart(of: record.id) }, tabs: { editor.adornmentRowTabs(of: record.id) }) {
                 bars.add(bar)
                 continue
             }
@@ -286,8 +288,18 @@ enum TitleBar {
     /// The narrowest shape that has a bar, view points: a bar needs no room for text, so a table of usual width far out (10%) still
     /// has its bar (a cover's floor, `TitleCoverStyle.smallestShape`, is for words).
     static let narrowest: CGFloat = 8
-    /// How far above its shape's top edge a bar's bottom is, view points.
+    /// How far above its shape's top edge a bar's bottom is, view points: close enough to read as its own shape's name and never as
+    /// the footer of the one above, where tables a few points apart far out stack in a database (UX walk 3 evolve-8, walk 4
+    /// structure-45).
     static let gap: CGFloat = 1.5
+    /// The same for a selected shape: clear of its outline (the core's, 4 off its edge and 1.5 wide) and of the corner handles on its
+    /// edge (Selection's, 4 across their middle and a 1.5 stroke), with a point to spare, so a selected shape's bar is never under
+    /// its outline or a handle (UX walk 4 apis-2, review U12-E1: for every shape, a lower table's bar stood nearer the table above).
+    static let selectedGap: CGFloat = 6.5
+    /// How far inside its shape's top edge, or below a container's tab there, a bar that goes inside is, view points.
+    static let insideGap: CGFloat = 1.5
+    /// How far in from a selected shape's left edge a bar that goes inside starts, view points: past its corner handle (review U12-E9).
+    static let handleReach: CGFloat = 6
     /// A bar thinner than this, view points, is drawn square: its rounded ends are under a point.
     static let squareBelow: CGFloat = 4
     /// A column of its title, view points: the pill's 11-point text, as `SkeletonText` counts a column.
@@ -303,8 +315,10 @@ enum TitleBar {
     /// A titled shape's bar, world units, where its shape is drawn (moved by `offset`); nil for a kind that draws a
     /// cover, an untitled shape, and one too small on screen to be seen (`narrowest`).
     /// `start`: how far right of the shape's left edge the bar starts, world units (Adornments' `adornmentRowStart`, clear
-    /// of a container's tab, as the pill's row is).
-    static func bar(of record: AnyShapeRecord, in shapes: ShapeContext, offset: CGPoint, start: () -> CGFloat = { 0 }) -> (rect: CGRect, color: NSColor?)? {
+    /// of a container's tab, as the pill's row is); `tabs`: where those tabs are (`adornmentRowTabs`), which a bar that goes
+    /// inside its shape keeps below. `selected`: the shape is selected, so its bar clears its outline and handles.
+    static func bar(of record: AnyShapeRecord, in shapes: ShapeContext, offset: CGPoint, selected: Bool = false, start: () -> CGFloat = { 0 },
+                    tabs: () -> CGRect? = { nil }) -> (rect: CGRect, color: NSColor?)? {
         guard !record.isOpaque, let found = shapes.registry.titleBar(of: record), let geometry = shapes.geometry(of: record.id),
               !geometry.bounds.isNull else { return nil }
         let bounds = geometry.bounds.offsetBy(dx: offset.x, dy: offset.y), zoom = shapes.zoom
@@ -316,19 +330,25 @@ enum TitleBar {
         // Just above its own shape's top edge, `gap` clear of it, so it reads as that shape's name and never as the footer of the
         // shape above (UX walk 3 evolve-8): the pill's row is a line of text tall, which zoomed out reaches most of the way to
         // the shape above.
-        var top = bounds.minY - gap / zoom - height
+        var top = bounds.minY - (selected ? selectedGap : gap) / zoom - height
         // Past a container's tab it meets, as the pill's row is, over its own shape alone (never past its right edge, over the
         // next shape's bar: review U9-E1), while at least half of it still fits; a shape too narrow for that (a table at a
-        // database's top-left far out) has its bar just inside its own top edge, under the tab rather than lost beneath it (UX
-        // walk 3 structure-3: the tab hid the first tables' bars outright).
+        // database's top-left far out) has its bar just inside its own top edge, below the tab where the tab reaches over it, as
+        // the pill gives way to the tab in full (UX walk 3 structure-3: the tab hid the first tables' bars outright; walk 4
+        // structure-3: just inside, the tab still lay over their tops), unless that leaves no room in the shape for it.
         var start = start()
         if start > 0 {
             let room = bounds.width - start
             if room >= max(wanted / 2, narrowest / zoom) {
                 width = min(wanted, room)
             } else {
-                start = 0
-                top = bounds.minY + gap / zoom
+                start = selected && bounds.width * zoom >= handleReach + narrowest ? handleReach / zoom : 0
+                width = min(wanted, bounds.width - start)
+                top = bounds.minY + insideGap / zoom
+                if let tab = tabs()?.offsetBy(dx: offset.x, dy: offset.y), tab.maxY > top, tab.minX < bounds.minX + width {
+                    let below = tab.maxY + insideGap / zoom
+                    if below + height <= bounds.maxY { top = below }
+                }
             }
         }
         return (CGRect(x: row.minX + start, y: top, width: width, height: height), found.color)

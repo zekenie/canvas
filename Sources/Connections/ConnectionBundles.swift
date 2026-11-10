@@ -57,22 +57,34 @@ public struct ConnectionBundle: Hashable, Sendable {
     /// For an end bound to a shape written as lines as a whole: the row it comes in at, clear of the rows other lines end at
     /// (nil: the kind's own entry).
     public var entries: [End: PartID]
-    /// An end it shares with connections that go on to other places (one row's writes and reads, to two tables): `index` of
-    /// `count`, in the order their other ends are, top to bottom; what spaces their pills apart where a fan slides them to that
-    /// end. Kept only beside a fan.
+    /// An end at a row it shares with connections that go on to other places (one row's writes and reads, to two tables):
+    /// `index` of `count`, in the order their other ends are, top to bottom; the order their lines leave the row in, and what
+    /// keeps their pills apart, each in the row's own band.
     public var parting: Fan?
+    /// The connections parting at that end (itself among them), in the order their pills stack out from the row: first the one
+    /// whose other end is farthest above or below the row, whose line turns away soonest, so a line that stays level longer to
+    /// carry its pill past never crosses one that has turned. Empty with no `parting`.
+    public var parted: [ShapeID]
+    /// Its place among the connections between the same two shapes, at rows of both, where several run: `index` of `count`, top to
+    /// bottom by where they meet the shape on the right (`end` is the one of its ends at that shape), the order their middles turn
+    /// in across a gap too narrow for lines to run side by side (Arrows' narrow gap): each at a place of its own, keys that keep their
+    /// order never crossing. Nil for one alone between its shapes.
+    public var run: Fan?
 
-    public init(role: Role = .alone, slot: Int = 0, slots: Int = 1, fans: [Fan] = [], entries: [End: PartID] = [:], parting: Fan? = nil) {
+    public init(role: Role = .alone, slot: Int = 0, slots: Int = 1, fans: [Fan] = [], entries: [End: PartID] = [:], parting: Fan? = nil,
+                parted: [ShapeID] = [], run: Fan? = nil) {
         self.role = role
         self.slot = slot
         self.slots = slots
         self.fans = fans
         self.entries = entries
         self.parting = parting
+        self.parted = parted
+        self.run = run
     }
 
     /// Says nothing: drawn as ever.
-    public var isPlain: Bool { role == .alone && slots <= 1 && fans.isEmpty && entries.isEmpty }
+    public var isPlain: Bool { role == .alone && slots <= 1 && fans.isEmpty && entries.isEmpty && parting == nil && run == nil }
 
     /// Drawn by another, its lead.
     public var lead: ShapeID? { if case .member(let lead) = role { lead } else { nil } }
