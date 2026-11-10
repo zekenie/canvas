@@ -34,17 +34,27 @@ extension CanvasEditor {
         // Previews asked for in earlier frames first, so one finished now is drawn now.
         let previews = boardPreviews, zoom = camera.zoom
         if previews.isPending { previews.build(in: file, until: .now + previews.frameBudget) }
-        let preview = { (owner: ShapeID, rect: CGRect, maxScale: CGFloat, cg: CGContext) in
-            // Too small on screen to show anything (zoomed out, or no room): nothing asked for.
-            guard min(rect.width, rect.height) * zoom >= Style.previewSmallestSide else { return false }
-            guard let built = previews.preview(of: BoardID(owner: owner), in: file) else { return false }
-            return previews.draw(built, in: cg, fitting: rect, maxScale: maxScale)
+        /// The previews drawn by a shape drawn at `zoom` (its own, or through a stand-in that scales it).
+        func previewAt(_ zoom: CGFloat) -> (ShapeID, CGRect, CGFloat, CGContext) -> Bool {
+            { (owner: ShapeID, rect: CGRect, maxScale: CGFloat, cg: CGContext) in
+                // Too small on screen to show anything (zoomed out, or no room): nothing asked for.
+                guard min(rect.width, rect.height) * zoom >= Style.previewSmallestSide else { return false }
+                guard let built = previews.preview(of: BoardID(owner: owner), in: file) else { return false }
+                return previews.draw(built, in: cg, fitting: rect, maxScale: maxScale)
+            }
         }
-        // Skeletons or not, decided once for the frame; the shape being edited is drawn in full.
-        let skeletons = drawsSkeletons, editing = editingShapeID, customSkeletons = registry.customSkeletons
+        let preview = previewAt(zoom)
+        // Skeletons or not, decided once for the frame; the shape being edited is drawn in full, and so is the stand-in it's
+        // edited through.
+        let skeletons = drawsSkeletons, editing = editingShapeID, standIn = editingStandIn, customSkeletons = registry.customSkeletons
         let deviceScale = context.userSpaceToDeviceSpaceTransform
         let ink = SkeletonInk(fill: Style.skeleton.cgColor, text: Style.skeletonText.cgColor,
                               pixel: 1 / max(hypot(deviceScale.a, deviceScale.b), .leastNormalMagnitude))
+        // What a shape drawn in another's place draws with (`RenderContext.drawShape(inFile:through:standingIn:)`).
+        let shownFrame = ShownFrame(skeletons: skeletons, ink: ink, shapeCount: shapeCount, preview: previewAt, fileShape: fileShape, lend: lend)
+        let shown = { [unowned self] (id: ShapeID, transform: CGAffineTransform, standIn: ShapeID) in
+            drawShown(id, through: transform, standingIn: standIn, in: context, with: shownFrame)
+        }
         /// A shape as the frame draws it: its skeleton zoomed out (but the one being edited), else its render.
         func drawShape(_ record: AnyShapeRecord, in shapes: ShapeContext) {
             guard let definition = registry.definition(for: record.kind) else { return }
@@ -52,17 +62,11 @@ extension CanvasEditor {
                 if !offsets.isEmpty, let offset = offsets[record.id] {
                     context.translateBy(x: offset.x / zoom, y: offset.y / zoom)
                 }
-                let render = RenderContext(cg: context, shapes: shapes, isEditing: record.id == editing, shapeCount: shapeCount,
-                                           preview: preview, fileShape: fileShape, lend: lend, shadows: shapeShadows, skeleton: ink)
-                if skeletons, record.id != editing {
-                    if let custom = customSkeletons[record.kind] {
-                        custom.erasedRenderSkeleton(record, in: render)
-                    } else if let geometry = shapes.geometry(of: record.id) {
-                        render.fillSkeleton(of: geometry, color: ink.fill)
-                    }
-                } else {
-                    definition.erasedRender(record, in: render)
-                }
+                let render = RenderContext(cg: context, shapes: shapes, isEditing: record.id == editing, isEditedThrough: record.id == standIn,
+                                           shapeCount: shapeCount, preview: preview, fileShape: fileShape, lend: lend, shadows: shapeShadows,
+                                           skeleton: ink, shown: shown)
+                render.drawAsFrameDoes(record, by: definition, skeleton: skeletons && record.id != editing && record.id != standIn,
+                                       customSkeletons: customSkeletons)
             }
         }
         // A shape painted just below its anchor (a key, under the cards it joins) has a tinted outline (a hover's light) drawn where
@@ -237,7 +241,7 @@ extension CanvasEditor {
 
     /// Whether the shape draws as a skeleton now: `drawsSkeletons`, unless it's the shape being
     /// edited, which draws in full under its editing view.
-    public func drawsSkeleton(of id: ShapeID) -> Bool { drawsSkeletons && id != editingShapeID }
+    public func drawsSkeleton(of id: ShapeID) -> Bool { drawsSkeletons && id != editingShapeID && id != editingStandIn }
 
     // MARK: Pictures of the board
     //
@@ -451,7 +455,7 @@ extension CanvasEditor {
         let liftedAway = away + Style.tintedRingPitch / zoom, liftedGap = gap + Style.tintedRingPitch / zoom
         let reach = line + (skeletonPixel == nil ? (lifts ? liftedGap : gap) : (lifts ? liftedAway : away))
         let area = area.insetBy(dx: -reach, dy: -reach)
-        let skeletonOutlines = registry.skeletonOutlines, editing = editingShapeID
+        let skeletonOutlines = registry.skeletonOutlines, editing = editingShapeID, standIn = editingStandIn
         let strokedShapes = tinted == nil ? [:] : registry.strokedShapes
         let strokes = CGMutablePath(), rings = CGMutablePath()
         // What covers a line drawn as wide as its kind says, for each width.
@@ -462,7 +466,7 @@ extension CanvasEditor {
             let shift = CGAffineTransform(translationX: offset.x, y: offset.y)
             let lifted = lifts && tinted?.isOutlinedInFull(id) == true
             let shapeAway = lifted ? liftedAway : away, shapeGap = lifted ? liftedGap : gap
-            if let pixel = skeletonPixel, id != editing {
+            if let pixel = skeletonPixel, id != editing, id != standIn {
                 let geometry = entry.geometry.flatMap { $0.outline.isEmpty ? nil : $0 }
                 let bounds = geometry.map { $0.bounds.offsetBy(dx: offset.x, dy: offset.y) }
                 if let geometry, let bounds, Silhouettes.form(of: geometry.bounds, pixel: pixel) != .outline {
@@ -592,5 +596,20 @@ extension CanvasEditor {
         path.addLine(to: CGPoint(x: inner.maxX, y: inner.maxY))
         path.addLine(to: CGPoint(x: inner.maxX, y: inner.minY))
         path.closeSubpath()
+    }
+}
+
+extension RenderContext {
+    /// A shape as a frame draws it with this context: as a skeleton (`skeleton`: its kind's own, else the default one in the
+    /// skeleton ink's fill), else by its kind's render. The board's frame draws each shape so, and so does a shape drawn in
+    /// another's place (`drawShape(inFile:through:standingIn:)`).
+    func drawAsFrameDoes(_ record: AnyShapeRecord, by definition: any ShapeDefinition, skeleton: Bool,
+                         customSkeletons: [ShapeKind: any CustomSkeleton]) {
+        guard skeleton else { return definition.erasedRender(record, in: self) }
+        if let custom = customSkeletons[record.kind] {
+            custom.erasedRenderSkeleton(record, in: self)
+        } else if let geometry = shapes.geometry(of: record.id) {
+            fillSkeleton(of: geometry, color: self.skeleton.fill)
+        }
     }
 }

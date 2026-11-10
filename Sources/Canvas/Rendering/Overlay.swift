@@ -102,8 +102,8 @@ public struct OverlayContext {
     }
 
     /// Whether this frame draws the shape as a skeleton: `drawsSkeletons`, but for the shape being
-    /// edited.
-    public func drawsSkeleton(of id: ShapeID) -> Bool { drawsSkeletons && id != editor.editingShapeID }
+    /// edited, and the stand-in it's edited through.
+    public func drawsSkeleton(of id: ShapeID) -> Bool { drawsSkeletons && id != editor.editingShapeID && id != editor.editingStandIn }
 
     /// How far from where it is a shape is drawn (`editor.setDrawingOffset`), in world units: an
     /// overlay that decorates a shape moves its decoration by this, so it stays with the shape.

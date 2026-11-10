@@ -10,6 +10,7 @@ import Publishing
 import Queries
 import QueryLanguage
 import Selection
+import SlashCommands
 import Topology
 import Validation
 
@@ -43,6 +44,8 @@ public struct Reference: BoxShapeProps {
             // The center stays where it was: the origin moves by half the difference.
             props["frame"] = .array([.array([origin[0], .number(y + (height - 40) / 2)]), .array([size[0], .number(40)])])
         },
+        // A reference may be a mirror: its look and the scale it draws its original at, a pill at 1 before.
+        PropsMigration("look and scale"),
         // A pill may stand for a row of its shape (`ReferenceTarget.row`): absent reads as the shape as a whole, so nothing changes.
         PropsMigration("a pill may stand for a row") { _ in },
     ]
@@ -52,6 +55,9 @@ public struct Reference: BoxShapeProps {
         Property("words", \.words).readOnly().maxLength(500)
         Property("query", \.query).maxLength(8_192).format("x-canvas-query").description("Finds what it stands for, in the query language.")
         Property("all", \.all).description("Every match, not just the first.")
+        Property("look", \.look).description("A pill, or a mirror: what it stands for drawn again under the pill, live.")
+        Property("scale", \.scale).minimum(Double(ReferenceStyle.mirrorScales.lowerBound)).maximum(Double(ReferenceStyle.mirrorScales.upperBound))
+            .description("How big a mirror draws what it stands for, 1 being its own size.")
     }
 
     /// What a click with the Reference tool places, and what `canvas draw` places.
@@ -68,13 +74,21 @@ public struct Reference: BoxShapeProps {
     public var query: String?
     /// Dynamic: every match (true), or the first in file order.
     public var all: Bool
+    /// How it shows what it stands for: as a pill, or as a mirror, the pill over the original drawn again, live
+    /// (`ReferenceMirror.swift`). Its `frame` is the pill's either way.
+    public var look: ReferenceForm
+    /// How big a mirror draws its original: 1 is the original's own size. A pill keeps the scale it was last a mirror at.
+    public var scale: CGFloat
 
-    public init(frame: CGRect = .zero, target: ReferenceTarget? = nil, words: String = "", query: String? = nil, all: Bool = false) {
+    public init(frame: CGRect = .zero, target: ReferenceTarget? = nil, words: String = "", query: String? = nil, all: Bool = false,
+                look: ReferenceForm = .pill, scale: CGFloat = 1) {
         self.frame = frame
         self.target = target
         self.words = words
         self.query = query
         self.all = all
+        self.look = look
+        self.scale = scale
     }
 
     public init() { self.init(frame: .zero) }
@@ -160,6 +174,10 @@ extension CanvasCommand {
     public static let goToOriginal: CanvasCommand = "goToOriginal"
     /// Asks the model to turn the only selected reference's words into a query: the panel's Interpret.
     public static let interpretReference: CanvasCommand = "interpretReference"
+    /// Shows the references it's given as mirrors, and back as pills: the menu's Expand and Collapse, `/expand` and
+    /// `/collapse`.
+    public static let expandReference: CanvasCommand = "expandReference"
+    public static let collapseReference: CanvasCommand = "collapseReference"
 }
 
 /// References: the Reference tool (R), which places an empty pill and types into it, and the pill: a
@@ -190,6 +208,30 @@ public struct ReferencesPlugin: ListedPlugin {
                           isEnabled: { $0.editor.service(ReferenceState.self)?.canInterpret(Set($0.shapes)) ?? false }) { subject in
             subject.editor.service(ReferenceState.self)?.interpret(only: Set(subject.shapes))
         }
+        // Expand and Collapse: a reference's mirror, and back to its pill, each one step over the shapes it's given.
+        registrar.command(.expandReference, title: ReferenceStyle.expand,
+                          isEnabled: { $0.editor.references?.canExpand($0.shapes) ?? false }) { subject in
+            subject.editor.references?.expand(subject.shapes)
+        }
+        registrar.command(.collapseReference, title: ReferenceStyle.collapse,
+                          isEnabled: { $0.editor.references?.canCollapse($0.shapes) ?? false }) { subject in
+            subject.editor.references?.collapse(subject.shapes)
+        }
+        // What a mirror is laid out by: its original's size, wherever it is.
+        registrar.layoutInput(MirrorLayout.original) { record, reading in
+            guard let shape = record.typed(as: Reference.self), shape.props.look == .mirror else { return nil }
+            return reading.service(ReferenceState.self)?.mirrorBody(of: shape, reading: reading)
+        }
+        // A double-click on a mirror: its pill re-points it, as a pill's does; its body opens what it shows there. A click
+        // only selects it, so a click on the body of a mirror already selected edits nothing.
+        registrar.shapeFaces(at: { editor, record, point in
+            record.kind == Reference.kind ? editor.references?.mirrorFace(of: record, at: point) : nil
+        }, click: { _, _ in }, doubleClick: { face, editor in
+            switch face.part {
+            case .pill: editor.beginEditing(face.mirror, clickCount: 2)
+            case .body(let point): editor.references?.open(mirror: face.mirror, at: point, clickCount: 2)
+            }
+        })
         // A reference's own footer line: an arrow at it whose channel what it stands for doesn't take.
         registrar.contribute(DetailStatusContribution { shape, context in
             guard let line = context.service(ReferenceState.self)?.mismatchLine(of: shape.id) else { return [] }
@@ -199,6 +241,15 @@ public struct ReferencesPlugin: ListedPlugin {
         registrar.contextMenuForCanvas {
             MenuItem(command: .goToOriginal, in: ReferencesMenuGroup.self,
                      when: { $0.editor.service(ReferenceState.self)?.canOffer(goingTo: $0.shapes) ?? false }, dims: true)
+            // Right under Go to Original: Expand for pills (dimmed where none can show its original), Collapse for a mirror.
+            MenuItem(command: .expandReference, in: ReferencesMenuGroup.self, when: { subject in
+                guard let state = subject.editor.references, state.areReferences(subject.shapes) else { return false }
+                return subject.shapes.contains { subject.editor.document[$0]?.typed(as: Reference.self)?.props.look == .pill }
+            }, dims: true)
+            MenuItem(command: .collapseReference, in: ReferencesMenuGroup.self, when: { subject in
+                guard let state = subject.editor.references else { return false }
+                return state.areReferences(subject.shapes) && state.canCollapse(subject.shapes)
+            })
             MenuItem(ReferenceStyle.showMatches, in: ReferencesMenuGroup.self,
                      when: { $0.editor.service(ReferenceState.self)?.canOffer(showingMatches: $0.shapes) ?? false },
                      isEnabled: { subject in subject.shapes.count == 1 && subject.editor.service(ReferenceState.self)?.matches(of: subject.shapes[0]) != nil }) { ids, editor in
@@ -212,6 +263,16 @@ public struct ReferencesPlugin: ListedPlugin {
             let place = reference.editingPlacement(size: Reference.defaultSize) { Reference() }
             reference.tool(label: "Reference", systemImage: ReferenceStyle.systemImage, shortcut: "r", placing: place)
             reference.portsOnEveryChannel(sides: [.left, .right])
+            // A mirror's handles scale it, in proportion (`CustomSizing`); a pill has none.
+            reference.resizable(minimumSize: ReferenceStyle.mirrorMinimumSize)
+            // Return on a mirror opens what it shows: types into it, or opens its board.
+            reference.opens("Open", where: { shape, editor in editor.references?.opens(mirror: shape) ?? false }) { shape, editor in
+                editor.references?.open(mirror: shape.id, at: nil)
+            }
+            reference.slashCommands {
+                SlashCommand("expand", command: .expandReference, when: { $0.look == .pill && $0.mode != .empty })
+                SlashCommand("collapse", command: .collapseReference, when: { $0.look == .mirror })
+            }
             // Made to stand for a shape as picking it does, which refits its width to the name: how
             // `canvas draw` puts one beside what points at a shape on another board.
             reference.standsIn(admitting: { registry in registry.publicShapes },

@@ -11378,6 +11378,25 @@ its kind. It's the core's
   10,000 shapes in view fill in over sixty to a hundred frames, each one a frame's worth
   (`./build.sh bench`).
 
+
+### Shapes shown in another's place
+
+A render may draw any shape of the file in its own place, as that shape's kind draws it:
+`context.drawShape(inFile:through:standingIn:)` (the core's, `Sources/Canvas/Rendering/ShownShapes.swift`), through
+a transform from the shape's world units into the render's (a scale and a move), clipped as the render's context is.
+The shape may be on any board the editor can show, the board shown too, and is drawn with that board's lookups
+(its geometry, what lays it out, the services), so a typed note shown so has its rows and a subboard its preview; a
+container (a frame) is drawn with what it holds, at any depth, and what's bound only to those (an arrow between two
+of its notes), in their paint order, culled to what the clip shows, by an index of that board the editor keeps while
+the board is as it was (`ShownBoards`; the board shown's own). Each is its kind's skeleton where the canvas draws
+skeletons or where it would be drawn smaller than the skeleton zoom (the zoom times the transform's scale), and in
+full while it's edited through the stand-in. What other plugins draw over a shape (overlays) isn't drawn: a stand-in
+shows the shape, not its decorations. Every render drawn so is told the stand-in (`context.shownThrough`), and can
+draw no shape through itself, so nothing is drawn through two (a mirror of a frame that holds a mirror draws that one
+as its pill). A kind that shows a shape so says what and where with `ShowingShapes` ([Capabilities](#capabilities)),
+which is how the core finds it under a point and edits it there. CanvasTests' `shownShapesTests` hold it over
+CanvasTesting's `Lens`, a box that shows the shape it names; References' mirror is the shipped one ([References](#references)).
+
 ## Frames
 
 Frames ([`Sources/Frames`](../Sources/Frames)) is the vertical with shapes in it: the `frame` kind,
@@ -12354,8 +12373,8 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   title, so `canvas kinds` lists it with no edges. The mode is derived, never stored: a target makes it
   direct, words or a query make it dynamic, else it's empty. `ReferenceEdits` writes it: each of `pick`,
   `find(words:query:)` and `clear` keeps one mode and refits the width to what the pill now says. The
-  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member; v2's (`reference.v2.json`) a target's `row`.
-- **A pill for a row** (version 2: `ReferenceTarget.row`, absent for a shape as a whole): a row that stands alone (an
+  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member; v2's (`reference.v2.json`) a mirror's `look` and `scale`; v3's (`reference.v3.json`) a target's `row`.
+- **A pill for a row** (version 3: `ReferenceTarget.row`, absent for a shape as a whole): a row that stands alone (an
   endpoint) gets a pill of its own, which stands for its shape at that row (`Forwarding.row`), shows the row's live
   name and lead under its shape's place line (the shape last), is missing once the row is gone from a shape that is
   there, and follows the row when it moves to another shape (`registrar.partsMoved`). A row that doesn't stand alone
@@ -12526,6 +12545,33 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   changed (`pathSources`, the core's `ReverseIndex`, O(what changed); a move names none), and PathTests hold it. An arrow that starts at a reference nests under the
   shape the reference stands for when that's on the same board ([Arrows' arrow row](#the-table-of-contents),
   generic over stand-ins), else under the reference.
+- **Mirrors** (`ReferenceMirror.swift`; issue 24, look A): a reference has a second look, `look: mirror`, its original
+  drawn again under the pill, quieted and live, and typed into there. The pill stays on top as its handle, exactly
+  where it was (its `frame` is the pill's either way), and under it hangs a mat in the original's color (the pill's
+  wash, a 1 pt edge in its solid) with the body in it: the original drawn by its own kind, through the core's
+  `RenderContext.drawShape(inFile:through:standingIn:)` (below, [Shapes shown in another's place](#shapes-shown-in-anothers-place)),
+  at `scale` (the kind's version 2, `PropsMigration("look and scale")`, `reference.v2.json`), then quieted by one
+  filter for every kind: a saturation blend pulls its colors toward gray, to 45%, and a wash of the canvas takes it a
+  little further, two fills over whatever the kind drew (full strength again while it's typed into,
+  `RenderContext.isEditedThrough`). What other plugins draw over the original (its title's pill, chips, rings) isn't
+  drawn. The kind is a `LaidOutBox`: the laid-out frame is the mat and the pill's top half over it (`MirrorPlan`), from
+  a layout input References provides, the original's laid-out size (`MirrorLayout.original`), and says again
+  (`shapesDidChangeLayout`) whenever that may change with no commit to the mirror: a commit to the original on any
+  board, the original laid out again (`EditorService.shapesDidChangeLayout`), a first match's answer. It shows a direct
+  reference's shape, or a first-match query's first match, while that's there, public and has a box; otherwise it is
+  laid out and drawn as its pill (a deleted original's dashed pill), and Expand (the menu's item right under Go to
+  Original, `/expand`, the Shape menu; a step, "Expand Reference", its scale the original's own or less, to fit 480 by
+  360) is dimmed. Collapse takes the body away. A double-click on the body opens what's there
+  (`ShowingShapes`, `editor.shownShape(at:in:)`): the original's own editor laid over it at its scale
+  (`editor.beginEditing(_:through:)`), so a note's words and a typed note's rows are typed into where they show, each
+  keystroke written to the original on its board in a step made on the board shown; a subboard's board, one step back;
+  a note a frame holds, typed into through the frame's mirror. Return does the same; a double-click on the pill
+  re-points it, as a pill's does. Its handles scale it in proportion (`CustomSizing`), never the original. Its panel is
+  its Reference tab, then the original's own tabs, each section bound to the original wherever it is (the panel's own
+  rule for a stand-in, `editor.shown(through:)`, every binding reading and writing the file: [The detail panel](#the-detail-panel)),
+  so a field, a color or a type changed there changes the original. VoiceOver
+  says it as its pill, "Mirror" where "Reference" was, then what the original says of itself. A mirror drawn through
+  another (a frame's mirror holding one) is its pill: nothing is drawn through two.
 - **Tests.** ReferencesTests hold it over CanvasTesting's boxes and tiles as what it stands for (its `makes` too, through `registry.standIns`: a reference made for a public shape, fitted, standing for it once inserted, and for nothing where the shape isn't public); CompositionTests'
   `referencesShippedTests` the shipped pieces (an arrow drawn by hand into a pill, in the graph and a query, nesting, a drag
   ending on a pill for a note and not on one for a frame, copy, cut and paste, `canvas draw`, a drawn query read through by a
@@ -15021,6 +15067,7 @@ it, the core or a horizontal.
 | `ShapeContaining` | Each shape of the box kind holds shapes on its board, a frame: what names it as its container (`AnyShapeRecord.container`) moves, restacks, locks and is let go with it, and nothing put down sits across its edge (`Transaction.settle`). Nothing to implement. [Containers](#containers). | CanvasTesting's `Corral` |
 | `TakesBoundShapes` | Each shape of the kind takes the shapes bound to it (`ShapeReferencing`: an arrow's ends) along. Deleting one deletes them (the delete's cascade, `Transaction.takeBound`), but a read-only one, which lets go where it's drawn as for any kind; copying one copies what is bound only to shapes copied with it (`ShapeContext.takenAlong(by:)`: Clipboard's copy, duplicate, ⌥-drag and cut). What went along is `Transaction.deletedAlong`, and a body names its step from it (`transaction.stepName`). Nothing to implement; a kind that doesn't adopt it keeps tldraw's rule (an arrow bound to a deleted shape stays, free at that end). | CanvasTesting's `Ledger` |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
+| `ShowingShapes` | Shows another shape of the file in its place, drawing it with `RenderContext.drawShape(inFile:through:standingIn:)`: `shownShape(of:in:)`, what it shows now (on any board), and `shownTransform(of:in:)`, where (from that shape's world units into its own board's). The core then finds what it shows under a point (`editor.shownShape(at:in:)`, a container's held shapes too), says where (`editor.shown(through:)`, `placement(of:through:)`), and edits it there (`editor.beginEditing(_:through:)`). | References (a mirror) |
 | `ShapeReferencing` | Props bound to other shapes: every kind whose props are adopts it, or it stays bound to a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: bound to the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape bound to it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. These are bindings, which must be on the board; a name that may outlive its shape (a mention) is a value instead, [`ShapeNaming`](#values-that-name-shapes). | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
 
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
@@ -15034,7 +15081,14 @@ transaction, and `end()` ends editing. `shape` is the shape as it is now, observ
 is, for what something other than typing writes while it's edited (a language model's answer: a
 type note's words). `service(_:)` lends it the editor's services (a completion list's
 candidates, the sync a type note's editor follows), as the detail panel's, the table of contents'
-and adornments' contexts do. Services hear editing end, however it ends (Escape, a click elsewhere,
+and adornments' contexts do. A shape a stand-in shows (`ShowingShapes`: a mirror) is edited where the
+stand-in shows it, `editor.beginEditing(_:through:at:clickCount:)`: its kind's own editing view, laid over
+the stand-in at its scale (`editor.editingFrame` is where it is on the board shown, `editingViewBounds` its
+bounds in the shape's own units, so AppKit scales it), its `EditContext` writing the shape wherever it is
+(`update`, and `transact`'s `transaction.update(inFile:)`), in an editing step made on the board shown, so
+⌘Z there takes it back without leaving; a read-only stand-in or shape is refused, the stand-in shaking, and
+editing ends with the stand-in as with the shape. `editor.editingStandIn` names the stand-in, which is drawn
+in full under the editor (no skeleton, no handles). Services hear editing end, however it ends (Escape, a click elsewhere,
 another shape edited, another board shown, an undo), what it wrote committed
 (`EditorService.editingDidEnd`), its step closed unless what ended it is an action still under way
 (an undo about to apply a step, a command, a draw, a file put in place), so a service that answers
@@ -16574,7 +16628,7 @@ arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hin
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · insert beside by default sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · paste reader Note · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · parts moved · shape reference v2 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · command expandReference · command collapseReference · layout input reference-mirror · ShapeFaces · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · parts moved · shape reference v3 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · ShapeResizing → reference · parts resize handles → reference · ShapeOpening → reference · /expand /collapse → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in ViewMenu.Panels · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in ViewMenu.Panels · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete

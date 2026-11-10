@@ -144,7 +144,8 @@ extension CanvasEditor {
         guard session == nil, let box = editingFrame(of: id) else { return }
         let view = clearView.insetBy(Style.keepInViewMargin)
         guard view.rect.width > 0, view.rect.height > 0 else { return }
-        let world = rect.offsetBy(dx: box.minX, dy: box.minY)
+        // A shape edited through a stand-in is shown where the stand-in is.
+        let world = shownOnBoard(rect.offsetBy(dx: box.minX, dy: box.minY))
         func needed(_ delta: CGSize, at camera: Camera) -> Bool {
             guard delta != .zero else { return false }
             guard skippingNudges else { return true }

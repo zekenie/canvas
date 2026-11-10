@@ -184,6 +184,7 @@ extension ReferenceState {
         dynamic[id]?.dirty = true
         dynamic[id]?.outcome = nil
         answered.bump(id)
+        layOutMirrors(among: [id])
         answerSoon()
     }
 
@@ -245,9 +246,14 @@ extension ReferenceState {
         memo = [:]
         memoIDs = 0
         let file = editor.file, topology = editor.topology
+        // The mirrors too, in the same pass: what each shows is laid out afresh, with the file.
+        mirrorIDs = []
+        mirrorShows = [:]
         func scan(_ document: CanvasDocument) {
             for record in document.shapes where record.kind == Reference.kind && (topology.map { Self.isReference(record.id, in: $0) } ?? false) {
-                guard let props = record.typed(as: Reference.self)?.props, props.target == nil, let query = props.query else { continue }
+                guard let props = record.typed(as: Reference.self)?.props else { continue }
+                if props.look == .mirror { mirrorIDs.insert(record.id) }
+                guard props.target == nil, let query = props.query else { continue }
                 dynamic[record.id] = Finding(key: Self.key(query: query, all: props.all), all: props.all)
             }
         }
@@ -547,6 +553,8 @@ extension ReferenceState {
         for id in changed { answered.bump(id) }
         editor.setNeedsDisplay()
         editor.contentsDidChange(for: changed)
+        // A first match's mirror follows the answer.
+        layOutMirrors(among: changed)
     }
 
     // MARK: Kept answers

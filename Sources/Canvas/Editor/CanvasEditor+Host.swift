@@ -219,19 +219,33 @@ extension CanvasEditor {
 
     /// The editing view for the shape being edited (the view asks when `editingShapeID` changes).
     @_spi(Host) public func makeEditingView() -> EditingView? {
-        guard let id = editingShapeID, let record = document[id],
+        guard let id = editingShapeID, let record = editingStandIn == nil ? document[id] : shape(inFile: id),
               let definition = registry.definition(for: record.kind) as? any Editable else { return nil }
         return definition.erasedEditingView(for: record, editor: self)
     }
 
-    /// Where the shape being edited has its editing view, in world units (`Editable.editingFrame`):
-    /// nil while nothing is edited.
-    @_spi(Host) public var editingFrame: CGRect? { editingShapeID.flatMap(editingFrame(of:)) }
+    /// Where the shape being edited has its editing view, in the board shown's world units (`Editable.editingFrame`; for
+    /// a shape edited through a stand-in, where the stand-in shows it): nil while nothing is edited. The view's bounds
+    /// are `editingViewBounds`.
+    @_spi(Host) public var editingFrame: CGRect? { editingShapeID.flatMap(editingFrame(of:)).map(shownOnBoard) }
 
-    /// Where a shape of an `Editable` kind has its editing view, in world units.
+    /// The editing view's bounds: its editing frame's size in the shape's own world units, at the origin, so AppKit scales
+    /// what it draws with the zoom and, edited through a stand-in, the stand-in's scale. Nil while nothing is edited.
+    @_spi(Host) public var editingViewBounds: CGRect? {
+        editingShapeID.flatMap(editingFrame(of:)).map { CGRect(origin: .zero, size: $0.size) }
+    }
+
+    /// Where a shape of an `Editable` kind has its editing view, in world units of its own board: the board shown's, but
+    /// for the shape edited through a stand-in, on whichever board it is.
     func editingFrame(of id: ShapeID) -> CGRect? {
-        guard let record = document[id], let definition = registry.definition(for: record.kind) as? any Editable else { return nil }
-        return definition.erasedEditingFrame(of: record, in: shapeContext)
+        guard editingStandIn != nil, id == editingShapeID else {
+            guard let record = document[id], let definition = registry.definition(for: record.kind) as? any Editable else { return nil }
+            return definition.erasedEditingFrame(of: record, in: shapeContext)
+        }
+        guard let record = shape(inFile: id), let board = file.board(containing: id),
+              let definition = registry.definition(for: record.kind) as? any Editable else { return nil }
+        let context = ShapeContext(document: contents(of: board), registry: registry, camera: camera, index: nil, layout: layoutSource)
+        return definition.erasedEditingFrame(of: record, in: context)
     }
 
     private func sample(_ event: PointerEvent) -> Pointer {

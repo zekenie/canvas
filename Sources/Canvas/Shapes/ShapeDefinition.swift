@@ -212,26 +212,58 @@ public struct RenderContext {
     public let shapes: ShapeContext
     /// This shape's editing view is showing.
     public let isEditing: Bool
+    /// A shape this one shows in its place is being edited through it (`CanvasEditor.beginEditing(_:through:)`): its
+    /// editing view is laid over this shape, which draws what it shows as it is while typed into (a mirror at full
+    /// strength). False for every other shape, and for this one while its own editing view shows (`isEditing`).
+    public let isEditedThrough: Bool
+    /// The shape this one is drawn in the place of, when it's drawn through another (`drawShape(inFile:through:standingIn:)`:
+    /// a mirror that shows its original): nil for a shape drawn where it is. Nothing is drawn through two shapes: a render
+    /// drawn so can draw no shape through itself (`drawShape` draws nothing), so a kind that shows other shapes draws
+    /// what it is without them there (a mirror inside a mirrored frame is its pill).
+    public let shownThrough: ShapeID?
     public var zoom: CGFloat { shapes.zoom }
     private let boardShapeCount: (ShapeID) -> Int
     private let boardPreview: (ShapeID, CGRect, CGFloat, CGContext) -> Bool
     private let fileShape: (ShapeID) -> AnyShapeRecord?
     private let lend: (ObjectIdentifier) -> (any EditorService)?
     private let shadows: ShapeShadows
+    private let shown: (ShapeID, CGAffineTransform, ShapeID) -> Bool
     let skeleton: SkeletonInk
 
-    init(cg: CGContext, shapes: ShapeContext, isEditing: Bool, shapeCount: @escaping (ShapeID) -> Int,
-         preview: @escaping (ShapeID, CGRect, CGFloat, CGContext) -> Bool, fileShape: @escaping (ShapeID) -> AnyShapeRecord?,
-         lend: @escaping (ObjectIdentifier) -> (any EditorService)?, shadows: ShapeShadows, skeleton: SkeletonInk) {
+    init(cg: CGContext, shapes: ShapeContext, isEditing: Bool, isEditedThrough: Bool = false, shownThrough: ShapeID? = nil,
+         shapeCount: @escaping (ShapeID) -> Int, preview: @escaping (ShapeID, CGRect, CGFloat, CGContext) -> Bool,
+         fileShape: @escaping (ShapeID) -> AnyShapeRecord?, lend: @escaping (ObjectIdentifier) -> (any EditorService)?,
+         shadows: ShapeShadows, skeleton: SkeletonInk, shown: @escaping (ShapeID, CGAffineTransform, ShapeID) -> Bool) {
         self.cg = cg
         self.shapes = shapes
         self.isEditing = isEditing
+        self.isEditedThrough = isEditedThrough
+        self.shownThrough = shownThrough
         boardShapeCount = shapeCount
         boardPreview = preview
         self.fileShape = fileShape
         self.lend = lend
         self.shadows = shadows
         self.skeleton = skeleton
+        self.shown = shown
+    }
+
+    /// Draws a shape of the file in this shape's place, as its own kind draws it, through `transform` (from the shape's
+    /// world units into this context's: a scale and a move), clipped as this context is (clip first to where it may
+    /// show). The shape may be on any board the editor can show, the board shown included, and is read with that board's
+    /// lookups (its geometry, what lays it out, the services), so a typed note shown so has its rows and a subboard its
+    /// preview. A container is drawn with what it holds, at any depth, and what's bound only to those (an arrow between
+    /// two of its notes), in their paint order, culled to what the clip shows. Each is its kind's skeleton where the
+    /// canvas draws skeletons, or where it would be drawn smaller than the skeleton zoom (the zoom times the transform's
+    /// scale), but the shape being edited through `standIn` (`CanvasEditor.beginEditing(_:through:)`), drawn in full
+    /// under its editing view; what other plugins draw over a shape (overlays: a title's pill, chips, rings) is not drawn.
+    /// Every shape drawn so has `standIn` as its `shownThrough`. Draws nothing and returns false for a shape on no board
+    /// the editor can show, kept aside or of a kind not installed, for a transform that doesn't scale by a finite amount
+    /// above zero, and from a render that is itself drawn through another shape (`shownThrough`).
+    @discardableResult
+    public func drawShape(inFile id: ShapeID, through transform: CGAffineTransform, standingIn standIn: ShapeID) -> Bool {
+        guard shownThrough == nil else { return false }
+        return shown(id, transform, standIn)
     }
 
     /// A shape on any board of the file the editor can show: one on the board shown as

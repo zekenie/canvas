@@ -86,6 +86,12 @@ public protocol EditorService: AnyObject {
     /// The host put back the view values an earlier session saved (`editor.restoreViewValues`), before the canvas was
     /// made: a service that keeps one reads it again, and says what it lays out differently (`shapesDidChangeLayout`).
     func viewValuesDidChange(in editor: CanvasEditor)
+    /// Shapes were laid out again with no commit (`editor.shapesDidChangeLayout`: a layout input changed, editing began or
+    /// ended), on any board, after the editor let go of what it kept for them: a service that lays shapes out from these
+    /// shapes' laid-out frames (a mirror, as big as the original it shows) says those changed too, with
+    /// `shapesDidChangeLayout` of its own. Heard by every service, in order, outside any delivery's bookkeeping, so read
+    /// nothing of another service here.
+    func shapesDidChangeLayout(_ ids: Set<ShapeID>, in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -102,4 +108,5 @@ extension EditorService {
     public func shapeTintsDidChange(in editor: CanvasEditor) {}
     public func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor) {}
     public func viewValuesDidChange(in editor: CanvasEditor) {}
+    public func shapesDidChangeLayout(_ ids: Set<ShapeID>, in editor: CanvasEditor) {}
 }

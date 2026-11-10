@@ -123,6 +123,11 @@ extension RowBook {
         editor?.shapeContext.layoutInput(TypeRows.pill, for: id)
     }
 
+    /// The same, of a record in hand: a shape on any board (one typed into through a mirror).
+    public func pill(of record: AnyShapeRecord) -> TypePill? {
+        editor?.shapeContext.layoutInput(TypeRows.pill, of: record)
+    }
+
     /// The provider of `TypeRows.pill`, cheapest test first (a board first shown asks it of every note): a relationship
     /// type (the mark on a shape that holds `schema`) of a kind that draws a type's rows, words or fields or not.
     /// Mid-transaction (a draw, a paste, `/is-a` itself) its fields are resolved over the shapes as the transaction

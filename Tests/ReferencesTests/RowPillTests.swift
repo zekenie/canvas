@@ -11,7 +11,7 @@ import TestKit
 import Titles
 import Topology
 
-// A pill for a row (reference version 2, `ReferenceTarget.row`): one that stands alone (an endpoint; none ships before the API
+// A pill for a row (reference version 3, `ReferenceTarget.row`): one that stands alone (an endpoint; none ships before the API
 // kinds, so a ledger here, whose entries stand alone) is stood for by a pill of its own, which shows the row's live name and its
 // lead under its shape's place line, is missing (dashed) once the row is gone while the shape is there, is made by name as a pick
 // makes one (`standsIn(makesRow:)`), forwards to its shape at that row, and follows the row when it moves to another shape.

@@ -8,6 +8,9 @@ import SwiftUI
 /// (never on whatever is selected by the time it writes). A write to a shape that's gone does
 /// nothing; a write of the value the shape already has commits nothing.
 ///
+/// A shape is read and written wherever it is in the file (`editor.shape(inFile:)`, `update(inFile:)`), so a panel that
+/// shows a shape through another's (a mirror) edits the original on its own board; the step is made on the board shown.
+///
 /// Reads never touch `editor.document`, so a section isn't re-rendered when other shapes change.
 /// For a larger section, write a View with `@ShapeBinding var note: StickyNote` and pass `$note`.
 ///
@@ -71,8 +74,8 @@ public struct ShapeBinding<Value> {
         let id = record.id
         edit = { [weak editor] name, key, change in
             guard let editor else { return nil }
-            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(id, change) }
-            return editor.document[id]
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(inFile: id, change) }
+            return editor.shape(inFile: id)
         }
     }
 
@@ -145,7 +148,7 @@ extension CanvasEditor {
     /// What a panel write names its undo step when its section has no title (the header, say):
     /// "Change" and the kind's label ("Change Schema", `registry.label(of:)`).
     func changeName(of id: ShapeID) -> String {
-        guard let kind = document[id]?.kind else { return "Change" }
+        guard let kind = shape(inFile: id)?.kind else { return "Change" }
         return "Change \(registry.label(of: kind).name)"
     }
 }
@@ -167,8 +170,8 @@ extension ShapeBinding where Value: ShapeProps {
         let id = record.id
         return ShapeBinding(value: shape.props, record: record, in: editor) { [weak editor] name, key, change in
             guard let editor else { return nil }
-            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(id, as: Value.self) { change(&$0.props) } }
-            return editor.document[id]?.typed(as: Value.self)?.props
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(inFile: id, as: Value.self) { change(&$0.props) } }
+            return editor.shape(inFile: id)?.typed(as: Value.self)?.props
         }
     }
 }
@@ -181,13 +184,13 @@ extension ShapeBinding {
         return ShapeBinding(value: value, record: record, property: P.key, in: editor) { [weak editor] name, key, change in
             guard let editor else { return nil }
             editor.transact(name ?? editor.changeName(of: id), coalescing: key) {
-                $0.update(id) { record in
+                $0.update(inFile: id) { record in
                     guard var value = record[P.self] else { return }
                     change(&value)
                     record[P.self] = value
                 }
             }
-            return editor.document[id]?[P.self]
+            return editor.shape(inFile: id)?[P.self]
         }
     }
 }
@@ -198,8 +201,8 @@ extension ShapeBinding where Value == AnyShapeRecord {
         let id = record.id
         return ShapeBinding(value: record, record: record, in: editor) { [weak editor] name, key, change in
             guard let editor else { return nil }
-            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(id) { change(&$0) } }
-            return editor.document[id]
+            editor.transact(name ?? editor.changeName(of: id), coalescing: key) { $0.update(inFile: id) { change(&$0) } }
+            return editor.shape(inFile: id)
         }
     }
 }
@@ -211,13 +214,13 @@ extension ShapeBinding where Value == CGRect {
         return ShapeBinding(value: frame, record: record, in: editor) { [weak editor] name, key, change in
             guard let editor else { return nil }
             editor.transact(name ?? editor.changeName(of: id), coalescing: key) {
-                $0.update(id) { record in
+                $0.update(inFile: id) { record in
                     guard var frame = record.box else { return }
                     change(&frame)
                     record.box = frame
                 }
             }
-            return editor.document[id]?.box
+            return editor.shape(inFile: id)?.box
         }
     }
 }
@@ -225,18 +228,18 @@ extension ShapeBinding where Value == CGRect {
 extension CanvasEditor {
     /// A shape's props as its sections get them; nil if there's no such shape of that kind.
     public func shapeBinding<P: ShapeProps>(_ id: ShapeID, as _: P.Type = P.self) -> ShapeBinding<P>? {
-        document[id].flatMap { ShapeBinding<P>.props(of: $0, in: self) }
+        shape(inFile: id).flatMap { ShapeBinding<P>.props(of: $0, in: self) }
     }
 
     /// A box shape's frame as every-box sections get it; nil if there's no such shape, or it has
     /// no frame.
     public func frameBinding(_ id: ShapeID) -> ShapeBinding<CGRect>? {
-        document[id].flatMap { ShapeBinding<CGRect>.box(of: $0, in: self) }
+        shape(inFile: id).flatMap { ShapeBinding<CGRect>.box(of: $0, in: self) }
     }
 
     /// An added property's value as its sections get it; nil if there's no such shape, or it has
     /// no value.
     public func propertyBinding<P: ShapeProperty>(_ id: ShapeID, _ property: P.Type) -> ShapeBinding<P.Value>? {
-        document[id].flatMap { ShapeBinding<P.Value>.property(P.self, of: $0, in: self) }
+        shape(inFile: id).flatMap { ShapeBinding<P.Value>.property(P.self, of: $0, in: self) }
     }
 }

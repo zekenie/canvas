@@ -51,10 +51,27 @@ extension MakesRoomAsItGrows {
     public var roomKeptBelow: CGFloat { 0 }
 }
 
+/// A kind whose shapes show another shape of the file in their place (a stand-in that shows its original, as a mirror
+/// does), drawing it with `RenderContext.drawShape(inFile:through:standingIn:)`: what it shows and where, so the core can
+/// edit it there (`editor.beginEditing(_:through:at:clickCount:)`: the shown shape's own editor laid over it at the
+/// stand-in's scale, writing the shape wherever it is), and find what it shows under a point (`editor.shownShape(at:in:)`).
+/// A container shown so shows what it holds too, through the same transform. Answer from the shape and its layout, as
+/// its geometry does; conform in an extension.
+public protocol ShowingShapes: ShapeDefinition {
+    /// The shape it shows in its place now, nil for none: a shape of the file, on any board, the board shown included.
+    func shownShape(of shape: ShapeRecord<Props>, in context: ShapeContext) -> ShapeID?
+    /// Where it draws what it shows: the transform from the shown shape's world units into those of the board `shape` is
+    /// on (a scale and a move), nil while it shows nothing there (zoomed out, gone, not its to show).
+    func shownTransform(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGAffineTransform?
+}
+
 /// Edited in place: from an editing placement, or by any plugin that calls `editor.beginEditing`
 /// (Selection's double-click and Return). The view is laid over the shape's editing frame (a box
 /// kind's box; a kind without one says where, an arrow its label's), with bounds in world units
-/// so AppKit scales it with the zoom.
+/// so AppKit scales it with the zoom. A shape shown in another's place (`ShowingShapes`) is edited
+/// there too (`editor.beginEditing(_:through:at:clickCount:)`): its view laid over where the stand-in
+/// draws it, at the stand-in's scale, its writes going to it on whichever board it is
+/// (`EditContext.update`, `transaction.update(inFile:)`).
 public protocol Editable: ShapeDefinition {
     func makeEditingView(for shape: ShapeRecord<Props>, context: EditContext<Props>) -> EditingView
     /// Where the editing view goes while the shape is edited, in world units: looked at again as the
@@ -118,16 +135,18 @@ public struct EditContext<Props: ShapeProps> {
         self.editor = editor
     }
 
-    /// Changes the shape in a transaction. Does nothing once the shape is gone. While the shape is
-    /// being edited, what it commits is the editing session's undo step ("Typing").
+    /// Changes the shape in a transaction, on whichever board it is (edited through a stand-in, it's on another:
+    /// `transaction.update(inFile:)`). Does nothing once the shape is gone. While the shape is being edited, what it
+    /// commits is the editing session's undo step ("Typing"), made on the board shown.
     public func update(_ change: (inout Props) -> Void) {
-        editor?.transact(nil, coalescing: nil, origin: .editing) { $0.update(shapeID, as: Props.self) { change(&$0.props) } }
+        editor?.transact(nil, coalescing: nil, origin: .editing) { $0.update(inFile: shapeID) { $0.modify(as: Props.self) { change(&$0.props) } } }
     }
 
     /// Changes the shape's added values (or anything else of the file a view's commit is for) in a transaction, as
     /// `update` changes its props: part of the editing session's step, which `name` names where nothing else has (a
     /// group the session began in, an earlier commit of it), as a menu says Undo Name Relationship Type. The shape is
-    /// `transaction.update(shapeID) { … }`'s to change. Does nothing once the session has ended.
+    /// `transaction.update(inFile: shapeID) { … }`'s to change: it's on another board while it's edited through a
+    /// stand-in. Does nothing once the session has ended.
     public func transact(_ name: String? = nil, _ body: (inout Transaction) -> Void) {
         guard let editor, editor.editingShapeID == shapeID else { return }
         editor.transact(name, coalescing: nil, origin: .editing) { body(&$0) }
@@ -144,10 +163,11 @@ public struct EditContext<Props: ShapeProps> {
     /// model's answer landing). It reads the document, which an observation hears change with
     /// every commit, so a view that waits for one write observes what says it's coming instead.
     /// Nil once it's gone.
-    public var shape: ShapeRecord<Props>? { editor?.document[shapeID]?.typed(as: Props.self) }
+    public var shape: ShapeRecord<Props>? { editor?.shape(inFile: shapeID)?.typed(as: Props.self) }
 
     /// Where the editing view is laid over the shape now (`Editable.editingFrame`), in world units:
-    /// the origin of the view's coordinates. Nil once the shape is gone.
+    /// the origin of the view's coordinates. In the shape's own board's world units, which, edited through a stand-in,
+    /// aren't the board shown's (`editor.editingFrame` is where the view is there). Nil once the shape is gone.
     public var frame: CGRect? { editor?.editingFrame(of: shapeID) }
 
     /// Brings `rect` into view (a caret's, where text is typed past the window's edge: a note
@@ -171,7 +191,7 @@ public struct EditContext<Props: ShapeProps> {
             return
         }
         var inWorld = popover
-        inWorld.anchor = popover.anchor.offsetBy(dx: box.minX, dy: box.minY)
+        inWorld.anchor = editor.shownOnBoard(popover.anchor.offsetBy(dx: box.minX, dy: box.minY))
         editor.hoverPopover(inWorld)
     }
 }

@@ -167,7 +167,7 @@ extension CanvasEditor {
     /// plugin order; a part two plugins list (the same id) once. None for a shape not on the board shown, nor for the shape being edited,
     /// whose parts are its editor's.
     public func shapeParts(of id: ShapeID) -> [ShapePart] {
-        guard editingShapeID != id, let record = document[id] else { return [] }
+        guard editingShapeID != id, editingStandIn != id, let record = document[id] else { return [] }
         let sources = registry.contributions(to: ShapeParts.self, for: record.kind)
         guard !sources.isEmpty else { return [] }
         var seen = Set<AnyHashable>()

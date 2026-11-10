@@ -323,6 +323,34 @@ enum ReferenceStyle {
     /// The device pixels to a point a symbol's bitmap is kept at: a frame draws from the next size up.
     static let rasterScales = [1, 2, 4, 8]
 
+    // MARK: Mirrors
+
+    /// The pill sits this far in from the mat's left edge, as a tab sits on a folder; the frame is at least the pill and
+    /// this either side wide.
+    static let mirrorPillInset: CGFloat = 16
+    /// The body's room inside the mat, at its sides and under it.
+    static let mirrorPadding: CGFloat = 10
+    /// Between the pill's bottom and the body's top.
+    static let mirrorGap: CGFloat = 8
+    /// The mat's corners.
+    static let mirrorRadius: CGFloat = 12
+    /// A mirror made by Expand draws its original at its own size, or smaller so its body fits this.
+    static let mirrorFirstFit = CGSize(width: 480, height: 360)
+    /// How small and how large a mirror's scale goes, its handles' and a script's.
+    nonisolated static let mirrorScales: ClosedRange<CGFloat> = 0.1...4
+    /// The smallest a mirror's handles make its frame: the pill and its insets across.
+    static let mirrorMinimumSize = CGSize(width: 96, height: 72)
+    /// The quieting: the body's colors pulled toward gray to this saturation, then this far toward the canvas.
+    static let mirrorSaturation: CGFloat = 0.45
+    static let mirrorTowardCanvas: CGFloat = 0.12
+    /// What the menus and the command bar call it, and its undo steps.
+    static let expand = "Expand"
+    static let collapse = "Collapse"
+    static let expandStep = "Expand Reference"
+    static let collapseStep = "Collapse Reference"
+    /// What VoiceOver calls a reference shown as a mirror, where a pill is "Reference".
+    static let mirrorKind = "Mirror"
+
     // MARK: Shapes
 
     static func capsule(_ rect: CGRect) -> CGPath {

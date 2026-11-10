@@ -1898,6 +1898,11 @@ public struct Transaction {
         update(id, on: board, body)
     }
 
+    /// `update(inFile:_:)` with the shape's props typed.
+    public mutating func update<P: ShapeProps>(inFile id: ShapeID, as _: P.Type, _ body: (inout ShapeRecord<P>) -> Void) {
+        update(inFile: id) { $0.modify(as: P.self, body) }
+    }
+
     /// Puts `document` in for another board, as this transaction leaves it: what the commit adds to the
     /// file, or, if the file held shapes there (the root always does), writes over; nothing, if the file
     /// held none and it holds none now. No shape this transaction deletes may take it with it

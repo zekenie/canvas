@@ -85,7 +85,7 @@ import Types
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let directory = "Tests/CompositionTests/Fixtures/kinds"
-        expectEqual(codec.version(of: Reference.kind), 2)
+        expectEqual(codec.version(of: Reference.kind), 3)
         let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/reference.v0.json"))
         let old = try require(codec.decodeRecord(props: before, kind: Reference.kind, version: 0).typed(as: Reference.self))
         expectEqual(old.props.frame, CGRect(x: 0, y: -4, width: 160, height: 40), "32 tall at y 0 is 40 tall at y -4: the same middle")
@@ -96,11 +96,30 @@ import Types
         expectEqual(now.props.frame, CGRect(x: 0, y: 0, width: 160, height: 40))
         expectEqual(now.props.words, "every note")
         expectEqual(now.props.target?.row, nil, "a pill of before rows stands for its shape as a whole")
-        // Version 2: a pill may stand for a row of its shape, by the shape's own part id.
-        let rows = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/reference.v2.json"))
-        let row = try require(codec.decodeRecord(props: rows, kind: Reference.kind, version: 2).typed(as: Reference.self))
+        expectEqual(now.props.look, .pill, "a pill before mirrors")
+        expectEqual(now.props.scale, 1)
+    },
+    // Since its second version a reference may be a mirror: its look and its scale.
+    test("a reference's fixture of mirrors reads its look and its scale") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/kinds/reference.v2.json"))
+        let mirror = try require(codec.decodeRecord(props: data, kind: Reference.kind, version: 2).typed(as: Reference.self))
+        expectEqual(mirror.props.look, .mirror)
+        expectEqual(mirror.props.scale, 0.6)
+        expectEqual(mirror.props.frame, CGRect(x: 0, y: 0, width: 160, height: 40), "its frame is the pill's")
+        expectEqual(mirror.props.target?.row, nil, "a pill of before rows stands for its shape as a whole")
+    },
+    // Since its third version a pill may stand for a row of its shape, by the shape's own part id.
+    test("a reference's fixture of rows reads the row it stands for, with its look and its scale") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let rows = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/kinds/reference.v3.json"))
+        let row = try require(codec.decodeRecord(props: rows, kind: Reference.kind, version: 3).typed(as: Reference.self))
         expectEqual(row.props.target?.row, PartID(UUID(uuidString: "7A1F0C52-0000-4000-8000-0000000000B2")!))
         expectEqual(row.props.target?.label, "POST /orders")
+        expectEqual(row.props.look, .mirror)
+        expectEqual(row.props.scale, 0.6)
     },
     // A type's schema (Types' added property) is its text, one string, whose `$ref`s to other types
     // name them, as a note's mentions do.

@@ -226,9 +226,10 @@ final class ShapeElements {
 
     /// What VoiceOver sees of the shape's editing view while it's edited (nil while it isn't), as AppKit would show the
     /// view anywhere: the view if it's an element, else its controls (a note's words and its rows, each with what's in
-    /// it). The editing view's parent is the shape's element, so theirs is too.
+    /// it). The editing view's parent is the shape's element, so theirs is too: the stand-in's, for a shape edited
+    /// through one (a mirror's original on another board, which has no element here).
     private func editedControls(of id: ShapeID) -> [Any]? {
-        guard editor.editingShapeID == id, let view = canvas.editingView?.view else { return nil }
+        guard (editor.editingStandIn ?? editor.editingShapeID) == id, let view = canvas.editingView?.view else { return nil }
         let element = element(for: id)
         if view.accessibilityParent() as AnyObject !== element { view.setAccessibilityParent(element) }
         return NSAccessibility.unignoredChildren(from: [view])
@@ -429,7 +430,7 @@ final class ShapeElements {
     func nameEditingView() {
         guard isListening, let id = editor.editingShapeID, let responder = canvas.editingResponder,
               let description = editor.accessibleDescription(of: id) else { return }
-        _ = editedControls(of: id)
+        _ = editedControls(of: editor.editingStandIn ?? id)
         if (responder.accessibilityLabel() ?? "").isEmpty { responder.setAccessibilityLabel(description.label) }
     }
 }

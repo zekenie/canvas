@@ -13,7 +13,10 @@ extension CanvasEditor {
         laidOutSizes.forget(ids)
         shapeIndex.layoutDidChange(ids)
         warmIndexes.modifyAll { $0.layoutDidChange(ids) }
+        shownBoards.layoutDidChange(ids)
         setNeedsDisplay()
+        // Then services, for what is laid out from these shapes' frames on another board (a mirror, as big as its original).
+        tellShapesDidChangeLayout(ids)
     }
 
     /// Sets what a shape's geometry reads under `key` (`ShapeContext.layoutInput`), nil to take it

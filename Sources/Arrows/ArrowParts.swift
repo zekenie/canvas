@@ -195,7 +195,7 @@ enum ArrowParts {
         let text = shape.props.hasText ? editor.mentions?.plainText(shape.props.text) ?? shape.props.text.plainText() : nil
         // A key's marks say what the eye reads off its ends: "many to one".
         let cardinality = detail?.look?.cardinality
-        return AccessibleTraits(labelParts: [runs, cardinality].compactMap { $0 }, value: text,
-                                kind: count > 1 ? ConnectionsStyle.bundleKind(count) : nil)
+        return AccessibleTraits(kind: count > 1 ? ConnectionsStyle.bundleKind(count) : nil,
+                                labelParts: [runs, cardinality].compactMap { $0 }, value: text)
     }
 }

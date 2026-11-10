@@ -306,11 +306,12 @@ public final class CanvasView: NSView {
     }
 
     /// Keeps the editing view over its shape's editing frame as the camera or the shape moves. Its
-    /// frame is in view points and its bounds in world units, so AppKit scales it with the zoom.
+    /// frame is in view points and its bounds in world units, so AppKit scales it with the zoom (and,
+    /// for a shape edited through a stand-in, the stand-in's scale: its bounds are in the shape's own units).
     private func layoutEditingView() {
         guard let view = editingView?.view, let box = editor.editingFrame else { return }
         view.frame = editor.camera.toView(box)
-        view.bounds = CGRect(origin: .zero, size: box.size)
+        view.bounds = editor.editingViewBounds ?? CGRect(origin: .zero, size: box.size)
     }
 
     /// Keeps the popover beside what it's about, as the camera or its anchor moves: below it, else

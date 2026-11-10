@@ -25,6 +25,14 @@ final class NoteHops {
         if !editor.insert(ToolID(placing: StickyNote.kind), beside: [id]) { editor.refuseChanges(to: [id]) }
     }
 
+    /// ⇧↩ typed into through a mirror (`editor.editingStandIn`): the note is on another board, so nothing is put down
+    /// beside it and the mirror shakes, the note still edited. False, doing nothing, when the note is typed into itself.
+    func refusesThroughStandIn() -> Bool {
+        guard let standIn = editor.editingStandIn else { return false }
+        editor.refuseChanges(to: [standIn])
+        return true
+    }
+
     /// Tab (`.next`) or ⇧Tab (`.previous`) past `id`'s last or first stop: the next or previous note in reading order,
     /// the order Tab steps in on the canvas, among the notes in `id`'s container (Selection's
     /// `shape(_:from:among:)`), wrapping, read-only ones passed over: `id`'s edit ends, and that note is
@@ -35,6 +43,8 @@ final class NoteHops {
     @discardableResult
     func editNote(_ direction: AdjacentDirection, from id: ShapeID) -> Bool {
         let editor = editor
+        // Through a mirror there is no other note in reach: the key does nothing.
+        guard editor.editingStandIn == nil else { return false }
         guard let next = editor.shape(direction, from: id, among: { $0.kind == StickyNote.kind && !editor.isReadOnly($0.id) }) else { return false }
         editor.endEditing()
         editor.selectedShapeIDs = [next]

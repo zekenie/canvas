@@ -166,8 +166,15 @@ extension ReferenceCondition {
         case .direct:
             guard let target = props.target, let record = lookup(target.id) else { return true }
             if let row = target.row, registry.parts(of: record)?.contains(where: { $0.id == row }) != true { return true }
-            return record.isOpaque || !registry.isMentionable(record.kind) || !registry.isPublic(record)
+            return !canStand(for: record, registry: registry)
         }
+    }
+
+    /// Whether a reference can stand for a shape that's there: not kept aside, of a kind that can be mentioned, and public.
+    /// A direct pill that names one stands for it, and a mirror shows it.
+    @MainActor
+    static func canStand(for record: AnyShapeRecord, registry: Registry) -> Bool {
+        !record.isOpaque && registry.isMentionable(record.kind) && registry.isPublic(record)
     }
 }
 
