@@ -219,6 +219,13 @@ private let billing = #"""
             return try require(editor.arrowGeometry(of: arrow.id))
         }
         let (customer, shipping) = (try geometry(of: "customer_id"), try geometry(of: "shipping_customer_id"))
+        // LineRows says each key the marks its run ends with at either table, once a run: at customers the bars and circles, one of the
+        // two keys into customers.id at an odd place in their fan; at orders the crow's feet.
+        let billingPart = try require(orders.props.columns.first { $0.name == "billing_customer_id" }?.id)
+        let billingKey = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { $0.props.start.binding?.part == billingPart })
+        let marks = try require(editor.connectionBundle(of: billingKey.id)?.runMarks)
+        expectEqual(marks[.end], ConnectionBundle.RunMarks(marks: [.zeroOrOne, .one], nudged: true), "at customers")
+        expectEqual(marks[.start], ConnectionBundle.RunMarks(marks: [.many]), "at orders")
         let near = customer.point(12 + customer.markOffset.end, along: .end).point
         for bar in [12, 17.5].map({ shipping.point($0 + shipping.markOffset.end, along: .end).point }) {
             expect(abs(bar.x - near.x) >= 4, "bars in columns of their own: \(near) and \(bar)")
