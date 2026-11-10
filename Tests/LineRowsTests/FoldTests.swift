@@ -239,6 +239,29 @@ import TextEditing
         b.press(.controlCommandUp)
         expectEqual(b.editor.announcements.last, "Folded, 2 of 3 entries shown", "a was folded already: only d changed, and is said by its counts")
     },
+    test("Unfold Rows says what it unfolded, as a fold does: one by its rows, several by their number (UX walk 4 W-evolve-13)") {
+        let b = try Bench()
+        let a = b.tally("a", ["one", "two", "three", "four"])
+        let d = b.tally("d", ["p", "q", "r"], at: CGPoint(x: 700, y: 100))
+        b.editor.rowFolds?.fold([a, d])
+        b.editor.selectedShapeIDs = [a]
+        b.press(.controlCommandDown)
+        expectEqual(b.editor.announcements.last, "Unfolded, 4 entries shown", "the one shape, by its rows")
+        b.editor.selectedShapeIDs = []
+        b.editor.rowFolds?.fold([a])
+        b.press(.controlCommandDown)
+        expectEqual(b.editor.announcements.last, "2 shapes unfolded", "nothing selected: every tally on the board, said by their number")
+    },
+    test("Unfold Rows counts the rows that are entries, never a header's (UX walk 4 review)") {
+        let b = try Bench()
+        let a = b.tally("a", ["g/", "one 1", "two", "h/", "three 3"])
+        b.editor.rowFolds?.fold([a])
+        b.editor.selectedShapeIDs = [a]
+        b.press(.controlCommandDown)
+        expectEqual(b.editor.announcements.last, "Unfolded, 3 entries shown", "five lines, two of them headers")
+        b.press(.controlCommandUp)
+        expectEqual(b.editor.announcements.last, "Folded, 2 groups closed", "a fold of groups says the groups")
+    },
     test("A press on a folded tally edits the row pressed, not the row the unfolded layout has at that line; the +N line is the waiting line") {
         let b = try Bench()
         let id = b.tally("apples", ["red 3", "green", "blue 2", "pink", "gold"])

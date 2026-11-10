@@ -563,7 +563,8 @@ private struct Putting {
         }
     }
 
-    /// Measures the new shapes, lays the block's out in rows at draw's normal gap, lands the box around them as Insert lands a
+    /// Measures the new shapes, lays the block's out in rows at draw's normal gap (the room a row's shape keeps clear below it,
+    /// where that's more: `Registry.roomKeptBelow`), lands the box around them as Insert lands a
     /// shape, and gives each its place (`DrawOptions.places`, by the line of its run's statement).
     /// `target` is the editor it is drawn on: the board itself, or a rehearsal of it with the widening in.
     private func layOut(_ planned: [Planned], _ scripts: [(board: BoardID, script: Script, lines: [Int: Int])],
@@ -581,8 +582,11 @@ private struct Putting {
             throw DrawError("the board went away", reason: ScriptError.Reason.internal.rawValue)
         }
         let drawing = try Drawing(shownRun.script, editor: editor, on: reading, fileNames: fileNames, options: measuring, program: "canvas")
-        var rooms: [Int: CGSize] = [:]
-        for item in drawing.items { rooms[item.statement.line] = item.room }
+        var rooms: [Int: CGSize] = [:], keeps: [Int: CGFloat] = [:]
+        for item in drawing.items {
+            rooms[item.statement.line] = item.room
+            keeps[item.statement.line] = editor.registry.roomKeptBelow(item.kind)
+        }
 
         let gap = GapName.normal.value
         // A grid's columns (`DrawPut.columns`), each as wide as its widest new shape; one that holds none takes no room.
@@ -602,7 +606,7 @@ private struct Putting {
         var offsets: [Int: CGPoint] = [:]
         var width: CGFloat = 0, y: CGFloat = 0
         for (number, row) in rows.enumerated() {
-            var x: CGFloat = 0, height: CGFloat = 0
+            var x: CGFloat = 0, height: CGFloat = 0, kept: CGFloat = 0
             for original in row {
                 let line = shownRun.lines[original]!
                 let size = rooms[line] ?? .zero
@@ -610,9 +614,12 @@ private struct Putting {
                 offsets[line] = CGPoint(x: x, y: y)
                 x += size.width + gap
                 height = max(height, size.height)
+                kept = max(kept, keeps[line] ?? 0)
             }
             width = max(width, x - gap)
-            y += height + (number == rows.count - 1 ? 0 : gap)
+            // The next row past the room a shape of this one keeps clear below it (a table: its waiting line and the next one's
+            // pill, UX walk 4 paste-4-1), so the first row typed into it covers nothing.
+            y += height + (number == rows.count - 1 ? 0 : max(gap, kept))
         }
         let size = CGSize(width: width, height: y)
         guard size.width > 0, size.height > 0 else { return }

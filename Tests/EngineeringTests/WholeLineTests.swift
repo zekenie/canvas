@@ -2,6 +2,8 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 @_spi(Host) import CanvasUI
+import Draw
+import DrawScript
 import Engineering
 import Find
 import Geometry
@@ -319,13 +321,15 @@ extension KitBench {
         b.editor.transact("Delete Enum") { $0.delete(Set([status])) }
         expectEqual(EngineeringLines.columns.spoken(ColumnLine(state), in: context), "state, \(long)", "words once the enum is gone")
     },
-    test("SQL's types of several words are offered as typed, whole or in part, and a pick replaces the type from its first word; a flag isn't offered in the middle of one") {
+    test("SQL's types of several words are offered once typed into past their first word, and a pick replaces the type from its first word; a flag isn't offered in the middle of one") {
         let b = try KitBench()
         let orders = b.table("orders", ["id uuid pk"])
         b.begin(orders)
         b.type("ratio doub")
+        expect(!b.field.listedOffers.contains("double precision"), "its first word not whole yet: \(b.field.listedOffers)")
+        b.type("le p")
         expect(b.field.listedOffers.contains("double precision"), "\(b.field.listedOffers)")
-        b.type("le pre")
+        b.type("re")
         expectEqual(b.field.listedOffers.first, "double precision")
         expect(!b.field.listedOffers.contains("pk"), "the type's second word isn't a flag's place")
         b.press(.tab)
@@ -337,5 +341,50 @@ extension KitBench {
         b.press(.tab)
         expectEqual(b.field.string, "at timestamp with time zone")
         b.press(.escape)
+    },
+    test("types are offered in one word: scattered letters offer no spelling of several words, nor a long one beside its short name (UX walk 4 tables-4-3)") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        b.begin(orders)
+        b.type("id u")
+        let u = b.field.listedOffers
+        expect(u.contains("uuid") && !u.contains { $0.contains(" ") }, "\(u)")
+        b.field.setSelectedRange(NSRange(location: 0, length: (b.field.string as NSString).length))
+        b.type("created_at time")
+        let time = b.field.listedOffers
+        expect(time.contains("timestamptz") && time.contains("timetz") && !time.contains { $0.contains(" ") }, "\(time)")
+        expectEqual(Set(time).count, time.count, "each once")
+        b.field.setSelectedRange(NSRange(location: 0, length: (b.field.string as NSString).length))
+        b.type("total in")
+        let typed = b.field.listedOffers
+        expect(typed.contains("integer") && !typed.contains { $0.contains(" ") }, "T2's one-word types, none of several words: \(typed)")
+        b.field.setSelectedRange(NSRange(location: 0, length: (b.field.string as NSString).length))
+        b.type("created_at timestamp w")
+        expectEqual(Set(b.field.listedOffers.filter { $0.contains(" ") }), ["timestamp with time zone", "timestamp without time zone"])
+        b.press(.escape)
+        b.press(.escape)
+    },
+    test("a table widened to its longest name and type keeps the gap a row keeps at the default width between them (UX walk 4 firstminute-4-4)") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        b.editor.camera = Camera(origin: .zero, zoom: 1)
+        let name = "billing_address_line_one_and_then_some", type = "text"
+        b.begin(orders)
+        b.type("\(name) \(type)")
+        b.press(.return)
+        b.press(.escape)
+        let width = try require(b.editor.document[orders]?.box?.width)
+        let nameWidth = NSAttributedString(string: name, attributes: [.font: KitStyle.nameFont]).size().width
+        let typeWidth = NSAttributedString(string: type, attributes: [.font: KitStyle.typeFont]).size().width
+        expect(width >= KitStyle.nameInset + nameWidth + KitStyle.wholeGap + typeWidth + KitStyle.trailingInset - 2,
+               "\(width) holds the name \(nameWidth), the gap \(KitStyle.wholeGap) and the type \(typeWidth)")
+    },
+    test("a shape put below a table, with no gap said, lands past the room the table keeps below it, as draw's solver spaces it (UX walk 4 paste-4-1)") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        let bounds = try require(b.editor.shapeContext.geometry(of: orders)?.bounds)
+        let surroundings = try require(Surroundings(on: b.editor.board, moving: CGSize(width: 100, height: 40), in: b.editor))
+        let below = try require(surroundings.near(orders, sides: [.below])?.rect)
+        expect(below.minY - bounds.maxY >= KitStyle.roomKeptBelow - 0.5, "\(below.minY - bounds.maxY) under it, the room is \(KitStyle.roomKeptBelow)")
     },
 ])

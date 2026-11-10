@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import CanvasUI
 import Frames
+import Geometry
 import LanguageModels
 import Mentions
 import Selection
@@ -78,8 +79,9 @@ let firstMinutePending: [String] = []
             walk.press(Chord(Key.return, .shift))
             w.type("Grace", with: walk)
             walk.press(.escape)
-            // Grace lands under Ada: right of it, the view would pan the type off screen (UX walk 3 tables-1).
-            walk.press(Chord(Key.up, [.option, .shift, .command]))
+            // Grace lands right of Ada, the view panning (T1 panel 3): nothing joins Ada to the type it would pan off, so the pan
+            // takes away nothing the person works with (UX walk 4 firstminute-4-2), and ⌥⇧⌘← extends to Ada, as approved.
+            walk.press(Chord(Key.left, [.option, .shift, .command]))
             walk.press(Chord("l", .command))
         }
         let named = { (text: String) in w.notes.first { $0.typed(as: StickyNote.self)?.props.text.plainText() == text }?.id }
@@ -94,5 +96,25 @@ let firstMinutePending: [String] = []
         expectEqual(editor.holder(of: person), nil, "the type stays out of it")
         walk.pending = firstMinutePending
         walk.expectGaps(gaps)
+    },
+    test("a chain of ⇧Return notes reads on in one row, right of the last each time, the view panning; none lands under the minimap (UX walk 4 firstminute-4-2, 4-1)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let walk = w.walk()
+        let editor = w.editor
+        expect(editor.coveredCorners.bottomLeft.width > 0, "the window's minimap is told the editor")
+        for word in ["One", "Two", "Three", "Four", "Five"] {
+            walk.press(Chord(Key.return, .shift))
+            w.type(word, with: walk)
+            w.window.settle()
+            let id = try require(editor.editingShapeID)
+            let box = try require(editor.document[id]?.box)
+            expect(!editor.clearView.covered.contains { $0.intersects(editor.cameraTarget.toView(box)) }, "\(word) clear of the minimap's corner")
+        }
+        walk.press(.escape)
+        let boxes = w.notes.compactMap(\.box)
+        expectEqual(boxes.count, 5)
+        expect(Set(boxes.map(\.minY)).count == 1, "one row, tops aligned: \(boxes)")
+        expectEqual(boxes.map(\.minX), boxes.map(\.minX).sorted(), "each right of the one before: \(boxes)")
     },
 ])

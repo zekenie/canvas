@@ -243,7 +243,7 @@ extension CanvasEditor {
             let sides = reached.map { PlacingStyle.sides(of: bounds, facing: $0) } ?? PlacingStyle.sides
             let landing = chosen.isEmpty
                 ? surroundings.near(id, within: holder, put: put, sides: sides)
-                : surroundings.near(bounds, avoiding: chosen, within: holder, put: reached == nil ? nil : put, sides: sides)
+                : surroundings.near(bounds, avoiding: chosen, within: holder, put: reached == nil ? nil : put, sides: sides, besides: [id])
             return landing?.rect ?? insertionFrame(of: size, beside: [id])
         }
         return insertionFrame(of: size, beside: [id])

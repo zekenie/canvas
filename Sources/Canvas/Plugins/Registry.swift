@@ -44,6 +44,14 @@ public struct Registry {
     /// Kinds whose shapes make room below them as they grow (`MakesRoomAsItGrows`): what `Transaction.makeRoom()`
     /// looks for among what a step changed. Without one, it does nothing.
     public let roomMakingKinds: Set<ShapeKind>
+
+    /// The room a shape of `kind` keeps clear below it as it grows (`MakesRoomAsItGrows.roomKeptBelow`), world units: what a
+    /// layout that puts such shapes down leaves below each (draw's placing, a paste's grid), so the first row typed into one covers
+    /// nothing below it before any push. None for a kind that doesn't make room.
+    public func roomKeptBelow(_ kind: ShapeKind) -> CGFloat {
+        guard roomMakingKinds.contains(kind) else { return 0 }
+        return (definition(for: kind) as? any MakesRoomAsItGrows)?.roomKeptBelow ?? 0
+    }
     /// Kinds that draw a skeleton of their own (`CustomSkeleton`), found once: a frame zoomed out
     /// asks for every shape it draws.
     let customSkeletons: [ShapeKind: any CustomSkeleton]

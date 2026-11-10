@@ -27,3 +27,97 @@ public struct CoveredEdges: Equatable, Sendable {
     /// pane resized rather than shown or hidden.
     public func hasSameSides(as other: CoveredEdges) -> Bool { (left > 0) == (other.left > 0) && (right > 0) == (other.right > 0) }
 }
+
+/// How much of each corner of the part the chrome leaves clear (`CoveredEdges.clear(in:)`) the host's own views over the canvas
+/// cover, in view points, from the corner (`CanvasEditor.coveredCorners`): the minimap in the bottom-left, its margin
+/// included. A corner covered is no edge covered: the rest of that side is clear, so a fit still fills the view, while what
+/// keeps one shape in the clear view (a put, a reveal, the caret kept in view) keeps it out of the corner too.
+public struct CoveredCorners: Equatable, Sendable {
+    public var topLeft: CGSize
+    public var topRight: CGSize
+    public var bottomLeft: CGSize
+    public var bottomRight: CGSize
+
+    public init(topLeft: CGSize = .zero, topRight: CGSize = .zero, bottomLeft: CGSize = .zero, bottomRight: CGSize = .zero) {
+        self.topLeft = topLeft
+        self.topRight = topRight
+        self.bottomLeft = bottomLeft
+        self.bottomRight = bottomRight
+    }
+
+    /// The corners covered of `clear` (view points), each a rect in its corner, no larger than `clear`; none for a corner
+    /// nothing covers.
+    public func rects(in clear: CGRect) -> [CGRect] {
+        guard !clear.isEmpty else { return [] }
+        func sized(_ size: CGSize) -> CGSize? {
+            guard size.width > 0, size.height > 0 else { return nil }
+            return CGSize(width: min(size.width, clear.width), height: min(size.height, clear.height))
+        }
+        var rects: [CGRect] = []
+        if let s = sized(topLeft) { rects.append(CGRect(x: clear.minX, y: clear.minY, width: s.width, height: s.height)) }
+        if let s = sized(topRight) { rects.append(CGRect(x: clear.maxX - s.width, y: clear.minY, width: s.width, height: s.height)) }
+        if let s = sized(bottomLeft) { rects.append(CGRect(x: clear.minX, y: clear.maxY - s.height, width: s.width, height: s.height)) }
+        if let s = sized(bottomRight) { rects.append(CGRect(x: clear.maxX - s.width, y: clear.maxY - s.height, width: s.width, height: s.height)) }
+        return rects
+    }
+}
+
+/// The part of a view a shape is kept in: a rect, less the corners of it the host's views cover (`CoveredCorners`), in any
+/// one space (view points, or world units). What a put beside a shape judges a side seen by (Draw's `PutBeside`), and what
+/// the camera keeps a rect in by the least pan (`CanvasEditor.keepInView`, `animateCamera(toShow:…)`).
+public struct ClearView: Equatable, Sendable {
+    public var rect: CGRect
+    /// The corners of `rect` covered, each within it.
+    public var covered: [CGRect]
+
+    public init(rect: CGRect, covered: [CGRect] = []) {
+        self.rect = rect
+        self.covered = covered
+    }
+
+    /// The same, `inset` in from the rect's edges and kept as far from each covered corner (the corners grow by it, inward).
+    public func insetBy(_ inset: CGFloat) -> ClearView {
+        let inner = rect.insetBy(dx: inset, dy: inset)
+        guard !inner.isEmpty else { return self }
+        return ClearView(rect: inner, covered: covered.map { $0.insetBy(dx: -inset, dy: -inset) })
+    }
+
+    /// What a rect may be off an edge, or a pan short of it, and still count as in: the half point `shift` already forgives,
+    /// so a rect panned exactly onto an edge (which floating point leaves an ulp short) is in.
+    static let tolerance: CGFloat = 0.5
+
+    /// Whether `shown` is in it: in the rect and clear of every covered corner, or over one that no pan could take it out of
+    /// (a box too big to be clear of the corner anywhere in the rect is as in as it can be: `shift` leaves it be).
+    public func contains(_ shown: CGRect) -> Bool {
+        guard rect.insetBy(dx: -Self.tolerance, dy: -Self.tolerance).contains(shown) else { return false }
+        let pan = shift(bringing: shown)
+        return abs(pan.width) <= Self.tolerance && abs(pan.height) <= Self.tolerance
+    }
+
+    /// How far `shown` moves (the camera's pan, in this space) to come wholly into it by as little as it takes: into the rect, as
+    /// a rect too big for it keeps its top-left corner in; then, where that leaves it over a covered corner, out of the corner
+    /// the shorter way that keeps it in the rect (up past a bottom corner's top or down past a top corner's bottom, across past
+    /// its inner side), none where neither does.
+    public func shift(bringing shown: CGRect) -> CGSize {
+        func along(_ low: CGFloat, _ high: CGFloat, _ min: CGFloat, _ max: CGFloat) -> CGFloat {
+            if low < min || high - low > max - min { return min - low }
+            if high > max { return max - high }
+            return 0
+        }
+        var delta = CGSize(width: along(shown.minX, shown.maxX, rect.minX, rect.maxX), height: along(shown.minY, shown.maxY, rect.minY, rect.maxY))
+        for corner in covered {
+            let moved = shown.offsetBy(dx: delta.width, dy: delta.height)
+            guard corner.intersects(moved) else { continue }
+            var ways: [CGSize] = []
+            // Vertically: past the corner's inner edge, top or bottom as the corner is.
+            let up = corner.maxY >= rect.maxY - 0.5 ? corner.minY - moved.maxY : corner.maxY - moved.minY
+            if moved.minY + up >= rect.minY - 0.5, moved.maxY + up <= rect.maxY + 0.5 { ways.append(CGSize(width: 0, height: up)) }
+            let across = corner.minX <= rect.minX + 0.5 ? corner.maxX - moved.minX : corner.minX - moved.maxX
+            if moved.minX + across >= rect.minX - 0.5, moved.maxX + across <= rect.maxX + 0.5 { ways.append(CGSize(width: across, height: 0)) }
+            guard let way = ways.min(by: { abs($0.width) + abs($0.height) < abs($1.width) + abs($1.height) }) else { continue }
+            delta.width += way.width
+            delta.height += way.height
+        }
+        return delta
+    }
+}

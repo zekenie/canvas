@@ -74,6 +74,19 @@ extension Bench {
         let frame = try require(b.canvas.cardFrame)
         expect(frame.width >= b.editor.camera.toView(row).width - 0.5, "the card \(frame.width) covers the row \(b.editor.camera.toView(row).width)")
     },
+    test("A card's line that widens the row it hangs from (its reprinted line laid out wider) widens the card with it (UX walk 4 tables-7)") {
+        let b = try Bench()
+        let id = b.tally("apples", ["a_rather_long_entry_name_that_nearly_fills_it 2", "blue"])
+        let card = try b.openCard(id, row: "a_rather_long_entry_name_that_nearly_fills_it")
+        try require(card.field(of: "count")).selectAll(nil)
+        b.type("123456789012345678")
+        b.press(.tab)
+        let row = try require(b.rect(id, row: "a_rather_long_entry_name_that_nearly_fills_it"))
+        expect(row.width > 240, "the row laid out wider by its reprinted line: \(row.width)")
+        let frame = try require(b.canvas.cardFrame)
+        expect(frame.width >= b.editor.camera.toView(row).width - 0.5, "the card \(frame.width) covers the row \(b.editor.camera.toView(row).width)")
+        expectEqual(b.editor.card?.anchor.width, row.width, "the card hangs from the row as wide as it is laid out")
+    },
     test("A card grows to hold its longest line whole, up to its widest: a line past that is cut at its end") {
         @MainActor func width(of note: String?) throws -> CGFloat {
             let b = try Bench()

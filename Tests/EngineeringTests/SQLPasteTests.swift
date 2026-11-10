@@ -225,6 +225,9 @@ private let paymentsSQL = """
         expectEqual(Set(boxes.prefix(4).map(\.minY)).count, 1, "the first four in a row")
         expect(boxes.allSatisfy { $0.minY > mood.maxY }, "under the enums' row")
         expect(boxes[4].minY > boxes[0].maxY, "the rest below")
+        // Each row past the room a table keeps clear below it as it grows: a row typed into one covers nothing (UX walk 4 paste-4-1).
+        expect(boxes[4].minY - boxes[0].maxY >= KitStyle.roomKeptBelow, "\(boxes[4].minY - boxes[0].maxY) under the first row")
+        expect(boxes[0].minY - mood.maxY >= KitStyle.roomKeptBelow, "\(boxes[0].minY - mood.maxY) under the enums' row")
         expect(boxes[1].minX > boxes[0].maxX && boxes[2].minX > boxes[1].maxX, "no keys: left to right in paste order")
     },
     test("paste 02: a pg_dump laid out by its keys: orders, which four tables key to, in the middle of what keys to it; each table beside, above, below or corner to corner with the tables it keys to, in columns, so no key passes under a card (UX walk 3 paste-1)") {

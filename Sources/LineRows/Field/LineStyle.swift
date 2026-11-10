@@ -30,6 +30,9 @@ public struct LineStyle {
     /// line is the same chip, its word in its middle; nil: a pill's, from the font.
     public var chipHeight: CGFloat?
     public var chipRadius: CGFloat?
+    /// How far a chip reaches past its word at each end as the kind draws it at rest (an endpoint's method: 6), so the line's chip
+    /// starts and ends where the chip at rest does; the line's field leaves that room before its text (`fieldLead`). Nil: a pill's.
+    public var chipPadding: CGFloat?
 
     public init(font: NSFont, codeFont: NSFont, ink: NSColor, secondaryInk: NSColor, textInset: CGFloat, trailingInset: CGFloat,
                 gutterMiddle: CGFloat, markSize: CGFloat, band: NSColor = LineStyle.defaultBand, bandInset: CGFloat = 8) {
@@ -53,6 +56,10 @@ public struct LineStyle {
         guard chipHeight != nil, let chip = chipFont else { return 0 }
         return ((font.ascender + font.descender) / 2 - chip.capHeight / 2).rounded()
     }
+
+    /// The room the line's field leaves before its text, its text kept where it is: a chip's padding where the kind draws one, so a
+    /// chip at the line's start is drawn whole, its rounded left end and all, never cut at the field's edge.
+    public var fieldLead: CGFloat { chipPadding ?? 0 }
 
     /// How tall the line's field is: its fonts' line, or a chip taller than that, which would be cut at the field's edges.
     public var fieldHeight: (line: CGFloat, field: CGFloat) {
@@ -82,7 +89,7 @@ public struct LineStyle {
     public func highlight(of span: LineSpan) -> TextHighlight? {
         switch span.look {
         case .pill(let fill, _): TextHighlight(range: span.range, fill: fill)
-        case .chip(let fill, _): TextHighlight(range: span.range, fill: fill, height: chipHeight, cornerRadius: chipRadius)
+        case .chip(let fill, _): TextHighlight(range: span.range, fill: fill, height: chipHeight, cornerRadius: chipRadius, padding: chipPadding)
         case .dashedPill(let color, _): TextHighlight(range: span.range, fill: .clear, stroke: color, isDashed: true)
         default: nil
         }

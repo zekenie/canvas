@@ -178,10 +178,11 @@ enum APIStyle {
     static let deprecatedAlpha: CGFloat = 0.45
 
     /// A chip as the field lays a method out, so nothing moves as editing starts: its glyphs `chipPadding` in from where the chip
-    /// is at rest (the row's indent), the chip behind them reaching `fieldChipPad` past each end (TextEditing's highlight) and the
-    /// share of a kern a range's last character takes (`kernShare`; TextKit 2 splits it with the next character), so it is as wide
-    /// as the chip drawn at rest, and the kern after the space past it so the path starts where the rest's does.
-    static let fieldChipPad: CGFloat = 2
+    /// is at rest (the row's indent), the chip behind them reaching `fieldChipPad` past each end (TextEditing's highlight, padded as
+    /// the chip at rest is: `LineStyle.chipPadding`, the field leaving that room before its text) and the share of a kern a range's
+    /// last character takes (`kernShare`; TextKit 2 splits it with the next character), so it is the chip drawn at rest, from its
+    /// left edge to its right, and the kern after the space past it so the path starts where the rest's does.
+    static let fieldChipPad: CGFloat = chipPadding
     static let kernShare: CGFloat = 0.5
     /// The kerns that lay out a line's `method` as typed (its glyphs `textWidth` wide in the chip's font) with a space of
     /// `spaceWidth` after it: after its last character, and after the space.

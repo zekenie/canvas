@@ -19,6 +19,7 @@ extension CanvasEditor {
         copy.nameRoot(rootName)
         copy.coveredTop = coveredTop
         copy.coveredEdges = coveredEdgesAhead?() ?? coveredEdges
+        copy.coveredCorners = coveredCorners
         copy.viewportDidResize(to: viewportSize)
         copy.camera = cameraTarget
         copy.rehearsed = (ObjectIdentifier(self), storedFile)

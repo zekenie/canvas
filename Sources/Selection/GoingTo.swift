@@ -87,7 +87,7 @@ extension CanvasEditor {
 
     /// Brings the shapes into view only if they are not all in it (tldraw's `zoomToSelectionIfOffscreen`,
     /// what stepping from shape to shape does): in what the host leaves clear of the view as it is headed (the
-    /// inspector the selection shows counted before it has slid in), where the camera is headed, with the row
+    /// inspector the selection shows counted before it has slid in, and the minimap's corner left out: `clearView`), where the camera is headed, with the row
     /// above their top (a title's pill) counted as theirs, the camera stays. Otherwise it moves over 200 ms by
     /// the least pan that brings them in, `SelectionStyle.revealMargin` in from the edges, at the zoom it has
     /// (`animateCamera(toShow:…)`), never centering them, so what was beside them in view stays there; and
@@ -124,7 +124,8 @@ extension CanvasEditor {
         let above = withRowAbove ? SelectionStyle.revealRowAbove / camera.zoom : 0
         func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
         let shown = withRow(bounds)
-        guard !camera.toWorld(view).contains(shown) else { return false }
+        // In view: in the clear part and out of the corner the minimap covers, as the least pan below brings it.
+        guard !clearView.contains(camera.toView(shown)) else { return false }
         let margin = SelectionStyle.revealMargin
         let room = view.insetBy(dx: margin, dy: margin)
         func fits(_ rect: CGRect) -> Bool { rect.width * camera.zoom <= room.width && rect.height * camera.zoom <= room.height }

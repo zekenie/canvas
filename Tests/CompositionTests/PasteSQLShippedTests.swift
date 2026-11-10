@@ -430,4 +430,19 @@ private let payments = """
         expect(commandV(w))
         expect(table(editor, "payments") != nil)
     },
+    test("a pasted schema keeps the room a table needs as a row is typed into it below each table, in a new board's window, so opening one covers nothing under it (UX walk 4 paste-4-1)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        let sql = (1...6).map { "CREATE TABLE t\($0) (id int PRIMARY KEY, name text);" }.joined(separator: "\n")
+        pasteboardHolds(sql)
+        expect(commandV(w))
+        let boxes = editor.document.shapes.filter { $0.kind == DatabaseTable.kind }.compactMap(\.box).sorted { $0.minY < $1.minY }
+        expectEqual(boxes.count, 6)
+        let first = boxes.filter { $0.minY == boxes[0].minY }, rest = boxes.filter { $0.minY > boxes[0].minY }
+        expect(!rest.isEmpty, "a second row: \(boxes)")
+        // The first table opened and a column typed past its end: its waiting line and the next row's pills clear of each other.
+        for box in rest { expect(box.minY - (first.map(\.maxY).max() ?? 0) >= KitStyle.roomKeptBelow - 0.5, "\(box.minY - (first.map(\.maxY).max() ?? 0)) under the first row") }
+    },
 ])

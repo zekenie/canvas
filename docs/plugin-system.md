@@ -3677,7 +3677,10 @@ registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.se
   shape where the person sees it (`PutBeside`, [placing](../.claude/rules/placing.md)): beside a shape
   top-aligned on its right or left, on a side where the two fit in the clear view together (the view then
   pans to them), with none at the nearest clear spot inside the clear view, the title's row above it
-  counted. Beside one shape, a kind may make its shape
+  counted. The clear view leaves out the minimap's corner (`editor.clearView`). A side whose pan would take
+  out of view a shape joined to the one it's beside (any edge Topology knows) or holding it ranks under a
+  side in view as it is, so what the person works with stays; a chain of shapes joined to nothing goes
+  right in one row; and no put beside the selection takes left or above over right or below that is seen. Beside one shape, a kind may make its shape
   from that one (`x.madeBeside { made, neighbor in … }`: a note takes the color of what it's put beside,
   as tldraw's adjacent notes do). The one insertion spot is `editor.insert(_ placement:, named:, beside:)`,
   which a tool's insert calls: the same frame, made as the kind says, one step named as given, and the
@@ -15186,7 +15189,12 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   the host's views reach on a board under the title bar's row: the path's pill
   inside a subboard, `BoardPath.coveredHeight(on:)`, which a board's window tells it from [the host's slots](#host-slots)), what
   a fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`, and `canvas
-  draw`'s `--reveal`, whose `view` is that part of it too.
+  draw`'s `--reveal`, whose `view` is that part of it too. What keeps one shape in view reads
+  `editor.clearView` (a `ClearView`): that part less the corners the host's own views cover
+  (`coveredCorners`, host API: the minimap's, bottom-left, which CanvasView reports as it lays it out),
+  and `ClearView.shift(bringing:)`, the least pan into it and out of a covered corner: a reveal by the
+  least pan, the caret kept in view (`EditContext.keepInView`), a kept view, and Draw's puts
+  (`reading(of:)`'s `covered`). A fit still fills `unobscuredViewport`.
 - **A view kept while the view settles.** The inspector comes in over the canvas's trailing edge as a
   shape is selected, covering it, so what the camera was just asked to show is kept shown for a moment
   (`Style.viewSettle`, 600 ms, on the scheduler's clock, no timer): `editor.animateCamera(toFit:
@@ -15983,7 +15991,8 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
 - **Making room** (`MakingRoom.swift`) is settling's one exception to "a shape that grows later
   stays where it is", for the kinds that opt in (`MakesRoomAsItGrows`, a capability whose one
   requirement has a default, `roomKeptBelow`: the engineering kit's table, enum and API, which keep
-  a row and a title's pill clear below them). When a step writes such a shape taller
+  a row and a title's pill clear below them; `registry.roomKeptBelow(kind)` reads it, and draw's layouts
+  leave it below such shapes as they put them down, a put's rows and the solver's default gap below one). When a step writes such a shape taller
   at rest (laid out without the values plugins set for it while it's handled, `setLayoutInput`: an
   editing view's waiting line, a drag's fade, so only a write pushes; a provider answers as at rest,
   `LayoutReading.isResting`: the width while typing nothing, a fold kept for the shape being

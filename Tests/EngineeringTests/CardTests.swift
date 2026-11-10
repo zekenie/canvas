@@ -31,6 +31,16 @@ extension KitBench {
 }
 
 @MainActor let cardTests = Suite("A column's card", [
+    test("the card's type line offers a type of several words as the row's line does: typed past its first word (UX walk 4 tables-4-3)") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk", "ratio text"])
+        let card = try b.openCard(orders, column: "ratio")
+        let field = try require(card.field(of: "type"))
+        field.selectAll(nil)
+        b.type("double p")
+        expect(field.listedOffers.contains("double precision"), "\(field.listedOffers)")
+        expect(!field.listedOffers.contains("timestamp with time zone"), "\(field.listedOffers)")
+    },
     test("⌘↓ on orders.customer_id: its card under the row, Details of customer_id: type, references, null, unique, primary key, default, on delete, on update") {
         let b = try KitBench()
         let orders = b.table("orders", ["id uuid pk", "customer_id uuid unique", "placed_at timestamptz null default now()"])

@@ -21,9 +21,13 @@ public struct TextHighlight: Equatable {
     /// endpoint's method chip, 18 tall with corners of 3), so nothing moves as editing starts; nil: a pill's, from the font.
     public var height: CGFloat?
     public var cornerRadius: CGFloat?
+    /// How far it reaches past its text at each end, where the owner's mark at rest has room of its own there (an endpoint's
+    /// method chip, 6 either side of its word); nil: a pill's (`TextEditingStyle.highlightPadding`). The view must leave that
+    /// room before a range at its text's start (a text container inset), or it is cut there.
+    public var padding: CGFloat?
 
     public init(range: NSRange, fill: NSColor, symbol: String? = nil, stroke: NSColor? = nil, isDashed: Bool = false,
-                height: CGFloat? = nil, cornerRadius: CGFloat? = nil) {
+                height: CGFloat? = nil, cornerRadius: CGFloat? = nil, padding: CGFloat? = nil) {
         self.range = range
         self.fill = fill
         self.symbol = symbol
@@ -31,6 +35,7 @@ public struct TextHighlight: Equatable {
         self.isDashed = isDashed
         self.height = height
         self.cornerRadius = cornerRadius
+        self.padding = padding
     }
 }
 
@@ -48,7 +53,7 @@ extension EditingTextView {
               let range = NSTextRange(location: start, end: end) else { return [] }
         layout.ensureLayout(for: range)
         let origin = textContainerOrigin
-        let padding = TextEditingStyle.highlightPadding
+        let padding = highlight.padding ?? TextEditingStyle.highlightPadding
         let highlightHeight = (highlightFontSize * TextEditingStyle.highlightHeight).rounded()
         var frames: [CGRect] = []
         layout.enumerateTextSegments(in: range, type: .standard, options: []) { _, segment, _, _ in
@@ -83,7 +88,7 @@ extension EditingTextView {
                 // whose gap TextKit 2 splits between the two characters' segments, so the range's starts halfway in.
                 let onLine = startsLine(highlight.range.location)
                 let reach = onLine ? room : room / 2
-                let glyphStart = frames[0].minX + TextEditingStyle.highlightPadding + (onLine ? 0 : room / 2)
+                let glyphStart = frames[0].minX + (highlight.padding ?? TextEditingStyle.highlightPadding) + (onLine ? 0 : room / 2)
                 symbolCenter = glyphStart - room / 2
                 frames[0].origin.x -= reach
                 frames[0].size.width += reach

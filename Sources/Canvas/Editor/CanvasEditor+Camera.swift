@@ -71,18 +71,17 @@ extension CanvasEditor {
     }
 
     /// Moves the camera, as `animateCamera(to:duration:)` does, by as little as brings `rect` (world units) into the part
-    /// of the view the host leaves clear (`unobscuredViewport`, as the chrome is headed), `margin` view points in from its
-    /// edges, at the zoom it has, from where the camera is headed: never centering it, so what is beside it in view stays
+    /// of the view the host leaves clear (`clearView`, as the chrome is headed: clear of the minimap's corner too), `margin`
+    /// view points in from its edges and that corner, at the zoom it has, from where the camera is headed: never centering it, so what is beside it in view stays
     /// in view. A rect too big for that keeps its top-left corner in view. Keeps it in view while the view around it
     /// settles, as `keepInViewWhileSettling` does. False, and nothing done, when it is in view already, before the view
     /// has a size, or for a null rect. What bringing a shape into view by the least move goes by (Selection's
     /// `revealIfOffscreen`).
     @discardableResult
     public func animateCamera(toShow rect: CGRect, margin: CGFloat, duration: Duration) -> Bool {
-        let view = unobscuredViewport, camera = cameraTarget
-        guard !view.isEmpty, !rect.isNull, rect.isFinite else { return false }
-        let inset = view.insetBy(dx: margin, dy: margin)
-        let delta = Self.shift(bringing: camera.toView(rect), into: inset.isEmpty ? view : inset)
+        let view = clearView, camera = cameraTarget
+        guard !view.rect.isEmpty, !rect.isNull, rect.isFinite else { return false }
+        let delta = view.insetBy(margin).shift(bringing: camera.toView(rect))
         guard delta != .zero else { return false }
         var target = camera
         target.pan(by: delta)
@@ -110,9 +109,8 @@ extension CanvasEditor {
             target = Camera(fitting: kept.rect, in: view, inset: inset, maxZoom: maxZoom)
         case .inView:
             guard session == nil else { return }
-            let margin = view.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
             var moved = kept.camera
-            moved.pan(by: Self.shift(bringing: kept.camera.toView(kept.rect), into: margin.isEmpty ? view : margin))
+            moved.pan(by: clearView.insetBy(Style.keepInViewMargin).shift(bringing: kept.camera.toView(kept.rect)))
             target = moved
         }
         guard target != kept.camera else { return }
@@ -134,7 +132,7 @@ extension CanvasEditor {
 
     /// Pans the camera at once, by as little as it takes, so `rect` (world units from the shape's
     /// editing frame's origin: an editing view's coordinates) is in the part of the view the host leaves
-    /// clear, `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
+    /// clear (`clearView`: out of the minimap's corner too), `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
     /// corner in view. See `EditContext.keepInView`.
     ///
     /// While the camera glides (a reveal of the shape just put down), it is judged where the camera is headed: in view
@@ -142,11 +140,11 @@ extension CanvasEditor {
     /// what it was bringing into view.
     func keepInView(_ rect: CGRect, of id: ShapeID) {
         guard session == nil, let box = editingFrame(of: id) else { return }
-        let view = unobscuredViewport.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
-        guard view.width > 0, view.height > 0 else { return }
+        let view = clearView.insetBy(Style.keepInViewMargin)
+        guard view.rect.width > 0, view.rect.height > 0 else { return }
         let world = rect.offsetBy(dx: box.minX, dy: box.minY)
         if let headed = cameraAnimationTarget {
-            let delta = Self.shift(bringing: headed.toView(world), into: view)
+            let delta = view.shift(bringing: headed.toView(world))
             guard delta != .zero else { return }
             var target = headed
             target.pan(by: delta)
@@ -155,22 +153,9 @@ extension CanvasEditor {
             animateCamera(to: target, duration: Style.keptViewDuration)
             return
         }
-        let delta = Self.shift(bringing: camera.toView(world), into: view)
+        let delta = view.shift(bringing: camera.toView(world))
         guard delta != .zero else { return }
         camera.pan(by: delta)
-    }
-
-    /// How far to move what's shown (view points) to bring `shown` inside `view`, by as little as it
-    /// takes; one too big for it along a way keeps its top or left edge in view.
-    static func shift(bringing shown: CGRect, into view: CGRect) -> CGSize {
-        /// Along one axis: `low...high` inside `min...max`.
-        func shift(_ low: CGFloat, _ high: CGFloat, into min: CGFloat, _ max: CGFloat) -> CGFloat {
-            if low < min || high - low > max - min { return min - low }
-            if high > max { return max - high }
-            return 0
-        }
-        return CGSize(width: shift(shown.minX, shown.maxX, into: view.minX, view.maxX),
-                      height: shift(shown.minY, shown.maxY, into: view.minY, view.maxY))
     }
 
     /// Any camera change (a scroll, a pinch, a zoom command, a hand drag, a test setting it) stops

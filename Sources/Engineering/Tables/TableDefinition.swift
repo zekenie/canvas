@@ -54,8 +54,8 @@ extension TableDefinition: ShapeDefinition {
         RowText.draw(laid.name.line, at: laid.name.x, middle: middle, room: laid.name.width, in: cg)
     }
 
-    /// How wide a table is drawn for every column to read whole at rest, as `ColumnRow` lays a row out (its name, the gap,
-    /// its type or enum pill, a nullable's `?`), never narrower than a new table (`TableStyle.width`) nor wider than
+    /// How wide a table is drawn for every column to read whole at rest, as `ColumnRow` lays a row out (its name, a row's gap,
+    /// `KitStyle.wholeGap`, its type or enum pill, a nullable's `?`), never narrower than a new table (`TableStyle.width`) nor wider than
     /// `TableStyle.mostWholeWidth`: what a commit widens a table to (`TableLines.wholeWidth`) and what a pasted table is made at.
     /// An enum the file doesn't hold (`inFile` finds none) measures as its type's words.
     static func wholeWidth(of columns: [Column], in table: ShapeID, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?, names: KitNames?) -> CGFloat {
@@ -78,7 +78,7 @@ extension TableDefinition: ShapeDefinition {
     static func wholeWidth(of rows: [WholeRow]) -> CGFloat {
         var widest = TableStyle.width
         for row in rows {
-            var width = KitStyle.nameInset + RowText.line(row.name, .name).width + KitStyle.nameGap + KitStyle.trailingInset
+            var width = KitStyle.nameInset + RowText.line(row.name, .name).width + KitStyle.wholeGap + KitStyle.trailingInset
             if let pill = row.pill {
                 width += pill.contentSize.width
             } else if !row.type.isEmpty {

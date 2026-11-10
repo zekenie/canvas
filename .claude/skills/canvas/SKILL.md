@@ -170,7 +170,7 @@ inside "A" <part>     outside "A" <part>    on "A" [<part>]
 - **Exactly one new shape per script may have no placement.** That shape and everything placed against it go in the window as one drawing, as near its middle as there's room.
 - **Shapes don't overlap.** A shape that lands on a wall is pushed along the axis its placements leave free, and the result says so. Two shapes the script places that would overlap, with nothing saying which side of the other either sits on, are refused (`unordered`): place one against the other.
 - **Several targets make one box:** `below "A" and "B"` centers under the pair.
-- **Gaps** are `none` (0), `tight` (40), `normal` (80, the default), `wide` (160), or a number. Write one after a placement, `right of "A" (gap: tight)`, or on the shape, `gap: wide`, which applies to every placement it's in.
+- **Gaps** are `none` (0), `tight` (40), `normal` (80, the default), `wide` (160), or a number. Write one after a placement, `right of "A" (gap: tight)`, or on the shape, `gap: wide`, which applies to every placement it's in. With no gap said, a shape below a table, an enum or an API lands at least 86 under it (the room it keeps for a row typed into it and the name of what's below), as does the next of a list of them.
 
 ```draw
 sticky-note "Risks" right of "Ship v1" top level with "Ship v1" text: "Load-test the API before launch"

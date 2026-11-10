@@ -271,7 +271,15 @@ private let grouped = ["GET /health", "/users", "GET /{id}", "/orders", "GET /{i
             let pathAt = path.minX - glyphs.minX
             let chipWidth = frame.width
             expect(abs(pathAt - (chip + APIStyleTest.gap - APIStyleTest.chipPadding)) < 1, "\(method): the path starts as it does at rest: \(pathAt)")
-            expect(abs(chipWidth - (chip - APIStyleTest.chipPadding + 2)) < 2.5, "\(method): the chip as wide: \(chipWidth)")
+            expect(abs(chipWidth - chip) < 1.5, "\(method): the chip as wide: \(chipWidth)")
+            // Where the chip at rest starts (the line's left, the kind's inset, a member's indent), with its left end drawn whole: the
+            // field leaves the chip's padding before its text, inside the clip (UX walk 4 apis-4-1, connect-7).
+            let view = try require(b.view), line = try require(view.rect(of: .row(ids[index])))
+            let rest = line.minX + APIStyleTest.inset + (index == 3 ? APIStyleTest.memberIndent : 0)
+            let left = field.convert(frame, to: view).minX
+            expect(abs(left - rest) < 1, "\(method): the chip starts where it does at rest: \(left), at rest \(rest)")
+            let clip = try require(field.superview)
+            expect(field.convert(frame, to: clip).minX >= -0.5, "\(method): its left end inside the clip, never cut")
         }
         b.press(.escape)
     },
@@ -282,4 +290,6 @@ private let grouped = ["GET /health", "/users", "GET /{id}", "/orders", "GET /{i
     static let chipLeast: CGFloat = 38
     static let chipPadding: CGFloat = 6
     static let gap: CGFloat = 8
+    static let inset: CGFloat = 14
+    static let memberIndent: CGFloat = 18
 }

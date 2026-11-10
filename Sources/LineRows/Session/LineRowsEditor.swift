@@ -357,14 +357,19 @@ final class LineSession<Model: LineModel>: LineRowsView {
         clip.alphaValue = band == nil ? 1 : 0
         let style = model.style
         let inset = style.textInset + indent(of: focus)
-        let clipFrame = CGRect(x: line.minX + inset, y: line.minY, width: max(1, line.width - inset - style.trailingInset - chevronRoom), height: line.height)
+        // The clip starts the kind's lead before the text (a chip's padding), the text kept where it is: a chip at the line's start
+        // is drawn whole, as at rest, never cut at the clip's edge.
+        let lead = style.fieldLead
+        let clipFrame = CGRect(x: line.minX + inset - lead, y: line.minY,
+                               width: max(1, line.width - inset - style.trailingInset - chevronRoom + lead), height: line.height)
         if clip.frame != clipFrame { clip.frame = clipFrame }
         // As tall as a chip the kind draws taller than the text (an endpoint's method), the text kept where it was in its middle:
         // a view draws nothing past its edges, and the chip with the caret would be cut flat.
         let (lineHeight, height) = style.fieldHeight
-        let chipInset = NSSize(width: 0, height: (height - lineHeight) / 2)
+        let chipInset = NSSize(width: lead, height: (height - lineHeight) / 2)
         if field.textContainerInset != chipInset { field.textContainerInset = chipInset }
-        let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(), width: max(textWidth + LineFieldStyle.textSlack, clipFrame.width + slide), height: height)
+        let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(),
+                                width: max(textWidth + LineFieldStyle.textSlack + 2 * lead, clipFrame.width + slide), height: height)
         if field.frame != fieldFrame { field.frame = fieldFrame }
         keepCaretInClip()
         needsDisplay = true
@@ -406,10 +411,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private func keepCaretInClip() {
         // The caret in the field's own coordinates, which slide with it: in view while it's `slide` to `slide + limit`.
         guard let caret = field.caretFrame else { return }
-        let limit = clip.frame.width - LineFieldStyle.caretMargin
+        let limit = clip.frame.width - LineFieldStyle.caretMargin, lead = model.style.fieldLead
         var next = slide
         if caret.maxX - next > limit { next = caret.maxX - limit }
-        if caret.minX - next < 0 { next = max(0, caret.minX) }
+        // The lead before the text is the clip's too: the caret slid back to the text's start sits there, where it does at rest.
+        if caret.minX - lead - next < 0 { next = max(0, caret.minX - lead) }
         guard next != slide else { return }
         slide = next
         field.frame.origin.x = -slide
@@ -583,40 +589,56 @@ final class LineSession<Model: LineModel>: LineRowsView {
         service.cards?.follow(nil)
     }
 
-    /// The line was typed in: read again, its looks and mark shown, the clip slid to the caret.
-    private func lineChanged(reportingChange: Bool = true) {
-        guard focus != .title else { return }
+    /// The line was typed in: read again, its looks and mark shown, the clip slid to the caret. True where the shape is laid out
+    /// at another width for it.
+    @discardableResult
+    private func lineChanged(reportingChange: Bool = true) -> Bool {
+        guard focus != .title else { return false }
         if focus == .fixed {
             let look = model.fixedLine.map { $0.look(field.line, lineContext()) } ?? (spans: [], mark: nil)
             let read = LineReading<Row>(row: nil, spans: look.spans, mark: look.mark)
             reading = read
             field.show(read, style: model.style)
-            fitWidth()
+            let widened = fitWidth()
             if reportingChange {
                 place()
                 keepCaretInClip()
+                if widened { keepCaretInView() }
             }
             needsDisplay = true
-            return
+            return widened
         }
         let rowID: PartID
         if case .row(let row) = focus { rowID = row } else { rowID = PartID() }
         let read = grammar.read(field.line, id: rowID, in: lineContext(focus == .waiting ? nil : rowID))
         reading = read
         field.show(read, style: model.style)
-        fitWidth()
+        let widened = fitWidth()
         if reportingChange {
             place()
             keepCaretInClip()
+            // The shape laid out wider (or narrower) as the line is typed: the view follows the caret, as a text editor scrolls to
+            // it, so a line that widens its shape past the clear view's edge (under the inspector) is never typed blind.
+            if widened { keepCaretInView() }
         }
         needsDisplay = true
+        return widened
+    }
+
+    /// Pans the view by as little as brings the caret and the rest of its line, to the line's end at its width now, into the
+    /// clear view (`EditContext.keepInView`); a run too wide for the view keeps the caret in it.
+    private func keepCaretInView() {
+        guard let line = rect(of: focus), let caret = field.caretFrame else { return }
+        let x = min(max(clip.frame.minX + caret.minX - slide, line.minX), line.maxX)
+        context.keepInView(CGRect(x: x, y: line.minY, width: max(1, line.maxX - x), height: line.height))
     }
 
     /// The shape laid out as wide as the line being typed needs (its text, the row's insets and gutter), never narrower
     /// than it stores, nor past the kind's widest (`widestLine`), where the line slides in its clip as before; nothing
     /// written, no step. As stored again on the title and as editing ends.
-    private func fitWidth() {
-        guard let stored = editor.document[id]?.box?.width else { return }
+    @discardableResult
+    private func fitWidth() -> Bool {
+        guard let stored = editor.document[id]?.box?.width else { return false }
         var wanted: CGFloat?
         if focus != .title {
             let style = model.style
@@ -625,7 +647,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             if needed > stored { wanted = model.widestLine.map { min(needed, max($0, stored)) } ?? needed }
             if wanted == stored { wanted = nil }
         }
-        service.setWidth(wanted, of: id)
+        return service.setWidth(wanted, of: id)
     }
 
     private func offers() -> LineOffers? {
@@ -1016,9 +1038,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
         guard editor.editingShapeID == id, case .row(let row) = focus, !hasDraft, let stored = rows.first(where: { model.id(of: $0) == row }) else { return }
         held = stored
         field.show(grammar.print(stored, in: lineContext(row)))
-        lineChanged(reportingChange: false)
+        let widened = lineChanged(reportingChange: false)
         shown = (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored)
         place()
+        // Printed wider (a card's toggle wrote `null`): the row kept in the clear view, as a line typed wider keeps its caret.
+        if widened, let line = rect(of: focus) { context.keepInView(line) }
     }
 
     /// Return: on the title, the waiting line; on a line with words, the line committed and a waiting line under it (above it,
