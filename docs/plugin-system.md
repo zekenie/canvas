@@ -16572,7 +16572,7 @@ context-menus        service ContextMenuState · secondary-click menu · selecti
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
 slash-bar            service SlashBar · command runSlashCommand · shortcut / → command runSlashCommand · SelectionObservers
 table-of-contents    service ContentsState · host sidebar
-titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
+titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title · row zoomed out → every shape with a title pill
 mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
 mention-slash-bar    slash bar field
 board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
