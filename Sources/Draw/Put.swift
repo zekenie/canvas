@@ -550,13 +550,15 @@ private struct Putting {
     }
 
     /// The widened shapes the runs on `copy` left as they were but their width (a restated one the put leaves as it is keeps the
-    /// width a person gave it), given back that width on `copy` before it is taken in.
+    /// width a person gave it), given back that width on `copy` before it is taken in; not one the runs moved (making room below a
+    /// table that grew, which the widening may have caused: the move is a change, and it stays as the put made it).
     private func keepingWidths(_ widening: [(ShapeID, BoardID, CGRect)], on copy: CanvasEditor) {
         for (id, board, widened) in widening {
             guard let was = editor.shape(inFile: id), let wasBox = was.box, var now = copy.shape(inFile: id), now.box?.width == widened.width else { continue }
             let box = now.box
             now.box = wasBox
-            guard now == was, let box else { continue }
+            // One that moved (a table above it grew, and made room) isn't one the put left as it was: it keeps the width it was made.
+            guard now == was, let box, box.origin == wasBox.origin else { continue }
             copy.transact(on: board, step) { $0.update(id) { $0.box = CGRect(origin: box.origin, size: CGSize(width: wasBox.width, height: box.height)) } }
         }
     }

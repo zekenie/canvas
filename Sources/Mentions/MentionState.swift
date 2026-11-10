@@ -932,7 +932,13 @@ public final class MentionState {
             matched = FuzzyMatcher.match(q, in: FuzzyMatcher.Label(entry.part.name))?.matched ?? []
         }
         let containers = containersShown(of: entry.shape) + [(owner, paths.containers(of: entry.shape).count)]
-        let place = MentionPlace(names: containers.map(\.name), matched: containers.map { along.indices.contains($0.index) ? along[$0.index] : [] })
+        var lit = containers.map { along.indices.contains($0.index) ? along[$0.index] : [] }
+        // A row that is all its shape, found by its shape's name (an endpoint taken out of its API: "createRef"), lights that name, the
+        // one place the letters are.
+        if band != .path, entry.part.isItsShape, !lit.isEmpty, matched.isEmpty {
+            lit[lit.count - 1] = FuzzyMatcher.match(q, in: FuzzyMatcher.Label(owner.title ?? shape?.label ?? ""))?.matched ?? []
+        }
+        let place = MentionPlace(names: containers.map(\.name), matched: lit)
         return MentionCandidate(id: entry.shape, appearance: appearance, isReadOnly: isReadOnly(entry.shape), matched: matched, place: place,
                                 part: entry.part)
     }

@@ -458,6 +458,23 @@ public struct Transaction {
         return true
     }
 
+    /// The part a shape has at `address` as this step leaves the file, on whichever board the shape is; nil for a shape or a part
+    /// it hasn't.
+    public func part(at address: PartAddress) -> PartName? {
+        guard let part = address.part, let at = location(of: address.shape), let record = contents(of: at)[address.shape] else { return nil }
+        return registry.parts(of: record)?.first { $0.id == part }
+    }
+
+    /// Whether a shape on any board this step may write is read-only as the step leaves the file (it, a container it's in, or its
+    /// board), so a change that only follows another (a pill standing where a row went) leaves it as it was rather than refusing the
+    /// step. Another board's through a transaction over it, as `renameNamedParts` asks.
+    public func isReadOnly(_ id: ShapeID, on other: BoardID) -> Bool {
+        guard let record = contents(of: other)[id] else { return false }
+        if other == board { return isReadOnly(record) }
+        guard !climb(other).isTaken, let there = transaction(on: other) else { return true }
+        return there.isReadOnly(record)
+    }
+
     /// Whether this transaction holds a shape as it is, as `refuses` would, noting nothing: it was in
     /// the document before the transaction, and it, a container it's in, or the board, is read-only.
     func holds(_ record: AnyShapeRecord) -> Bool {

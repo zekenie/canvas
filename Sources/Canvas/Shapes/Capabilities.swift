@@ -382,9 +382,13 @@ public protocol PartedShape: ShapeDefinition {
     /// row out with (`canvas draw`'s `delete "orders".legacy_note`), which then hands them to `Transaction.removeParts`. Nil
     /// (the default) when it has none of them, or the kind's parts are taken out only by its own writer.
     func removing(_ parts: Set<PartID>, from shape: ShapeRecord<Props>) -> Props?
+    /// Whether every shape of this kind is all its one row (`PartName.isItsShape`: an endpoint taken out of its API), a fact of the
+    /// kind, so what shows or follows the shape as a whole as that row asks the kind and reads no parts of any other. False by default.
+    var isAllItsOneRow: Bool { get }
 }
 
 extension PartedShape {
+    public var isAllItsOneRow: Bool { false }
     public func removing(_ parts: Set<PartID>, from shape: ShapeRecord<Props>) -> Props? { nil }
 }
 

@@ -61,6 +61,9 @@ private struct DockDefinition: ShapeDefinition, PartedShape {
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
 
+    /// The kind's say, a gate only: which of its docks is all its row is each one's (`isItsRow`).
+    var isAllItsOneRow: Bool { true }
+
     func parts(of shape: ShapeRecord<Dock>) -> [PartName] {
         // A dock of one row marked so is all its row is (an endpoint taken out of its API).
         shape.props.rows.map { PartName(id: $0.id, name: $0.name, kindWord: "Endpoint", lead: .symbol("bolt"), standsAlone: true,

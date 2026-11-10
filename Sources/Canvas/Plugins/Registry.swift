@@ -369,6 +369,9 @@ public struct Registry {
     /// Whether a kind's shapes have parts (`PartedShape`), a look-up.
     public func isParted(_ kind: ShapeKind) -> Bool { partedDefinitions[kind] != nil }
 
+    /// Whether every shape of a kind is all its one row (`PartedShape.isAllItsOneRow`), a look-up.
+    public func isAllItsOneRow(_ kind: ShapeKind) -> Bool { partedDefinitions[kind]?.isAllItsOneRow == true }
+
     /// A shape's parts, in reading order, as its kind says them (`PartedShape.parts(of:)`): each one's id, name,
     /// kind word, lead and whether it stands alone. Nil for a shape of a kind with no parts (or none installed).
     public func parts(of shape: AnyShapeRecord) -> [PartName]? {

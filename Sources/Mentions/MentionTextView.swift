@@ -735,7 +735,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         if let onShape {
             closePicker()
             guard caret > picker.location else { return }
-            if candidate.part == nil { mentions?.didPick(candidate.id) }
+            if candidate.part?.isItsShape ?? true { mentions?.didPick(candidate.id) }
             return onShape(candidate, NSRange(location: picker.location, length: caret - picker.location))
         }
         // A row's mention holds the name its pill shows (an endpoint's full path, a column with its table's name).
@@ -745,8 +745,9 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         let replacement = NSMutableAttributedString(attributedString: pill)
         let next: unichar? = caret < storage.length ? (storage.string as NSString).character(at: caret) : nil
         if MentionPicker.spaceAfterPick(before: next) { replacement.append(NSAttributedString(string: " ", attributes: typingAttributes)) }
-        // Recent picks are shapes: a row picked leaves its shape's place in the list as it was.
-        if replace(NSRange(location: picker.location, length: caret - picker.location), with: replacement), candidate.part == nil {
+        // Recent picks are shapes: a row picked leaves its shape's place in the list as it was, but a shape that is all its one row
+        // (an endpoint taken out of its API) is its row, so picking it is picking the shape.
+        if replace(NSRange(location: picker.location, length: caret - picker.location), with: replacement), candidate.part?.isItsShape ?? true {
             mentions?.didPick(candidate.id)
         }
     }

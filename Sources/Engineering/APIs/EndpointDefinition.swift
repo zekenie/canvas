@@ -177,6 +177,8 @@ extension EndpointDefinition: CustomSizing {
 
 /// Its one part is its row: named by its method and full path, its method in a chip before it, standing alone.
 extension EndpointDefinition: PartedShape {
+    var isAllItsOneRow: Bool { true }
+
     func parts(of shape: ShapeRecord<StandaloneEndpoint>) -> [PartName] {
         let endpoint = shape.props.endpoint
         return [PartName(id: endpoint.id, name: APIGroups.fullName(method: endpoint.method, path: endpoint.path), kindWord: APIStyle.endpointWord,

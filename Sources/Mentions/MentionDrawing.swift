@@ -224,9 +224,9 @@ struct MentionResolver {
             defaults[record.kind] = kindDefaults
         }
         let shape = registry.mentionAppearance(of: record, defaults: kindDefaults)
-        // A shape that is all its one row shows as that row (`MentionResolution.whole`): its parts read only for a kind that has some.
+        // A shape that is all its one row shows as that row (`MentionResolution.whole`): its parts read only for a kind whose shapes all are one (`isAllItsOneRow`).
         guard let part = target.part else {
-            guard shape != nil, registry.isParted(record.kind) else { return shape.map { .live($0) } ?? .unavailable }
+            guard shape != nil, registry.isAllItsOneRow(record.kind) else { return shape.map { .live($0) } ?? .unavailable }
             let names = partNames.names(of: record, in: registry)
             return MentionResolution.whole(shape: shape, parts: names.count == 1 ? Array(names.values) : nil)
         }

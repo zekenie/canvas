@@ -335,6 +335,8 @@ public struct DrawTextContext {
     /// A shape a name found (`shape(called:admitting:)`), as the script starts it: of its kind, its rows (`registry.parts(of:)`)
     /// as they are before the script writes them; nil for one gone.
     public func record(of shape: DrawTextShape) -> AnyShapeRecord? { lookup.record(of: shape) }
+    /// The same, by id.
+    public func record(of id: ShapeID) -> AnyShapeRecord? { lookup.record(of: id) }
 
     /// As above, for a rule that needs what the script writes on a shape it draws or restates: `admits`
     /// is also given the keys of the properties its statement writes, which its record, as the

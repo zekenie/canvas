@@ -126,7 +126,10 @@ extension ReferenceCondition {
                 return isElsewhere(target.id) ? .unavailable(label: target.label) : .missing(label: target.label)
             }
             guard var appearance = appearanceOf(record) else { return .unavailable(label: target.label) }
-            if let row = target.row {
+            if target.row == nil, registry.isAllItsOneRow(record.kind), let part = registry.parts(of: record)?.first, part.isItsShape {
+                // A pill for a shape that is all its one row (an endpoint taken out of its API) shows that row, as a mention of it does.
+                appearance = Self.appearance(of: part, on: appearance)
+            } else if let row = target.row {
                 // A pill for a row: the row's live name and its lead; gone from a shape that's there, it's missing, as a gone shape is.
                 guard let part = registry.parts(of: record)?.first(where: { $0.id == row }) else { return .missing(label: target.label) }
                 appearance = Self.appearance(of: part, on: appearance)

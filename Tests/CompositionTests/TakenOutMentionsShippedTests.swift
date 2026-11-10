@@ -5,6 +5,7 @@ import CanvasTesting
 import Engineering
 import Geometry
 import LineRows
+import Locking
 import Mentions
 import References
 import Selection
@@ -16,8 +17,8 @@ import Titles
 // An endpoint taken out of its API, mentioned, and put back (U10, review U6-E2), through a new board's window: a mention the `@`
 // picker writes (typed in a note) and one `canvas draw` writes (`@[createRefund]`) are of its row, and keep that one address and
 // one look (the method's chip and the path) as it is put back by its chip, taken out again, undone and redone, on its board and
-// another; a mention of the shape as a whole (`@[…](shape:ID)`, as an agent may keep one) is drawn as its row and follows it back
-// too; a pill for it, as a whole or at its row, stands for the row it went to; and each pill is measured as wide as it is drawn.
+// another; a mention of the shape as a whole (`@[…](shape:ID)`) an agent writes is written as its row, and one made some other way is drawn
+// as its row and follows it back too; a pill for it, as a whole or at its row, stands for the row it went to; and each pill is measured as wide as it is drawn.
 
 @MainActor private func api(_ editor: CanvasEditor, _ title: String) -> ShapeRecord<API>? {
     editor.document.shapes.first { $0[TitleProperty.self] == title }?.typed(as: API.self)
@@ -70,34 +71,60 @@ private let scene = #"""
         w.window.type("@createRefund")
         let picker = try require(text.picker, "the picker is open")
         expectEqual(picker.highlightedCandidate?.address, row, "the endpoint listed as its row, found by its name")
+        expect(picker.highlightedCandidate?.place?.matched.contains { !$0.isEmpty } == true, "the letters typed lit in its shape's name")
         w.window.pressReturn()
         w.window.pressEscape()
         expectEqual(editor.editingShapeID, nil)
         expectEqual(targets(editor, note), [row], "the pick mentions the row")
+        let recent = mentions.candidates(matching: "", in: AnyMentionable.self, for: note, listingParts: { _ in true }, ownRows: .row).recent
+        expectEqual(recent.first?.address, row, "picked, it is Recent, as its row")
         // Draw, on storefront's board: by its name, and the shape as a whole as an agent may keep it from a query's rows.
         _ = try drawnInProcess(#"""
             sticky-note "far" in "storefront" text: "Refunds: @[createRefund]"
             sticky-note "kept" in "storefront" below "far" text: "Whole: @[createRefund](shape:\#(alone.rawValue.uuidString))"
             """#, on: editor)
+        _ = try drawnInProcess(#"sticky-note "near" below "orders API" (gap: 300) text: "Here: @[createRefund]""#, on: editor)
+        let near = try require(titled(editor, "near", on: .root)).id
         let far = try require(titled(editor, "far", on: storefront)).id
         let kept = try require(titled(editor, "kept", on: storefront)).id
         expectEqual(targets(editor, far), [row], "draw's @[createRefund] mentions the row, as the picker does")
-        expectEqual(targets(editor, kept), [PartAddress(alone)], "a whole mention is kept as written")
+        expectEqual(targets(editor, near), [row], "and on the endpoint's own board")
+        expectEqual(targets(editor, kept), [row], "a whole mention an agent writes of it is written as its row")
+        // The @ picker typed on another board's window, in a note there.
+        expect(editor.showBoard(storefront))
+        w.window.settle()
+        let faraway = editor.add(StickyNote(frame: CGRect(x: 0, y: 900, width: 260, height: 120), text: "See "))
+        editor.selectedShapeIDs = [faraway]
+        expect(editor.beginEditing(faraway))
+        let farText = try require(w.window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
+        farText.setSelectedRange(NSRange(location: 4, length: 0))
+        w.window.type("@createRefund")
+        w.window.pressReturn()
+        w.window.pressEscape()
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(targets(editor, faraway), [row], "the pick on another board mentions the row")
+        expect(editor.showBoard(.root))
+        w.window.settle()
+        // A whole mention made some other way (a file written before): a note and a pill for it.
+        let whole = editor.add(StickyNote(frame: CGRect(x: 400, y: 900, width: 300, height: 80), text: MentionText([.mention(PartAddress(alone), label: "createRefund")])))
         // A pill for it on storefront's board, as a whole and at its row.
-        let pills = editor.transact(on: storefront, "Add Pills") { tx -> (ShapeID, ShapeID) in
+        let pills = editor.transact(on: storefront, "Add Pills") { tx -> (ShapeID, ShapeID, ShapeID) in
             let whole = ShapeRecord(Reference(frame: CGRect(x: 0, y: 400, width: 200, height: 40), target: ReferenceTarget(id: alone, label: "createRefund")))
             let atRow = ShapeRecord(Reference(frame: CGRect(x: 0, y: 500, width: 200, height: 40),
                                               target: ReferenceTarget(id: alone, label: "POST /orders/{id}/refunds", row: refunds)))
+            var lockedRecord = AnyShapeRecord(ShapeRecord(Reference(frame: CGRect(x: 0, y: 600, width: 200, height: 40), target: ReferenceTarget(id: alone, label: "createRefund"))))
+            lockedRecord[LockedProperty.self] = true
             tx.insert(AnyShapeRecord(whole))
             tx.insert(AnyShapeRecord(atRow))
-            return (whole.id, atRow.id)
+            tx.insert(lockedRecord)
+            return (whole.id, atRow.id, lockedRecord.id)
         }
-        let (wholePill, rowPill) = try require(pills)
+        let (wholePill, rowPill, lockedPill) = try require(pills)
         editor.undoHistory.seal()
 
         /// Every mention looks as an endpoint's does: live, its method in its chip and its path.
         @MainActor func looksAsTheRow(_ when: String) {
-            for target in [note, far, kept].flatMap({ targets(editor, $0) }) {
+            for target in [note, near, far, kept, faraway, whole].flatMap({ targets(editor, $0) }) {
                 let shown = mentions.resolve(target)
                 expectEqual(shown.appearance?.label, "POST /orders/{id}/refunds", "\(when): \(target)")
                 expect({ if case .chip("POST", _)? = shown.appearance?.lead { true } else { false } }(), "\(when): the method's chip, \(target)")
@@ -129,59 +156,81 @@ private let scene = #"""
         expectEqual(editor.undoHistory.undoName, "Move Endpoint")
         expect(ownEndpoint(editor) == nil, "the endpoint is its row again")
         let back = PartAddress(orders.id, part: try require(api(editor, "orders API")?.props.endpoints.first { $0.endpoint?.path == "/orders/{id}/refunds" }?.id))
-        expectEqual(targets(editor, note), [back], "the picker's mention follows the row back")
-        expectEqual(targets(editor, far), [back], "draw's, on another board, too")
-        expectEqual(targets(editor, kept), [back], "and the shape's as a whole: the row it was")
+        expectEqual(editor.undoHistory.undoName, "Move Endpoint", "a locked pill for it didn't refuse the put-back")
+        for id in [note, near, far, kept, faraway, whole] { expectEqual(targets(editor, id), [back], "\(id) follows the row back") }
         looksAsTheRow("put back")
         let references = try require(editor.service(ReferenceState.self))
         expect(editor.showBoard(storefront))
         w.window.settle()
         let wholeTarget = editor.document[wholePill]?.typed(as: Reference.self)?.props.target
         expectEqual(wholeTarget.map { PartAddress($0.id, part: $0.row) }, back, "a pill for the endpoint stands for its row in the API")
-        expectEqual(wholeTarget?.label, "createRefund", "its stored name kept")
+        expectEqual(wholeTarget?.label, "POST /orders/{id}/refunds", "it says the row's name now")
+        let putBack = try require(editor.document[wholePill]?.typed(as: Reference.self)?.props)
+        expectEqual(putBack.frame.width, ReferenceEdits.width(of: putBack), "at the width that fits it")
+        expectEqual(editor.document[lockedPill]?.typed(as: Reference.self)?.props.target, ReferenceTarget(id: alone, label: "createRefund"), "a locked pill is left as it was")
         expectEqual(editor.document[rowPill]?.typed(as: Reference.self)?.props.target.map { PartAddress($0.id, part: $0.row) }, back)
         expectEqual(references.state(of: wholePill)?.standsForNothing, false, "live, not dashed")
         expect(editor.showBoard(.root))
 
         // Undo and Redo give and take it, one step.
         (w.window as! BoardWindow).undo(nil)
-        expectEqual(targets(editor, note), [row])
-        expectEqual(targets(editor, far), [row])
-        expectEqual(targets(editor, kept), [PartAddress(alone)], "the shape as a whole again")
+        for id in [note, near, far, kept, faraway] { expectEqual(targets(editor, id), [row], "\(id)") }
+        expectEqual(targets(editor, whole), [PartAddress(alone)], "the shape as a whole again")
         expectEqual(editor.file.record(wholePill)?.typed(as: Reference.self)?.props.target, ReferenceTarget(id: alone, label: "createRefund"))
         looksAsTheRow("undone")
         (w.window as! BoardWindow).redo(nil)
-        expectEqual(targets(editor, kept), [back])
-        expectEqual(targets(editor, far), [back])
+        for id in [kept, far, whole, faraway] { expectEqual(targets(editor, id), [back]) }
 
         // Taken out again: every mention, the one that was the shape's too, is of its row there.
         expect(editor.moveRows([try require(back.part)], of: orders.id, to: .beside([orders.id])) != nil)
         let again = PartAddress(try require(ownEndpoint(editor)).id, part: back.part)
-        for id in [note, far, kept] { expectEqual(targets(editor, id), [again], "one address: the row") }
+        for id in [note, near, far, kept, faraway, whole] { expectEqual(targets(editor, id), [again], "one address: the row") }
         looksAsTheRow("taken out again")
 
         // Measured from its words alone, as a note's height is, each pill as wide as it is drawn.
         let style = MentionTextStyle(font: .systemFont(ofSize: 15), color: .black, lineHeight: 19)
-        for id in [note, far] {
+        // Every mention a writer makes (the picker, draw by name or as a whole) holds the row's label; a whole mention made by hand (`whole`,
+        // as an old file may hold one) is measured by the label it holds, like a renamed shape's.
+        for id in [note, near, far, kept, faraway] {
             let words = try require((editor.document[id] ?? editor.file.record(id))?.typed(as: StickyNote.self)?.props.text)
             let drawn = style.attributedString(words) { mentions.resolve($0) }.size().width
             expectEqual(style.measuredString(words, width: nil).size().width, drawn, "\(id)")
         }
     },
-    test("a taken-out endpoint cut by its row and pasted into its API is a move: a mention of it as a whole, here and on another board, names the row it went to; Undo of the paste, then of the cut") {
+    test("a taken-out endpoint cut by its row and pasted into its API is a move: a mention of it as a whole, and a pill for it, here and on another board, name the row it went to; Undo of the paste, then of the cut") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         try w.turnKitOn()
         try w.draw(scene)
+        try w.draw(#"api "orders API" endpoints: [{"method": "POST", "path": "/orders/{id}/refunds", "name": "createRefund"}]"#)
         let editor = w.editor
         let orders = try require(api(editor, "orders API"))
         let refunds = orders.props.endpoints[2].id
         expect(editor.moveRows([refunds], of: orders.id, to: .beside([orders.id])) != nil)
         let alone = try require(ownEndpoint(editor)).id
-        _ = try drawnInProcess(#"sticky-note "here" below "orders API" (gap: 300) text: "@[POST /orders/{id}/refunds](shape:\#(alone.rawValue.uuidString))""#, on: editor)
-        _ = try drawnInProcess(#"sticky-note "there" in "storefront" text: "@[POST /orders/{id}/refunds](shape:\#(alone.rawValue.uuidString))""#, on: editor)
         let storefront = BoardID(owner: try require(titled(editor, "storefront", on: .root)).id)
-        let here = try require(titled(editor, "here", on: .root)).id, there = try require(titled(editor, "there", on: storefront)).id
+        let whole = MentionText([.mention(PartAddress(alone), label: "createRefund")])
+        let here = editor.add(StickyNote(frame: CGRect(x: 0, y: 900, width: 300, height: 80), text: whole))
+        let there = try require(editor.transact(on: storefront, "Add Note") { tx -> ShapeID in
+            let note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 300, height: 80), text: whole))
+            tx.insert(AnyShapeRecord(note))
+            return note.id
+        })
+        // A draw-written mention is of the row already; pills for the shape, and at its row, on both boards.
+        _ = try drawnInProcess(#"sticky-note "drawn" below "orders API" (gap: 300) text: "@[createRefund]""#, on: editor)
+        let drawn = try require(titled(editor, "drawn", on: .root)).id
+        @MainActor func pills(on board: BoardID) -> (whole: ShapeID, atRow: ShapeID)? {
+            editor.transact(on: board, "Add Pills") { tx in
+                let one = ShapeRecord(Reference(frame: CGRect(x: 0, y: 400, width: 200, height: 40), target: ReferenceTarget(id: alone, label: "createRefund")))
+                let two = ShapeRecord(Reference(frame: CGRect(x: 0, y: 500, width: 200, height: 40),
+                                                target: ReferenceTarget(id: alone, label: "POST /orders/{id}/refunds", row: refunds)))
+                tx.insert(AnyShapeRecord(one))
+                tx.insert(AnyShapeRecord(two))
+                return (one.id, two.id)
+            }
+        }
+        let rootPills = try require(pills(on: .root)), farPills = try require(pills(on: storefront))
+        @MainActor func target(_ pill: ShapeID) -> PartAddress? { editor.file.record(pill)?.typed(as: Reference.self)?.props.target.map { PartAddress($0.id, part: $0.row) } }
         editor.undoHistory.seal()
         editor.selectedShapeIDs = [alone]
         editor.selectItems([AnyHashable(refunds)], of: alone)
@@ -191,13 +240,16 @@ private let scene = #"""
         editor.selectedShapeIDs = [orders.id]
         expect(editor.pasteRows(try require(editor.pasteboardRows), to: .into(orders.id, before: nil)) != nil)
         let back = PartAddress(orders.id, part: refunds)
-        expectEqual(targets(editor, here), [back])
-        expectEqual(targets(editor, there), [back], "on another board too")
+        for id in [here, there, drawn] { expectEqual(targets(editor, id), [back], "\(id): on either board") }
+        for pill in [rootPills.whole, rootPills.atRow, farPills.whole, farPills.atRow] { expectEqual(target(pill), back, "a pill follows a cut endpoint's paste") }
         expectEqual(editor.mentions?.resolve(back).appearance?.label, "POST /orders/{id}/refunds")
         editor.undo()
         expectEqual(targets(editor, here), [PartAddress(alone)], "Undo of the paste: the shape again, still cut")
+        expectEqual(targets(editor, drawn), [PartAddress(alone, part: refunds)])
+        expectEqual(target(farPills.whole), PartAddress(alone), "its pill too")
         editor.undo()
         expect(editor.document[alone] != nil, "Undo of the cut: the endpoint of its own")
         expectEqual(editor.mentions?.resolve(PartAddress(alone)).appearance?.label, "POST /orders/{id}/refunds")
+        expectEqual(target(rootPills.atRow), PartAddress(alone, part: refunds))
     },
 ])

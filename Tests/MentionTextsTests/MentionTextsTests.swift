@@ -223,7 +223,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
         expectEqual(try refused(#"dispatch "Plan" body: "@[\"Owner\"]""#, on: editor).reason, "unknown_title")
     },
 
-    test("@[Title] of a shape that is all its one row (an endpoint taken out of its API) mentions that row, labeled as its pill is, as the picker lists it; a whole mention written so is kept") {
+    test("@[Title] of a shape that is all its one row (an endpoint taken out of its API) mentions that row, labeled as its pill is, as the picker lists it; a whole mention of it is written as its row") {
         let editor = try mentionTextsEditor()
         let slot = insert(Slot(frame), titled: "sendMail", in: editor)
         _ = try drawn(#"dispatch "Plan" below "sendMail" body: "Then @[sendMail]""#, on: editor)
@@ -232,7 +232,9 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
         expectEqual(body.stored, "Then @[PUT /mail](shape:\(slot)/row:\(Slot.route))", "labeled by the row's name, as its pill shows it")
         expectEqual(dids(try drawn(#"dispatch "Plan" body: "Then @[sendMail]""#, on: editor)), ["unchanged"])
         _ = try drawn(#"dispatch "Plan" body: "Then @[sendMail](shape:\#(slot))""#, on: editor)
-        expectEqual(editor.dispatch("Plan")?.body.mentionedTargets, [PartAddress(slot)], "a whole mention is kept as written")
+        let whole = try require(editor.dispatch("Plan")?.body)
+        expectEqual(whole.mentionedTargets, [PartAddress(slot, part: Slot.route)], "a whole mention an agent writes is its row too")
+        expectEqual(whole.stored, "Then @[PUT /mail](shape:\(slot)/row:\(Slot.route))", "with the row's label, so it is measured as it is drawn")
     },
     test("the registry report says what the plugin writes") {
         let report = try mentionTextsEditor().registry.report.split(separator: "\n")

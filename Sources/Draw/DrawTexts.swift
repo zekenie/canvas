@@ -188,13 +188,16 @@ final class DrawTextLookup {
                                   : "did you mean \(listed(guesses.map(quoted), or: true))?")
     }
 
-    /// The row called `row` of `shape` (found by `shape(called:)`), among the rows its record has as the script starts it: the
-    /// record a statement of the script starts it as, else the file's.
     /// A shape found by a name, as the script starts it: one it draws or restates, else the file's.
-    func record(of shape: DrawTextShape) -> AnyShapeRecord? {
-        ownByID[shape.id]?.record ?? own.values.first { $0.id == shape.id }?.record ?? editor.file.record(shape.id)
+    func record(of shape: DrawTextShape) -> AnyShapeRecord? { record(of: shape.id) }
+
+    /// The same, by id.
+    func record(of id: ShapeID) -> AnyShapeRecord? {
+        ownByID[id]?.record ?? own.values.first { $0.id == id }?.record ?? editor.file.record(id)
     }
 
+    /// The row called `row` of `shape` (found by `shape(called:)`), among the rows its record has as the script starts it: the
+    /// record a statement of the script starts it as, else the file's.
     func row(named row: String, of shape: DrawTextShape, said: String) throws(DrawError) -> DrawTextRow {
         let record = record(of: shape)
         guard let record, let parts = editor.registry.parts(of: record) else {

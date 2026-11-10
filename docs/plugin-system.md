@@ -8032,7 +8032,7 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
   an endpoint's method in its chip and its full path), dashed once the row is gone. A copy keeps the
   row's id; a row moved to another shape is renamed where it went (`ShapeNaming.renamingParts`). A shape
   that is all its one row (`PartName.isItsShape`, an endpoint taken out of its API) is mentioned as that row:
-  the picker and draw's `@[name]` write the row, a mention of the shape as a whole shows as the row
+  the picker and draw's `@[name]` write the row (a whole mention an agent writes too), a mention of the shape as a whole shows as the row
   (`MentionResolution.whole`), and put back into an API either names the row there.
 - **The value.** `runs` (`MentionRun`: `.text(String)`, `.mention(PartAddress, label:)`, a shape and a
   row or none; `.mention(id, label:)` makes a shape's) are parsed

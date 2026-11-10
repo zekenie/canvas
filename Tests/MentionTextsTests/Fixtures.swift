@@ -78,6 +78,8 @@ extension SlotDefinition: ShapeDefinition {
 }
 
 extension SlotDefinition: PartedShape {
+    var isAllItsOneRow: Bool { true }
+
     func parts(of shape: ShapeRecord<Slot>) -> [PartName] {
         [PartName(id: Slot.route, name: "PUT /mail", kindWord: "Route", standsAlone: true, isItsShape: true)]
     }

@@ -288,7 +288,7 @@ extension MentionResolution {
     /// written and wherever the endpoint is; any other as itself; unavailable with no appearance.
     @MainActor
     public static func whole(_ record: AnyShapeRecord, shape: MentionAppearance?, in registry: Registry) -> MentionResolution {
-        whole(shape: shape, parts: shape != nil && registry.isParted(record.kind) ? registry.parts(of: record) : nil)
+        whole(shape: shape, parts: shape != nil && registry.isAllItsOneRow(record.kind) ? registry.parts(of: record) : nil)
     }
 
     /// The same, given the shape's parts (its rows) read already.
