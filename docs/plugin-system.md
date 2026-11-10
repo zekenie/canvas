@@ -2733,7 +2733,7 @@ the core's `ShapeGeometry.isHidden` (not drawn, hit or spoken); a press on it se
 one shape's rows (their pills slid to their starts, a lone one on a straight stub of its line so it stays in its row's
 band), parts those that leave one row for different places (each line leaving the row on its own, in the row's inner
 band, their pills stacked out from it in the row's band, each on a straight stub of its own line), hands the connections
-between the same two shapes in their order (`between`, whose marks a narrow gap's turns keep clear of), and brings a line to a table as a whole in at a row clear of the keys at its side:
+between the same two shapes in their order with the marks they end with at each (`run`, `runMarks`, which a narrow gap's turns keep clear of), and brings a line to a table as a whole in at a row clear of the keys at its side:
 
 ```swift
 registrar.layoutInput(ConnectionBundle.input) { record, reading in reading.service(RowBundles.self)?.answer(for: record, in: reading) }

@@ -435,9 +435,11 @@ import TestKit
         let billing = b.h.add(Arrow(start: try end(orders, 4), end: try end(customers, 1)))
         let shipping = b.h.add(Arrow(start: try end(orders, 5), end: try end(customers, 0)))
         let run = [customer, billing, shipping]
-        answers.answers[customer] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], run: .init(end: .start, index: 0, count: 3), between: run)
-        answers.answers[billing] = ConnectionBundle(run: .init(end: .start, index: 1, count: 3), between: run)
-        answers.answers[shipping] = ConnectionBundle(fans: [.init(end: .end, index: 1, count: 2)], run: .init(end: .start, index: 2, count: 3), between: run)
+        // As LineRows says them: every key's crow's foot at orders, and at customers bars and circles, one of the fan at an odd place.
+        let marks: [ConnectionBundle.End: ConnectionBundle.RunMarks] = [.start: .init(marks: [.many]), .end: .init(marks: [.zeroOrOne, .one], nudged: true)]
+        answers.answers[customer] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], run: .init(end: .start, index: 0, count: 3), runMarks: marks)
+        answers.answers[billing] = ConnectionBundle(run: .init(end: .start, index: 1, count: 3), runMarks: marks)
+        answers.answers[shipping] = ConnectionBundle(fans: [.init(end: .end, index: 1, count: 2)], run: .init(end: .start, index: 2, count: 3), runMarks: marks)
         b.h.editor.connectionBundlesDidChange(Set(run))
         let geometries = try run.map { try b.geometry($0) }
         // Each circle (25 out from its offset, radius 5) clear of every other line by their half strokes and a point.

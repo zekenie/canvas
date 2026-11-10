@@ -269,7 +269,9 @@ final class RowBundles {
             }
             for fan in part.fans where answer.fan(at: fan.end) == nil { answer.fans.append(fan) }
             answer.entries.merge(part.entries) { first, _ in first }
-            if answer.run == nil { (answer.run, answer.between) = (part.run, part.between) }
+            if answer.run == nil { answer.run = part.run }
+            // Each end's shape's partial says the marks at the other: both, joined.
+            answer.runMarks.merge(part.runMarks) { first, _ in first }
             joined = answer
         }
         // One parting: the one at an end that is not fanned (where a fan slides its pill). Both of an arrow's ends may part (rows of
@@ -450,11 +452,29 @@ final class RowBundles {
             runs[Between(ends: [item.source, item.target]), default: []]
                 .append((item.arrow, targetIsRight ? .end : .start, targetIsRight ? to : from))
         }
-        for (_, group) in runs where group.count > 1 {
+        let byArrow = Dictionary(drawn.map { ($0.arrow, $0) }, uniquingKeysWith: { first, _ in first })
+        for (between, group) in runs where group.count > 1 {
             let ordered = group.sorted { ($0.line, document.index(of: $0.arrow) ?? 0) < ($1.line, document.index(of: $1.arrow) ?? 0) }
             for (index, item) in ordered.enumerated() {
                 answers[item.arrow]?.run = ConnectionBundle.Fan(end: item.end, index: index, count: ordered.count)
-                answers[item.arrow]?.between = ordered.map(\.arrow)
+            }
+            // The marks they end with at the other shape (the fans there are this shape's to say: those that end together at it from
+            // lines here), once a run, so a connection's layout reads them rather than its run's every look (UX walk 5 tables-1). The
+            // other shape's partial says the marks here.
+            guard let far = between.ends.first(where: { $0 != shape }) else { continue }
+            var marks: Set<EndMark> = [], nudged = false
+            for item in ordered {
+                guard let drawn = byArrow[item.arrow], let record = document[item.arrow] else { continue }
+                let look = registry.connectionLook(of: record, from: PartAddress(drawn.source, part: drawn.sourcePart),
+                                                   to: PartAddress(drawn.target, part: drawn.targetPart), in: context)
+                let end: ConnectionBundle.End = drawn.target == far ? .end : .start
+                if let mark = end == .start ? look?.start : look?.end, mark != .none, mark != .arrowhead { marks.insert(mark) }
+                if let fan = answers[item.arrow]?.fan(at: end), fan.index % 2 == 1 { nudged = true }
+            }
+            guard !marks.isEmpty else { continue }
+            for item in ordered {
+                guard let drawn = byArrow[item.arrow] else { continue }
+                answers[item.arrow]?.runMarks[drawn.target == far ? .end : .start] = ConnectionBundle.RunMarks(marks: marks, nudged: nudged)
             }
         }
 

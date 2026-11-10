@@ -40,12 +40,6 @@ extension ArrowDefinition {
         let mark = look?.mark(atStart: bundle?.parting?.end == .start)
         let marked = mark != nil && mark != EndMark.none && mark != .arrowhead
         let stack = line == nil ? bundle.flatMap { Self.partingStack(of: shape, bundle: $0, marked: marked, in: context) } : nil
-        // The farthest marks of the connections between its two shapes, at each side: what a narrow gap's turns keep clear of.
-        if line == nil, let bundle, let reach = runReach(of: shape, look: look, bundle: bundle, in: context) {
-            var run = spread ?? ArrowSpread()
-            (run.startRunReach, run.endRunReach) = reach
-            spread = run
-        }
         if let stack {
             var parted = spread ?? ArrowSpread()
             if stack.end == .start {
@@ -68,34 +62,6 @@ extension ArrowDefinition {
             }
         }
         return (geometry, detail, line, stacked)
-    }
-
-    /// How far out from each of its shapes the marks of the connections between the same two shapes (its run, `between`, itself
-    /// among them) reach at that shape's side, the farthest, with a nudge where a fan may stand one out (`ArrowStyle.fanMarkNudge`);
-    /// nil for one in no run, or where none is marked. Read from their records, looks and answers, never their geometry.
-    func runReach(of shape: ShapeRecord<Arrow>, look: ConnectionLook?, bundle: ConnectionBundle, in context: ShapeContext) -> (start: CGFloat, end: CGFloat)? {
-        guard bundle.run != nil, bundle.between.count > 1, let from = shape.props.start.binding?.shapeID,
-              let to = shape.props.end.binding?.shapeID, from != to else { return nil }
-        var reach: (start: CGFloat, end: CGFloat) = (0, 0)
-        for id in bundle.between {
-            let other: ShapeRecord<Arrow>, answer: ConnectionBundle?, theirs: ConnectionLook?
-            if id == shape.id {
-                (other, answer, theirs) = (shape, bundle, look)
-            } else {
-                guard let record = context.shape(id), let typed = record.typed(as: Arrow.self) else { continue }
-                (other, answer) = (typed, context.layoutInput(ConnectionBundle.input, of: record))
-                theirs = self.look(of: typed, in: context)
-            }
-            guard let theirs else { continue }
-            for end in [ArrowEnd.start, .end] {
-                guard let bound = other.props[end].binding?.shapeID, let mark = theirs.mark(atStart: end == .start), mark != .none, mark != .arrowhead else { continue }
-                var out = ArrowMarks.reach(of: mark)
-                if let fan = answer?.fan(at: end == .start ? .start : .end), fan.index % 2 == 1 { out += ArrowStyle.fanMarkNudge }
-                if bound == from { reach.start = max(reach.start, out) }
-                if bound == to { reach.end = max(reach.end, out) }
-            }
-        }
-        return reach.start > 0 || reach.end > 0 ? reach : nil
     }
 
     /// How wide an arrow's label is at most, world units: its pill's widest face and the padding either side, and its words; 0 for

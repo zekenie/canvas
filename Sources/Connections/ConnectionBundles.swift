@@ -70,12 +70,24 @@ public struct ConnectionBundle: Hashable, Sendable {
     /// in across a gap too narrow for lines to run side by side (Arrows' narrow gap): each at a place of its own, keys that keep their
     /// order never crossing. Nil for one alone between its shapes.
     public var run: Fan?
-    /// The connections of that run (itself among them), in its order: whose marks at each side the turns keep clear of (UX walk 5
-    /// tables-1: a line turned inside another key's circle). Empty with no `run`.
-    public var between: [ShapeID]
+    /// The marks that run's connections are drawn with at each of its two shapes, by its own end at that shape: what the turns across a
+    /// narrow gap keep clear of (UX walk 5 tables-1: a line turned inside another key's circle). Empty with no `run`.
+    public var runMarks: [End: RunMarks]
+
+    /// The marks the connections of a run end with at one of their shapes (`ConnectionLooks`' answers), and whether one of them is
+    /// fanned there at an odd place, which may stand its marks a nudge further out.
+    public struct RunMarks: Hashable, Sendable {
+        public var marks: Set<EndMark>
+        public var nudged: Bool
+
+        public init(marks: Set<EndMark>, nudged: Bool = false) {
+            self.marks = marks
+            self.nudged = nudged
+        }
+    }
 
     public init(role: Role = .alone, slot: Int = 0, slots: Int = 1, fans: [Fan] = [], entries: [End: PartID] = [:], parting: Fan? = nil,
-                parted: [ShapeID] = [], run: Fan? = nil, between: [ShapeID] = []) {
+                parted: [ShapeID] = [], run: Fan? = nil, runMarks: [End: RunMarks] = [:]) {
         self.role = role
         self.slot = slot
         self.slots = slots
@@ -84,7 +96,7 @@ public struct ConnectionBundle: Hashable, Sendable {
         self.parting = parting
         self.parted = parted
         self.run = run
-        self.between = between
+        self.runMarks = runMarks
     }
 
     /// Says nothing: drawn as ever.
