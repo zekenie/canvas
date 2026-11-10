@@ -96,8 +96,10 @@ public struct PartName: Hashable, Sendable {
     /// name (`PartFrame.isConnectable` is the same on the board).
     public var isConnectable: Bool
     /// Whether it is all its shape is (an endpoint taken out of its API: one shape, one row), so a list that names shapes and rows
-    /// lists it once (`MentionState.candidates(…ownRows:)`); an API's endpoint, which is one of its
-    /// shape's rows, is not, whether or not it's the only one.
+    /// lists it once, as its row (the `@` picker and ⌘L both); and the shape as a whole is that row wherever it is mentioned or
+    /// stood for: drawn as the row (`MentionResolution.whole`), and moved with it (`moveParts` takes a key with no part) when the
+    /// shape goes into another shape as a row. An API's endpoint, which is one of its shape's rows, is not, whether or not it's the
+    /// only one.
     public var isItsShape: Bool
 
     public init(id: PartID, name: String, kindWord: String, lead: PartLead = .none, standsAlone: Bool = false, isConnectable: Bool = true,

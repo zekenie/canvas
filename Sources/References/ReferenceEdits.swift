@@ -71,16 +71,22 @@ public enum ReferenceEdits {
 
     /// Pills for rows that moved (`Transaction.moveParts`: a row into another shape, out into one of its own) stand for where
     /// each went, on whichever board they are, in the move's step: another shape's row, or a shape as a whole (the row became
-    /// one). Their width is left as it is; a read-only pill stays as it was. Found through the stand-ins that name each row's
-    /// shape (`standIns(naming:)`), so it costs the moved rows' pills.
+    /// one); and a pill for a shape moved as a whole (a shape that was all its one row, put back into another shape as a row:
+    /// an endpoint taken out of its API) stands for that row, named as the row is and refit (a row's pill keeps its width); a read-only pill stays as it was.
+    /// Found through the stand-ins that name each moved shape (`standIns(naming:)`), so it costs the moved rows' pills.
     static func follow(_ moves: [PartAddress: PartAddress], in transaction: inout Transaction) {
         var asked: Set<ShapeID> = []
-        for from in moves.keys where from.part != nil && asked.insert(from.shape).inserted {
-            for pill in transaction.standIns(naming: from.shape) where transaction.mayWrite(on: pill.board) {
+        for from in moves.keys where asked.insert(from.shape).inserted {
+            for pill in transaction.standIns(naming: from.shape) where transaction.mayWrite(on: pill.board) && !transaction.isReadOnly(pill.id, on: pill.board) {
                 let there = transaction.contents(of: pill.board)
                 guard let record = there[pill.id]?.typed(as: Reference.self), let target = record.props.target, target.id == from.shape,
-                      let row = target.row, let to = moves[PartAddress(from.shape, part: row)] else { continue }
-                transaction.update(pill.id, on: pill.board, as: Reference.self) { $0.props.target = ReferenceTarget(id: to.shape, label: target.label, row: to.part) }
+                      let to = moves[PartAddress(from.shape, part: target.row)] else { continue }
+                // A pill for the shape as a whole that now stands for its row says the row's name, as it is drawn, at the width that fits it.
+                let label = target.row == nil ? transaction.part(at: to).map { $0.standsAlone ? $0.name : target.label + "." + $0.name } ?? target.label : target.label
+                transaction.update(pill.id, on: pill.board, as: Reference.self) {
+                    $0.props.target = ReferenceTarget(id: to.shape, label: label, row: to.part)
+                    if label != target.label { fit(&$0.props) }
+                }
             }
         }
     }

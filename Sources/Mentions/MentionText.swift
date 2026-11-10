@@ -291,12 +291,26 @@ extension ScopedMentionText: ShapeNaming {
         return changed ? Self(renamed) : self
     }
 
-    /// The same text with each mention of a row that `rename` gives another address for naming it there (a row moved to another
-    /// table), keeping its label; the stored form is written again only if one changed.
+    /// The same text with each whole mention (of a shape, not a row) that `row` gives a row and its label for written as that row
+    /// (a shape that is all its one row: an endpoint taken out of its API), so it holds the address and the label the row's own
+    /// mention does, and is measured as it is drawn; the stored form is written again only if one changed.
+    public func rowing(wholes row: (ShapeID) -> (PartAddress, String)?) -> Self {
+        var changed = false
+        let renamed = runs.map { run -> MentionRun in
+            guard case .mention(let target, _) = run, target.part == nil, let (address, label) = row(target.shape) else { return run }
+            changed = true
+            return .mention(address, label: label)
+        }
+        return changed ? Self(renamed) : self
+    }
+
+    /// The same text with each mention that `rename` gives another address for naming it there (a row moved to another
+    /// table; a shape that was all its one row, gone as the row went into another shape, named as that row), keeping its label;
+    /// the stored form is written again only if one changed.
     public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self {
         var changed = false
         let renamed = runs.map { run -> MentionRun in
-            guard case .mention(let target, let label) = run, target.part != nil, let new = rename(target), new != target else { return run }
+            guard case .mention(let target, let label) = run, let new = rename(target), new != target else { return run }
             changed = true
             return .mention(new, label: label)
         }

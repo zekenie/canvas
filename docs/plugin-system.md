@@ -2417,7 +2417,12 @@ parts tells the transaction when they go or move, so nothing stays bound to a ro
 transaction.removeParts([PartAddress(table, part: column.id)])   // what's bound to it goes with it, or binds the table
 transaction.moveParts([PartAddress(orders, part: id): PartAddress(items, part: id)])   // bindings follow; partsMoved runs
 registrar.partsMoved { moves, transaction in … }                  // a name of a row renamed where it went
+transaction.moveParts([PartAddress(endpoint): PartAddress(api, part: id)])   // a shape that was all its one row, as a whole
 ```
+
+A key may be a shape as a whole: a shape that was all its one row and went with it into another shape (an endpoint of
+its own put back into an API: LineRows' `landRows` says so), so what names the shape as a whole (a mention, a pill for it)
+names the row where it went.
 
 A binding may reach a row through a pill for its shape (a key to a column on another board: the pill, with the
 column on the binding). Both reach those too, on the pill's board and in the same step, through the one stand-in
@@ -2792,8 +2797,9 @@ func leadAction(of row: APIRow, at index: Int, among rows: [APIRow], in context:
 
 A take-out may be a shape of another kind, named by the kind (one endpoint out of an API is an `endpoint` of its own,
 "Take Out Endpoint": `takeOutShape`, `takeOutStep`), and a kind may be one row standing alone (`goesWithItsRows`: it takes
-no rows and has no take-out, and goes as its row goes, after what's bound to the row has followed it) whose row another
-kind takes (`takesRows(of:)`, `rows(taken:)`: an API takes an endpoint dropped on it, or its row pasted in).
+no rows and has no take-out, and goes as its row goes, after what's bound to the row has followed it, and what names it as
+a whole names the row where it went) whose row another kind takes (`takesRows(of:)`, `rows(taken:)`: an API takes an
+endpoint dropped on it, or its row pasted in).
 
 ## Selection
 
@@ -8024,7 +8030,10 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
 - **A row.** `@[name](shape:UUID/row:UUID)` mentions one of a shape's rows (its part, `PartID`: a
   table's column, an API's endpoint); its pill shows the row's live full name ("orders.customer_id",
   an endpoint's method in its chip and its full path), dashed once the row is gone. A copy keeps the
-  row's id; a row moved to another shape is renamed where it went (`ShapeNaming.renamingParts`).
+  row's id; a row moved to another shape is renamed where it went (`ShapeNaming.renamingParts`). A shape
+  that is all its one row (`PartName.isItsShape`, an endpoint taken out of its API) is mentioned as that row:
+  the picker and draw's `@[name]` write the row (a whole mention an agent writes too), a mention of the shape as a whole shows as the row
+  (`MentionResolution.whole`), and put back into an API either names the row there.
 - **The value.** `runs` (`MentionRun`: `.text(String)`, `.mention(PartAddress, label:)`, a shape and a
   row or none; `.mention(id, label:)` makes a shape's) are parsed
   once, as it's made. `stored` is the string it was made from, and equality compares it, so a

@@ -17,7 +17,7 @@ import Topology
 import Validation
 
 // Fixtures only, so these tests show MentionTextsPlugin's text knows no real kind: a folder (titled,
-// mentionable, with rows, and the one kind a dispatch's `to` may mention), a crate (titled, but not mentionable),
+// mentionable, with rows, and the one kind a dispatch's `to` may mention), a slot (all its one row is), a crate (titled, but not mentionable),
 // and a dispatch, titled and mentionable too, that holds every kind of mention text there is: any
 // (`body`), only folders (`to`), a declared scope (`tags`: what joined `Crew`, the folders), and
 // texts inside a list of objects (`steps`).
@@ -52,6 +52,36 @@ extension FolderDefinition: PartedShape {
     func parts(of shape: ShapeRecord<Folder>) -> [PartName] {
         [PartName(id: FolderRows.inbox, name: "inbox", kindWord: "Tray"), PartName(id: FolderRows.outTray, name: "out tray", kindWord: "Tray"),
          PartName(id: FolderRows.route, name: "POST /mail", kindWord: "Route", standsAlone: true)]
+    }
+}
+
+/// A slot is all its one row is (as an endpoint taken out of its API is: `PartName.isItsShape`).
+struct Slot: BoxShapeProps {
+    static let kind: ShapeKind = "slot"
+    static let properties = Properties<Slot> {
+        Property("frame", \.frame).required()
+    }
+    var frame: CGRect
+    init(_ frame: CGRect) { self.frame = frame }
+}
+
+extension Slot {
+    init() { self.init(.zero) }
+    /// Its row, the same in every slot.
+    static let route = PartID(UUID(uuidString: "00000000-0000-4000-9000-0000000F0004")!)
+}
+
+struct SlotDefinition {}
+
+extension SlotDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Slot>, in context: RenderContext) {}
+}
+
+extension SlotDefinition: PartedShape {
+    var isAllItsOneRow: Bool { true }
+
+    func parts(of shape: ShapeRecord<Slot>) -> [PartName] {
+        [PartName(id: Slot.route, name: "PUT /mail", kindWord: "Route", standsAlone: true, isItsShape: true)]
     }
 }
 
@@ -130,6 +160,10 @@ struct DispatchFixturesPlugin: CanvasPlugin {
             folder.title()
             folder.mentionable()
             folder.mentionable(in: Crew.self)
+        }
+        registrar.shape(SlotDefinition()) { slot in
+            slot.title()
+            slot.mentionable()
         }
         registrar.shape(CrateDefinition()) { crate in
             crate.tool(label: "Crate", systemImage: "shippingbox", placing: crate.placement(size: CGSize(width: 100, height: 100)) { Crate() })

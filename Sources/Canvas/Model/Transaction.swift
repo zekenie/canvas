@@ -458,6 +458,23 @@ public struct Transaction {
         return true
     }
 
+    /// The part a shape has at `address` as this step leaves the file, on whichever board the shape is; nil for a shape or a part
+    /// it hasn't.
+    public func part(at address: PartAddress) -> PartName? {
+        guard let part = address.part, let at = location(of: address.shape), let record = contents(of: at)[address.shape] else { return nil }
+        return registry.parts(of: record)?.first { $0.id == part }
+    }
+
+    /// Whether a shape on any board this step may write is read-only as the step leaves the file (it, a container it's in, or its
+    /// board), so a change that only follows another (a pill standing where a row went) leaves it as it was rather than refusing the
+    /// step. Another board's through a transaction over it, as `renameNamedParts` asks.
+    public func isReadOnly(_ id: ShapeID, on other: BoardID) -> Bool {
+        guard let record = contents(of: other)[id] else { return false }
+        if other == board { return isReadOnly(record) }
+        guard !climb(other).isTaken, let there = transaction(on: other) else { return true }
+        return there.isReadOnly(record)
+    }
+
     /// Whether this transaction holds a shape as it is, as `refuses` would, noting nothing: it was in
     /// the document before the transaction, and it, a container it's in, or the board, is read-only.
     func holds(_ record: AnyShapeRecord) -> Bool {
@@ -1477,6 +1494,9 @@ public struct Transaction {
     /// for its shape (`standIns(naming:)`) follows it on the pill's board in this step: to the part moved to, through the same
     /// pill when it stays in that shape, else straight to the shape it went to when that is on the pill's board, else through
     /// a pill there that stands for it; with none of those, it is bound to the pill as a whole (no pill is made here).
+    /// A key may be a shape as a whole (part nil): a shape that was all its one row, gone as the row went into another shape
+    /// (an endpoint taken out of its API, put back), so a value that names that shape as a whole (a mention of it) names the
+    /// row where it went, and the handlers hear it; a binding is to parts alone (`boundParts`), so none is to such a key.
     public mutating func moveParts(_ moves: [PartAddress: PartAddress]) {
         let moves = moves.filter { $0.key != $0.value }
         guard !moves.isEmpty else { return }
@@ -1508,11 +1528,12 @@ public struct Transaction {
     }
 
     /// The names of moved parts in the values of shapes that name their shapes (`shapesNaming`: the editor's index, as the file
-    /// was before this step), renamed to where they went: on any board this step may write, a read-only shape left as it was.
+    /// was before this step), renamed to where they went, and of a shape moved as a whole (a key with no part) where it went:
+    /// on any board this step may write, a read-only shape left as it was.
     private mutating func renameNamedParts(_ moves: [PartAddress: PartAddress]) {
         guard !registry.namingKinds.isEmpty else { return }
         var asked: Set<ShapeID> = [], namers: [(id: ShapeID, board: BoardID)] = [], seen: Set<ShapeID> = []
-        for from in moves.keys where from.part != nil && asked.insert(from.shape).inserted {
+        for from in moves.keys where asked.insert(from.shape).inserted {
             for namer in shapesNaming(from.shape) where seen.insert(namer.id).inserted { namers.append(namer) }
         }
         for namer in namers.sorted(by: { $0.id.description < $1.id.description }) where mayWrite(on: namer.board) && !deleting.contains(namer.id) {

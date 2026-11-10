@@ -337,10 +337,10 @@ private struct Putting {
 
         let program = "canvas"
         let before = editor.document
-        // The shapes the file has that a size widens, and the put changes (a restated one it leaves as it is keeps the width a
-        // person gave it), narrower than the width its new lines need: made that wide first, so the block and the pills laid out
-        // beside it are placed against the width it will have, never under it.
-        let widening = widenings(planned, scripts, implied: implied, options: options)
+        // The shapes the file has that a size widens, narrower than the width its new lines need: made that wide first, so the block
+        // and the pills laid out beside it are placed against the width it will have, never under it; one the put leaves as it is
+        // keeps the width a person gave it (`keepingWidths`).
+        let widening = widenings(planned)
         let editor = editor, shown = shown, step = step
         func run(_ item: (board: BoardID, script: Script, lines: [Int: Int]), _ ready: DrawOptions, on target: CanvasEditor) throws(DrawError) {
             var run = ready
@@ -370,6 +370,7 @@ private struct Putting {
                 for item in others { try run(item, options, on: copy) }
                 for item in scripts where item.board == shown { try run(item, options, on: copy) }
                 for item in others where !(implied[item.board] ?? [:]).isEmpty { try run(item, options, on: copy) }
+                keepingWidths(widening, on: copy)
                 guard editor.adopt(copy, named: step, byAgent: false) else {
                     throw DrawError("the board changed while it was put down, so nothing was", reason: ScriptError.Reason.busy.rawValue, hint: "try again")
                 }
@@ -535,30 +536,31 @@ private struct Putting {
 
     // MARK: Laying out
 
-    /// The shapes of the file a size widens that the put changes, by their id and board, with the box each is made: as wide as its
-    /// new lines read whole where it is narrower than that. Which it changes is the draw's to say (`Drawing.changes`), asked of
-    /// each run as it will be drawn; one that it can't read is left to the draw, which says why.
-    private func widenings(_ planned: [Planned], _ scripts: [(board: BoardID, script: Script, lines: [Int: Int])],
-                           implied: [BoardID: [Int: [DrawImpliedEdge]]], options: DrawOptions) -> [(ShapeID, BoardID, CGRect)] {
-        var wanted: [ShapeID: CGFloat] = [:]
-        for item in planned where !item.isNew {
-            guard let id = item.id, let size = block.sizes[item.original], size.widens, let box = editor.shape(inFile: id)?.box, box.width < size.width else { continue }
-            wanted[id] = size.width
-        }
-        guard !wanted.isEmpty else { return [] }
+    /// The shapes of the file a size widens, by their id and board, with the box each is made: as wide as its new lines read
+    /// whole where it is narrower than that. Whether the put changes it is the run's to say, on the rehearsal it draws on
+    /// (`keepingWidths`): asking a draw of the whole script first cost as much as the put again (U10, review U7-E3).
+    private func widenings(_ planned: [Planned]) -> [(ShapeID, BoardID, CGRect)] {
         var found: [(ShapeID, BoardID, CGRect)] = []
-        for item in scripts {
-            var run = options
-            run.board = item.board
-            run.implied = implied[item.board] ?? [:]
-            guard let (board, names) = try? Drawing.board(for: item.script, in: editor, pinned: item.board), let reading = editor.reading(of: board),
-                  let drawing = try? Drawing(item.script, editor: editor, on: reading, fileNames: names, options: run, program: "canvas") else { continue }
-            for (id, width) in wanted where !found.contains(where: { $0.0 == id }) {
-                guard planned.contains(where: { $0.id == id && $0.board == item.board }), drawing.changes(id), let box = editor.shape(inFile: id)?.box else { continue }
-                found.append((id, item.board, CGRect(origin: box.origin, size: CGSize(width: width.rounded(.up), height: box.height))))
-            }
+        for item in planned where !item.isNew {
+            guard let id = item.id, !found.contains(where: { $0.0 == id }), let size = block.sizes[item.original], size.widens,
+                  let box = editor.shape(inFile: id)?.box, box.width < size.width else { continue }
+            found.append((id, item.board, CGRect(origin: box.origin, size: CGSize(width: size.width.rounded(.up), height: box.height))))
         }
         return found
+    }
+
+    /// The widened shapes the runs on `copy` left as they were but their width (a restated one the put leaves as it is keeps the
+    /// width a person gave it), given back that width on `copy` before it is taken in; not one the runs moved (making room below a
+    /// table that grew, which the widening may have caused: the move is a change, and it stays as the put made it).
+    private func keepingWidths(_ widening: [(ShapeID, BoardID, CGRect)], on copy: CanvasEditor) {
+        for (id, board, widened) in widening {
+            guard let was = editor.shape(inFile: id), let wasBox = was.box, var now = copy.shape(inFile: id), now.box?.width == widened.width else { continue }
+            let box = now.box
+            now.box = wasBox
+            // One that moved (a table above it grew, and made room) isn't one the put left as it was: it keeps the width it was made.
+            guard now == was, let box, box.origin == wasBox.origin else { continue }
+            copy.transact(on: board, step) { $0.update(id) { $0.box = CGRect(origin: box.origin, size: CGSize(width: wasBox.width, height: box.height)) } }
+        }
     }
 
     /// Measures the new shapes, lays the block's out in rows at draw's normal gap, lands the box around them as Insert lands a

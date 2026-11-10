@@ -224,7 +224,12 @@ struct MentionResolver {
             defaults[record.kind] = kindDefaults
         }
         let shape = registry.mentionAppearance(of: record, defaults: kindDefaults)
-        guard let part = target.part else { return shape.map { .live($0) } ?? .unavailable }
+        // A shape that is all its one row shows as that row (`MentionResolution.whole`): its parts read only for a kind whose shapes all are one (`isAllItsOneRow`).
+        guard let part = target.part else {
+            guard shape != nil, registry.isAllItsOneRow(record.kind) else { return shape.map { .live($0) } ?? .unavailable }
+            let names = partNames.names(of: record, in: registry)
+            return MentionResolution.whole(shape: shape, parts: names.count == 1 ? Array(names.values) : nil)
+        }
         guard let shape else { return .unavailable }
         // A row is found among its shape's parts, which are read once while the shape is as they were read, not once for each pill.
         guard let row = partNames.names(of: record, in: registry)[part] else { return .missing }
