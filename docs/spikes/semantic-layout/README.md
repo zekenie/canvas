@@ -1,13 +1,104 @@
 # Spike: let meaning decide which links are arrows
 
-**Verdict.** Built the way the owner stated it, the strategy doesn't have legs as a layout engine. Its embedding half does, as the rule for which links stay arrows.
+**Verdict.** Neither the strategy as the owner stated it nor the owner's follow-up, a force simulation run in the background only to decide which links break, has legs as the way to choose arrows. Meaning does, used directly, and how far it can go is set by how well links are ranked.
 
-- **It keeps a graph.** It cuts 43% of the links inside boards; the layout branch cuts 57%, main 74%. Across the 72 boards it draws 1,431 arrows, against the branch's 1,067 and main's 659.
-- **But it keeps the wrong arrows, and doesn't draw them clean.** Two blind judges labelled five boards. There, 51% of the strategy's arrows are links both judges would make a chip, and 13% are links they would keep side by side. Main's arrows are 12% chips and 36% keeps; the branch's are 43% and 20%. Only 16 of the 72 boards come out clean (main 7, the branch all 72), with 1,081 crossings in all (main 10,605).
-- **The physics is what fails.** In a dense area, how far an arrow stretches comes from the shape of the graph, not from its own spring. A hub sits in the middle of its spokes, so they never stretch. And read as k-cores, the graph's complexity calls 70% of links congested, yet never a hub's star.
-- **Similarity used directly holds up.** Put the threshold on each arrow's force itself, and take what a board shares out of the similarity. Then the judged boards get 161 to 216 arrows: 26–31% are keep links and 35–36% chips, the best-chosen arrows of any engine here. They still cross, 266 to 496 times on those five boards.
+- **The background simulation picks what similarity picks.** Three physics were tried, at 11 settings. In none did it leave fewer chip arrows than similarity cutting the same number of links on each board.
+- **It's good for how many links break, and where.** Its breaks follow crowding: at a threshold of 1, it breaks 11% of the links on boards with fewer than 10 and 52% on boards with 80 or more. Hubs break too, which the stated rule never managed. At a threshold of 0.5, cut there by similarity and drawn by the layout branch's engine, the boards keep 732 arrows, against 609 for a flat two-thirds cut, with about the same share of keep and chip arrows. Every board is clean.
+- **The limit is the ranking, not the placer.** Given the judges' cut, the layout branch's engine draws 56 of the 76 links they'd keep, with no chip arrow and every board clean. Given the same number of links cut on each board by similarity, it draws 30.
+- **The rule as stated** keeps a graph (1,431 arrows, against the branch's 1,067 and main's 659), but the wrong one. On the judged boards 51% of its arrows are chips, and only 16 of the 72 boards come out clean.
 
-This is a spike: evidence and a pre-plan, no feature work. It is meant to replace both of today's strategies: main's (popular shapes become pills) and the layout branch's (`claude/canvas-layout-strategy-f81c7d`, slices 1 to 4, not landed: the fewest cuts that draw every board clean). Its earlier rounds tested a rule of mine instead of the owner's. They are kept at the end for what they measured.
+This is a spike: evidence and a pre-plan, no feature work. It is meant to replace both of today's strategies: main's (popular shapes become pills) and the layout branch's (`claude/canvas-layout-strategy-f81c7d`, slices 1 to 4, not landed: the fewest cuts that draw every board clean). Its earliest rounds tested a rule of mine instead of the owner's. They are kept at the end for what they measured.
+
+## How it was measured
+
+- **Corpus.** This repository drawn by canvas-ingest. It has 72 boards, 891 notes, 56 frames and 71 module cards. Of its 8,282 links, 2,498 are inside a board and 5,784 go between boards.
+- **Vectors.** Each note's text is its title plus the doc comment and declarations the lens gives it, with code names split into words.
+  - The text is embedded on this Mac with Apple's NaturalLanguage, in two ways: the sentence embedding, and the contextual embedding with its token vectors averaged. Both are 512 numbers, and both are centred on the corpus mean.
+  - TF-IDF word overlap is computed alongside.
+  - All 1,018 texts, with both models, took 20 s.
+- **Blind judges.** Two independent Claude Sonnet agents labelled every one of the 459 links on five dense boards: Selection, Mentions, Draw, Canvas/Model and References.
+  - The labels are 0 (incidental: a chip is better), 1 (either) and 2 (one idea: keep them side by side).
+  - The judges saw only the notes' text, never a score.
+  - They gave the same label 81% of the time (Cohen's kappa 0.68).
+  - "Keep" means a mean label of at least 1.5 (76 links). "Chip" means both said 0 (210 links).
+  - Both judges picked their 1s and 2s and left the rest at 0, so the labels are coarse.
+  - The judges stand in for a person reading the board. Their picks are the target, not something any strategy computes.
+- **One ruler.** Every strategy writes canvas-digest's drawing format, and every drawing is scored by the layout branch's own health check (crossings, lines over shapes, shapes on top). So main, the branch and the spike are measured alike.
+- **Chips and keeps.** A chip arrow is an arrow on a link both judges would make a chip; a keep arrow, one on a link they'd keep side by side. "Keep links drawn" counts the 76 keep links drawn as arrows.
+
+## A simulation in the background decides what breaks
+
+The owner's follow-up, on the finding that in a dense area the graph decides how far an arrow stretches, not its own spring:
+
+> I think we can do something smarter with this. Like imaging doing a force based simulation in the background just to decide what arrow to break.
+
+This simulation is never drawn. Its only output is which links break, and the layout branch's engine draws the rest clean. Since nobody sees it, its physics can be chosen for the decision alone. `background.mjs` builds it:
+
+- **Notes are points, links are springs.** Each note on a board pushes the others away with its size and a quarter of its pills'. Each link inside the board is a spring that wants the usual gap between its notes. A link to another board is a pill in any case.
+- **Three physics**, three ways to make a link's strength count in a dense area:
+  1. **Load against strength.** Every spring is as stiff as the next. So how hard a link is pulled comes from the board's crowding alone: a hub's fan of notes pushing each other out, or two clusters pushing apart. Similarity sets how much pull a link holds before it breaks: the threshold for the most alike link on the board, a quarter of it for the least alike.
+  2. **Crowding only.** The same, but notes push only where they don't fit. So a link carries load only in a crowded spot, and a lone link carries none.
+  3. **Meaning moves the notes.** Springs are as strong as their notes are alike, as stated. And every pair of notes on the board, linked or not, is pulled toward a distance set by how alike they are. So notes that aren't alike drift apart, and the link between them stretches until it breaks.
+- **One break at a time.** The link pulled hardest past what it holds breaks first. The board settles again, with the new pill pushing beside its note, and it stops when every link holds. All 72 boards take about a second.
+- **Drawn by the layout branch's engine.** The breaks become pills before layout and are never put back (`simcut.patch`, over the earlier rounds' `engine.patch`). Each link's place in the simulation's order is its weight, which the engine's own further cuts follow.
+- **The control.** Each run is set against similarity alone cutting the same number of links on each board, the least alike first, and weighted by similarity.
+
+### It picks what similarity picks
+
+On the five judged boards (459 links), before anything is drawn:
+
+| physics | threshold | links broken | arrows left: keep / chip | similarity, same counts: keep / chip |
+|---|---|---|---|---|
+| load against strength | 0.5 | 303 | 33% / 32% | 31% / 29% |
+| | 1 | 201 | 24% / 39% | 23% / 37% |
+| | 1.5 | 94 | 20% / 43% | 19% / 41% |
+| crowding only | 0.1 to 0.5 | 268 to 290 | 23–24% / 36–37% | 27–29% / 30–33% |
+| meaning moves the notes | 0.5 | 242 to 248 | 21–26% / 35–36% | 24–26% / 33–35% |
+| | 1 | 84 to 108 | 17–20% / 43–44% | 19–20% / 40–43% |
+
+The ranges cover four thresholds for crowding only, and two strengths of meaning's pull.
+
+- **In all 11 settings, the simulation leaves more chip arrows** than similarity does at the same counts.
+- **Where similarity sets the strength, the order is nearly similarity's.** Under load against strength, what breaks has a mean similarity rank of 0.19 to 0.36, where similarity's own cut of as many has 0.10 to 0.33. What the physics changes in that order, it changes for the worse.
+- **Where crowding sets it, the order is the board's shape.** Under crowding only, what breaks has a mean rank of 0.40 (similarity's own cut: 0.30; chance: 0.5), and the judges agree with it less.
+- **Hubs do break now.** A hub's fan of notes crowds, so its spokes take load. On Selection, at a threshold of 0.5, the registration hub (the `selection` plugin) loses 10 of its 14 links, all chips. Drawn, it keeps 4 arrows, all chips, where the branch keeps 12. But similarity, cutting as many links on that board, leaves it 1.
+
+### It decides how many break, and where
+
+Load against strength; 68 of the 72 boards have links inside them.
+
+| links on the board | boards | broken, threshold 1 | threshold 0.5 |
+|---|---|---|---|
+| fewer than 10 | 22 | 11% | 38% |
+| 10 to 19 | 18 | 16% | 45% |
+| 20 to 39 | 11 | 27% | 48% |
+| 40 to 79 | 11 | 36% | 60% |
+| 80 or more | 6 | 52% | 70% |
+
+### Drawn by the layout branch's engine
+
+![Selection and Mentions drawn by the layout branch's engine four ways: as the branch cuts, as the background simulation cuts (threshold 0.5), as similarity cuts at the simulation's counts, and as the judges cut. Arrows are coloured by the judges: green keep, red chip, amber between](pictures/background.jpg)
+
+| | arrows (72 boards) | arrows on judged links | of them keep / chip | keep links drawn (of 76) |
+|---|---|---|---|---|
+| main (7 boards clean) | 659 | 59 | 36% / 12% | 21 |
+| layout branch | 1,067 | 147 | 20% / 43% | 30 |
+| the background simulation, threshold 1 | 917 | 119 | 24% / 42% | 29 |
+| the background simulation, threshold 0.5 | 778 | 102 | 33% / 29% | 34 |
+| similarity, at the simulation's counts (0.5) | 732 | 91 | 37% / 24% | 34 |
+| similarity, a flat two-thirds of each board | 609 | 96 | 34% / 23% | 33 |
+| similarity, a flat half (the earlier rounds) | 785 | 111 | 27% / 32% | 30 |
+| **the judges' cut** | 964 | 56 | **100% / 0%** | **56** |
+| similarity, at the judges' counts | 968 | 58 | 52% / 14% | 30 |
+| only the links both judges chip | 1,033 | 115 | 32% / 0% | 37 |
+| similarity, at those counts | 1,038 | 109 | 29% / 30% | 32 |
+
+Every row but main draws all 72 boards clean. "The judges' cut" makes a pill of every judged link they wouldn't keep. The last four rows cut only the five judged boards, and the engine draws the other 67 with similarity as the weight.
+
+- **The count helps a little.** With similarity choosing, the simulation's counts draw 123 more arrows than a flat two-thirds, with about the same shares of keep and chip arrows.
+- **The engine still cuts on its own.** After the simulation's cut at 0.5, it cut 54 more of the judged links to draw clean, 17 of them keep links.
+- **The ranking is what's missing.** At the judges' own counts, their ranking draws 56 keep links and no chip; similarity draws 30 keep links and 8 chips. The engine isn't the limit: given the right cut, it draws three in four keep links on clean boards.
+- **Putting the simulation's cuts back where there's room** raises its arrows from 778 to 920, but brings chips back: 33% of its judged arrows.
 
 ## The strategy, as stated
 
@@ -38,23 +129,7 @@ How `springs.mjs` builds it:
 
 It is deterministic, with no randomness. Crossings are allowed, and nothing is put back. All 72 boards draw in 30 seconds.
 
-## How it was measured
-
-- **Corpus.** This repository drawn by canvas-ingest. It has 72 boards, 891 notes, 56 frames and 71 module cards. Of its 8,282 links, 2,498 are inside a board and 5,784 go between boards.
-- **Vectors.** Each note's text is its title plus the doc comment and declarations the lens gives it, with code names split into words.
-  - The text is embedded on this Mac with Apple's NaturalLanguage, in two ways: the sentence embedding, and the contextual embedding with its token vectors averaged. Both are 512 numbers, and both are centred on the corpus mean.
-  - TF-IDF word overlap is computed alongside.
-  - All 1,018 texts, with both models, took 20 s.
-- **Blind judges.** Two independent Claude Sonnet agents labelled every one of the 459 links on five dense boards: Selection, Mentions, Draw, Canvas/Model and References.
-  - The labels are 0 (incidental: a chip is better), 1 (either) and 2 (one idea: keep them side by side).
-  - The judges saw only the notes' text, never a score.
-  - They gave the same label 81% of the time (Cohen's kappa 0.68).
-  - "Keep" means a mean label of at least 1.5 (76 links). "Chip" means both said 0 (210 links).
-  - Both judges picked their 1s and 2s and left the rest at 0, so the labels are coarse.
-  - The judges stand in for a person reading the board. Their picks are the target, not something any strategy computes.
-- **One ruler.** Every strategy writes canvas-digest's drawing format, and every drawing is scored by the layout branch's own health check (crossings, lines over shapes, shapes on top). So main, the branch and the spike are measured alike.
-
-## Results
+## Results of the rule as stated
 
 ### Against main and the layout branch
 
@@ -134,32 +209,31 @@ At every setting, the hub stars stay.
 
 ## Pre-plan, if this goes on
 
-The rule to build: meaning picks the arrows directly, and a placer draws them.
+The rule to build: meaning ranks the links, a count for each board says how many become references, and the layout branch's engine draws the rest.
 
-1. **Similarity as an input.**
-   - The app computes a vector for each note when it measures it (`canvas measure`): the on-device `NLContextualEmbedding` with its token vectors averaged, together with word overlap counted within the board.
-   - Vectors are cached by the note's text.
-   - Decisions go by rank within a container, ties by key.
-2. **Where meaning acts.** This needs a test of density that sees stars alongside the k-core, such as how many links a note has in its container against the container's typical note. That is degree, which the stated rule ruled out as popularity. But the judges chip registration spokes because of what they mean, and only a test that sees a star lets meaning act there.
-3. **The threshold on similarity, not stretch.** Below it a link is a reference, and above it an arrow. Arrows into frames stay.
-4. **A placer that serves the cut.** This is the layout branch's engine, given the cut: in the earlier rounds, cutting by meaning before its layout kept every board clean. Arrows into frames are drawn to their members, not as one spring between frames; the root shows why.
+1. **Rank links by meaning, and test the ranking on the judged links.** Similarity is the floor: at the judges' counts it draws 30 of their 76 keep links, against their 56. Candidates to close the gap, each scored on the 459 judged links before anything is built:
+   - a better embedding than the on-device one;
+   - roles the lens names, such as registration or plumbing;
+   - a decision model asked the judges' question for each link. `canvas decide` already asks one yes-or-no question of many shapes.
+2. **Similarity as an input.** The app computes a vector for each note when it measures it (`canvas measure`): the on-device `NLContextualEmbedding` with its token vectors averaged, and word overlap counted within the board, with what the board shares taken out. Vectors are cached by the note's text. Decisions go by rank within a container, ties by key.
+3. **How many, and where: the background simulation.** Load against strength, at a threshold between 0.5 and 1. It needs no test of density of its own: crowding is what loads a link, and a hub's fan crowds.
+4. **The layout branch's engine draws the cut.** Its further cuts, its mend and its put-back go by the same ranking. Arrows into frames are drawn to their members, not as one spring between frames; the root shows why.
 5. **References that don't crowd.** 70% of links go to another board, and each is a pill with a line, about 6.5 for each note. The owner chooses among:
    - chips inside the note;
    - one pill for each module;
    - leaving references under a similarity floor undrawn.
 
-**The test bed.** The 459 judged links become a fixture. The recall of keep links and the share of chips can't regress, and arrows, crossings and area are reported.
+**The test bed.** The 459 judged links become a fixture. The keep links drawn and the share of chip arrows can't regress, every board stays clean, and arrows and area are reported.
 
 ## Open questions for the owner
 
-1. Should the threshold be on the force itself (how alike two notes are), as the evidence says, rather than on how far the arrow stretches?
-2. Should a hub's spokes count as congested? That means degree, which the stated rule ruled out as popularity.
-3. Should links into frames be arrows? 24 of the 76 keep links cross a frame's edge.
-4. How should references look so they don't crowd: chips inside the note, one pill per module, or hidden under a floor?
+1. May the ranking ask a model about each link? That is a yes-or-no question for each link inside a board, about 2,400 for this repository, cached by the two notes' text.
+2. Should links into frames be arrows? 24 of the 76 keep links cross a frame's edge.
+3. How should references look so they don't crowd: chips inside the note, one pill per module, or hidden under a floor?
 
 ## Earlier rounds of this spike
 
-These rounds tested a rule of mine, not the owner's: a link broke when its line was crowded in the picture, the least alike first, a tenth of the crowded links each round. They are kept for what they measured:
+These rounds came before the owner's strategy was built. They tested a rule of mine, not the owner's: a link broke when its line was crowded in the picture, the least alike first, a tenth of the crowded links each round. They are kept for what they measured:
 
 - how similarity ranks links against the judges;
 - similarity inside the layout branch's engine;
@@ -292,6 +366,8 @@ Each picture shows one board under main, the layout branch, the branch's engine 
 
 - The judges are language models, not the owner. Their labels are coarse, they covered five boards, and there is one corpus, a codebase; prose would embed better.
 - `springs.mjs` had about an hour of tuning. Its parameters were swept only as shown: the 3-core, the springs' floor, the thresholds and the references' weight.
+- `background.mjs` had about as much. Its three physics were swept only as shown, and the threshold of 0.5 to 1 is fitted to this corpus.
+- The judges' cut is an upper bound made from their labels. Nothing computes it.
 - The k-core is one reading of "graph complexity". A test of density that sees stars would change point 3 under why it does not work as stated.
 - The pictures are schematic: drawn from each drawing.json as the health check reads it, not captured from the app.
 - Main is measured by the branch's straight-line check.
@@ -304,6 +380,7 @@ Everything is in this folder:
 - `data/`: the corpus as canvas-ingest drew it (`graph.json`), the app's measure of it (`measure.json`) and the kinds (`kinds.json`). `texts.mjs` and `embed.swift` make the texts and vectors again.
 - `judge/`: the judges' input, their labels and their scripts.
 - The scripts:
+  - `background.mjs`: the simulation in the background, with its three physics (`--physics=load|crowding|meaning`), the threshold (`--snap`), and the cuts it writes for the engine, its own and the controls' (`--emit`). `engine-eval.mjs` scores a drawing the engine made from a cut, and `hubs.mjs` follows a board's busiest notes. `simcut.patch` lets the layout branch's engine take a cut before layout (`SIM_CUT`) and keep it (`SIM_KEEPCUT`).
   - `springs.mjs`: the strategy as stated, with the three readings of the threshold (`--break=stretch|strength|force`), `--sim=board`, `--frames=arrows`, `--others=hide` and `--auc`. `springs-eval.mjs` scores its boards against the judges.
   - `texts.mjs` and `embed.swift`: the vectors.
   - `sim.mjs`, `check-sim.mjs`, `eval-judge.mjs`, `agree.mjs`, `ceiling.mjs`, `combo.mjs` and `samecount.mjs`: the measures.
@@ -314,4 +391,4 @@ Everything is in this folder:
     - `cutjudge.mjs`, which says which of a drawing's cuts the judges would make.
   - `score-drawing.mjs`, `render.mjs`, `compose.mjs`, `panel.mjs` and `stitch.swift`: health and pictures.
 
-The scripts import the layout branch's canvas-digest tool (`DIGEST_TOOL`, its `lib/` folder; commit 4bc3494e on `claude/canvas-layout-strategy-f81c7d`, a local branch). `reproduce.sh` runs every measure above and draws the pictures again, in about 17 minutes. If swiftc says the SDK isn't supported, set `SDKROOT` to one that matches the compiler, as the repository's build notes say.
+The scripts import the layout branch's canvas-digest tool (`DIGEST_TOOL`, its `lib/` folder; commit 4bc3494e on `claude/canvas-layout-strategy-f81c7d`, a local branch). `reproduce.sh` runs every measure above and draws the pictures again, in about 20 minutes. If swiftc says the SDK isn't supported, set `SDKROOT` to one that matches the compiler, as the repository's build notes say.

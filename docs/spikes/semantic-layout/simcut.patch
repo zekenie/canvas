@@ -1,0 +1,62 @@
+--- a/lib/cut.mjs	2026-11-10 10:43:37
++++ b/lib/cut.mjs	2026-11-10 10:34:33
+@@ -1,3 +1,4 @@
++import fs from 'fs';
+ // The cut: which of a board's links become reference pills, so that the rest can be drawn with no arrow crossing another and none over a
+ // shape (the plan, docs/plans/board-layout). No knob trades crossings for pills: the fewest cuts that make the board clean, as found.
+ //   1. Planar first. Each container's links among its children (each of the board's links lifted to the container that holds both its
+@@ -52,6 +53,14 @@
+   return most;
+ }
+ const keyOf = (e) => e.from + SEP + e.to;
++let simCutCache;
++/** The spike: the links the background simulation broke (SIM_CUT, a JSON file of [from, to]), by key; null without it. */
++export function simCutKeys() {
++  if (simCutCache !== undefined) return simCutCache;
++  const f = process.env.SIM_CUT;
++  if (!f) return (simCutCache = null);
++  return (simCutCache = new Set(JSON.parse(fs.readFileSync(f, 'utf8')).map(([a, b]) => a + SEP + b)));
++}
+ /** Whether a link may be a pill: not marked direct (nor at a frame), and into a shape a pill may stand for. */
+ export const cuttable = (model, e) => !e.direct && !model.node(e.to).never;
+ 
+@@ -82,6 +91,20 @@
+       for (const p of drop) for (const e of p.edges) cut.add(keyOf(e));
+       pairs = pairs.filter((p) => !dropped.has(p));
+     }
++    // the spike: SIM_CUT, a file of the links the background simulation broke ([from, to] each), every one a pill before anything is drawn;
++    // a pair keeps the rest of its links, and goes when none is left
++    const simCut = simCutKeys();
++    if (simCut) {
++      pairs = pairs.filter((p) => {
++        if (p.kept) return true;
++        const out = p.edges.filter((e) => simCut.has(keyOf(e)));
++        if (!out.length) return true;
++        for (const e of out) cut.add(keyOf(e));
++        p.edges = p.edges.filter((e) => !simCut.has(keyOf(e)));
++        p.w = p.edges.reduce((s, e) => s + e.weight, 0);
++        return p.edges.length > 0;
++      });
++    }
+     const index = new Map(kids.map((t, i) => [t, i]));
+     const degree = new Map();
+     for (const p of pairs) for (const t of [p.a, p.b]) degree.set(t, (degree.get(t) || 0) + 1);
+--- a/lib/restore.mjs	2026-11-10 10:43:37
++++ b/lib/restore.mjs	2026-11-10 10:34:48
+@@ -14,6 +14,7 @@
+ import { repack } from './share.mjs';
+ import { holdsShapes } from './model.mjs';
+ import { byTitle } from './util.mjs';
++import { simCutKeys } from './cut.mjs';
+ 
+ const SEP = '\u0000';
+ const SWEEPS = 2, MENDS = 6;
+@@ -75,6 +76,8 @@
+       if (e.cross || e.direct || node.never || holdsShapes(node) || pill == null || !layout.boxes.has(e.to) || through.has(u + SEP + e.to)) continue;
+       // the spike: with SEM_KEEPCUT, a link cut by meaning (under the SEM_PRECUT weight) is not put back
+       if (process.env.SEM_KEEPCUT && +process.env.SEM_PRECUT > 0 && e.weight < +process.env.SEM_PRECUT) continue;
++      // the spike: with SIM_KEEPCUT, a link the background simulation broke is not put back
++      if (process.env.SIM_KEEPCUT && simCutKeys()?.has(u + SEP + e.to)) continue;
+       const a = layout.boxes.get(u), b = layout.boxes.get(e.to);
+       out.push({ u, e, pill, d: len(a.x + a.w / 2 - b.x - b.w / 2, a.y + a.h / 2 - b.y - b.h / 2) });
+     }

@@ -3,7 +3,7 @@
 # DIGEST_TOOL is the layout branch's canvas-digest tool, the folder that holds main.js and lib/ (commit 4bc3494e of
 # claude/canvas-layout-strategy-f81c7d), for instance:
 #   git worktree add /tmp/slice4 4bc3494e && DIGEST_TOOL=/tmp/slice4/.claude/skills/canvas-digest/tool sh reproduce.sh
-# Needs macOS 14 or later (NaturalLanguage's contextual embedding), node, swiftc and git. Takes about 15 minutes.
+# Needs macOS 14 or later (NaturalLanguage's contextual embedding), node, swiftc and git. Takes about 20 minutes.
 set -eu
 cd "$(dirname "$0")"
 : "${DIGEST_TOOL:?set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)}"
@@ -142,3 +142,38 @@ build/stitch build/pictures/variants.jpg 3 "$@"
 set --
 for s in 1.5 2 3 5; do pan out/s-sel-$s module:Selection k$s "as stated, threshold $s"; set -- "$@" build/pictures/k$s.svg.png; done
 build/stitch build/pictures/threshold.jpg 4 "$@"
+
+echo '== a simulation in the background decides what breaks (background.mjs), against similarity cutting as many links on each board'
+for s in 0.5 1 1.5; do node background.mjs --boards=$J --auc=1 --snap=$s --line='load against strength'; done
+for s in 0.1 0.2 0.3 0.5; do node background.mjs --physics=crowding --boards=$J --auc=1 --snap=$s --line='crowding only'; done
+for l in 0.5 2; do for s in 0.5 1; do node background.mjs --physics=meaning --lambda=$l --boards=$J --auc=1 --snap=$s --line="meaning moves the notes, $l"; done; done
+for s in 1 0.5; do printf 'threshold %s: ' $s; node background.mjs --snap=$s --auc=1 --bands=1 | tail -1; done
+echo '== its cuts, and the controls, drawn by the layout branch engine (engine.patch and simcut.patch: a cut given before layout, kept)'
+rm -rf build/simtool && cp -R "$DIGEST_TOOL" build/simtool && (cd build/simtool && patch -p1 -s < ../../engine.patch && patch -p1 -s < ../../simcut.patch)
+for c in "sim1:--snap=1" "sim05:--snap=0.5" "same05:--snap=0.5 --emit=same" "frac66:--snap=0.5 --emit=frac --frac=0.66" "half:--emit=half" \
+  "judges:--emit=judges" "simjudges:--emit=simjudges" "chips:--emit=chips" "simchips:--emit=simchips"; do
+  n=${c%%:*}; a=${c#*:}
+  node background.mjs $a --out=out/bg-$n > /dev/null
+done
+for n in sim1 sim05 same05 frac66 half; do (SIM_CUT=out/bg-$n/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-$n/graph.json out/e-$n) & done; wait
+for n in judges simjudges chips simchips; do (SIM_CUT=out/bg-$n/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-$n/graph.json out/e-$n) & done
+(SIM_CUT=out/bg-sim05/cut.json plan build/simtool out/bg-sim05/graph.json out/e-sim05-back) &
+wait
+node engine-eval.mjs main out-main/drawing.json
+node engine-eval.mjs 'layout branch' out-branch/drawing.json
+for v in "sim1=the simulation, threshold 1" "sim05=the simulation, threshold 0.5" "same05=similarity, its counts (0.5)" "frac66=similarity, a flat two-thirds" \
+  "half=similarity, a flat half" "judges=the judges' cut" "simjudges=similarity, the judges' counts" "chips=both judges' chips" "simchips=similarity, the chips' counts"; do
+  n=${v%%=*}; node engine-eval.mjs "${v#*=}" out/e-$n/drawing.json out/bg-$n/cut.json
+done
+node engine-eval.mjs 'the simulation 0.5, put back' out/e-sim05-back/drawing.json out/bg-sim05/cut.json
+node hubs.mjs Selection out/bg-sim05/stats.json branch=out-branch/drawing.json simulation=out/e-sim05/drawing.json similarity=out/e-same05/drawing.json
+echo '== pictures of the background simulation (build/pictures)'
+set --
+for b in Selection Mentions; do
+  pan out-branch module:$b bg-branch-$b "$b: the layout branch"
+  pan out/e-sim05 module:$b bg-sim-$b "$b: the background simulation decides"
+  pan out/e-same05 module:$b bg-same-$b "$b: similarity, at the simulation's count"
+  pan out/e-judges module:$b bg-judges-$b "$b: the judges' cut"
+  set -- "$@" build/pictures/bg-branch-$b.svg.png build/pictures/bg-sim-$b.svg.png build/pictures/bg-same-$b.svg.png build/pictures/bg-judges-$b.svg.png
+done
+build/stitch build/pictures/background.jpg 4 "$@"
