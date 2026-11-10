@@ -155,6 +155,16 @@ private let ledgers = Contributor(id: "ledgers") { registrar in
         b.h.editor.transact { $0.delete([b.ledger]) }
         expectEqual(b.h.state(of: pill), .missing(label: "POST /refunds"))
     },
+    // A row has no box of its own, as an arrow has none: its pill isn't expanded into a mirror of the whole shape.
+    test("Expand is dimmed for a pill for a row, its shape there or its row gone; a pill for the shape as a whole expands") {
+        let b = try Books()
+        let pill = b.pill(for: b.refund.id, label: "POST /refunds")
+        let whole = b.h.addReference(to: b.ledger, label: "Stripe API", at: CGPoint(x: 600, y: 300))
+        expect(!b.h.editor.canPerform(.expandReference, on: [pill]), "a row's pill")
+        expect(b.h.editor.canPerform(.expandReference, on: [whole]), "the shape's pill")
+        b.h.editor.transact { $0.update(b.ledger, as: Ledger.self) { $0.props.rows = [b.charge] } }
+        expect(!b.h.editor.canPerform(.expandReference, on: [pill]), "a gone row's pill")
+    },
     test("it says its shape's place over the row's name, its shape last: Stripe API on the same board; drawn in two lines") {
         let b = try Books()
         let pill = b.pill(for: b.refund.id, label: "POST /refunds")

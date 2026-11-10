@@ -204,11 +204,13 @@ extension ReferenceState {
     /// The shape a reference with these props would show as a mirror: what it stands for while that is one shape there,
     /// public and named, with a box, on a board the app can show (a direct one's shape; a first-match query's first match,
     /// as answered); nil for an empty one, words, a query for every match, one that stands for nothing, and one whose
-    /// original has no box to draw in a body (an arrow). The answer is read without observing it: a render and a layout
-    /// ask it.
+    /// original has no box to draw in a body (an arrow, and a row: a pill for a row, `ReferenceTarget.row`, stands for the row,
+    /// not its shape, so it stays a pill, and is never a mirror of the whole shape, nor of one whose row is gone). The answer
+    /// is read without observing it: a render and a layout ask it.
     func mirrorOriginal(of props: Reference, id: ShapeID) -> ShapeID? {
         let original: ShapeID
         if let target = props.target {
+            guard target.row == nil else { return nil }
             original = target.id
         } else if props.query != nil, !props.all, case .answered(let matches)? = answer(of: id), matches.count > 0, let first = matches.ids.first {
             original = first

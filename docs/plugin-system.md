@@ -12558,7 +12558,8 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   a layout input References provides, the original's laid-out size (`MirrorLayout.original`), and says again
   (`shapesDidChangeLayout`) whenever that may change with no commit to the mirror: a commit to the original on any
   board, the original laid out again (`EditorService.shapesDidChangeLayout`), a first match's answer. It shows a direct
-  reference's shape, or a first-match query's first match, while that's there, public and has a box; otherwise it is
+  reference's shape, or a first-match query's first match, while that's there, public and has a box (a pill for a row
+  stands for the row, which has none, so it stays a pill); otherwise it is
   laid out and drawn as its pill (a deleted original's dashed pill), and Expand (the menu's item right under Go to
   Original, `/expand`, the Shape menu; a step, "Expand Reference", its scale the original's own or less, to fit 480 by
   360) is dimmed. Collapse takes the body away. A double-click on the body opens what's there
