@@ -58,8 +58,8 @@ public class LineRowsView: NSView {
     public internal(set) var titleField: TitleField?
     /// Where the caret is.
     public internal(set) var focus: LineStop = .waiting
-    /// The clip the field slides in.
-    let clip = NSView()
+    /// The clip the field slides in: flipped, as the view is, so the field is placed down from the line's top by its baseline.
+    let clip = FlippedClip()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -368,7 +368,10 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let (lineHeight, height) = style.fieldHeight
         let chipInset = NSSize(width: lead, height: (height - lineHeight) / 2)
         if field.textContainerInset != chipInset { field.textContainerInset = chipInset }
-        let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(),
+        // Its baseline where the kind sets the row's text at rest: the font's middle (half its ascender over its descender) on the
+        // row's middle, so nothing moves as the caret comes onto a row or leaves it (UX walk 5 connect-7: a line 1 point high).
+        let resting = line.height / 2 + (style.font.ascender + style.font.descender) / 2
+        let fieldFrame = CGRect(x: -slide, y: resting - field.firstBaseline(else: style.font),
                                 width: max(textWidth + LineFieldStyle.textSlack + 2 * lead, clipFrame.width + slide), height: height)
         if field.frame != fieldFrame { field.frame = fieldFrame }
         keepCaretInClip()
@@ -1413,4 +1416,9 @@ enum LineRowsStyle {
         let slanted = NSFontManager.shared.convert(style.font, toHaveTrait: .italicFontMask)
         return [.font: slanted, .foregroundColor: style.secondaryInk]
     }
+}
+
+/// The clip a line's field slides in, flipped as the rows' view is: the field's frame is down from the line's top.
+final class FlippedClip: NSView {
+    override var isFlipped: Bool { true }
 }

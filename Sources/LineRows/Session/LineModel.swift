@@ -63,11 +63,11 @@ public protocol LineModel {
     /// The widest the shape is laid out while a line typed in it is wider than it is (world units), past which the line
     /// slides in its field; nil, by default, for no limit.
     var widestLine: CGFloat? { get }
-    /// How wide the shape is drawn for every row of `props` to read whole at rest (world units: a column's type, an endpoint's
-    /// path), at most what the kind lets a row widen it to; nil, by default, for a kind whose rows never widen it. A commit
-    /// that leaves the shape narrower writes this width in the same step (`widening`), so the shape doesn't jump narrower as
-    /// the caret leaves a line and what was typed reads whole.
-    func wholeWidth(of props: Props, in editor: CanvasEditor) -> CGFloat?
+    /// How wide `shape` is drawn for every row of it to read whole at rest (world units: a column's type, an endpoint's
+    /// path), and whatever else of it the kind keeps whole (an enum's name in its pill), at most what the kind lets a row widen
+    /// it to; nil, by default, for a kind whose rows never widen it. A commit that leaves the shape narrower writes this width in
+    /// the same step (`widening`), so the shape doesn't jump narrower as the caret leaves a line and what was typed reads whole.
+    func wholeWidth(of shape: ShapeRecord<Props>, in editor: CanvasEditor) -> CGFloat?
     /// A row's card, ⌘↓ in its line: what more it holds than the line says (a column's on delete), a line each. Nil, by
     /// default, for a row with nothing more (an enum's value): ⌘↓ does nothing there.
     func card(of row: Row, in context: LineContext) -> LineCard<Row>?
@@ -140,12 +140,12 @@ extension LineModel {
     public func isHeader(_ row: Row) -> Bool { false }
     public func peeks(_ row: Row, at index: Int, of rows: [Row], hitAt ranges: [Range<Int>]) -> Bool { true }
     public var widestLine: CGFloat? { nil }
-    public func wholeWidth(of props: Props, in editor: CanvasEditor) -> CGFloat? { nil }
+    public func wholeWidth(of shape: ShapeRecord<Props>, in editor: CanvasEditor) -> CGFloat? { nil }
 
     /// `record` as wide as its rows read whole at rest (`wholeWidth`, no wider than `widestLine`), where it's narrower: nil where
     /// it's wide enough, or isn't of the kind. Only ever wider: a shape the person widened keeps its width.
     func widening(_ record: AnyShapeRecord, in editor: CanvasEditor) -> AnyShapeRecord? {
-        guard let shape = record.typed(as: Props.self), let box = record.box, var whole = wholeWidth(of: shape.props, in: editor) else { return nil }
+        guard let shape = record.typed(as: Props.self), let box = record.box, var whole = wholeWidth(of: shape, in: editor) else { return nil }
         if let widest = widestLine { whole = min(whole, max(widest, box.width)) }
         whole = whole.rounded(.up)
         guard whole > box.width else { return nil }

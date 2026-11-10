@@ -133,7 +133,8 @@ extension CanvasEditor {
     /// Pans the camera at once, by as little as it takes, so `rect` (world units from the shape's
     /// editing frame's origin: an editing view's coordinates) is in the part of the view the host leaves
     /// clear (`clearView`: out of the minimap's corner too), `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
-    /// corner in view. See `EditContext.keepInView`.
+    /// corner in view. See `EditContext.keepInView`. A rect wholly in the clear view already is not moved the margin in by a pan
+    /// of less than `Style.leastKeepInViewPan`: nothing it shows was out of sight, and a nudge of a few points moves the board.
     ///
     /// While the camera glides (a reveal of the shape just put down), it is judged where the camera is headed: in view
     /// there, the glide goes on; otherwise the glide is sent on to where it is, never stopped where it is now, short of
@@ -143,9 +144,14 @@ extension CanvasEditor {
         let view = clearView.insetBy(Style.keepInViewMargin)
         guard view.rect.width > 0, view.rect.height > 0 else { return }
         let world = rect.offsetBy(dx: box.minX, dy: box.minY)
+        func needed(_ delta: CGSize, at camera: Camera) -> Bool {
+            guard delta != .zero else { return false }
+            let least = Style.leastKeepInViewPan
+            return !(abs(delta.width) < least && abs(delta.height) < least && clearView.contains(camera.toView(world)))
+        }
         if let headed = cameraAnimationTarget {
             let delta = view.shift(bringing: headed.toView(world))
-            guard delta != .zero else { return }
+            guard needed(delta, at: headed) else { return }
             var target = headed
             target.pan(by: delta)
             // What a reveal keeps while the view settles goes on to be kept from where the glide now goes.
@@ -154,7 +160,7 @@ extension CanvasEditor {
             return
         }
         let delta = view.shift(bringing: camera.toView(world))
-        guard delta != .zero else { return }
+        guard needed(delta, at: camera) else { return }
         camera.pan(by: delta)
     }
 

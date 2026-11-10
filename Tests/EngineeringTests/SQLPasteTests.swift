@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -56,6 +57,14 @@ private let paymentsSQL = """
     """
 
 @MainActor let sqlPasteTests = Suite("SQL put down by names", [
+    test("a pasted enum is as wide as its name reads in its pill down to 50%, as its values (UX walk 5 paste-5-1: 'payment_meth...' at the fit zoom)") {
+        let h = try pasteHarness()
+        let landed = try paste("CREATE TYPE payment_method AS ENUM ('card', 'cash', 'bank_transfer');", in: h)
+        let methods = try require(landed.compactMap { h.editor.document[$0] }.first { $0.kind == DatabaseEnum.kind })
+        let pill = h.editor.adornmentLeastWidth(of: methods)
+        let width = try require(methods.box).width
+        expect(pill > 0 && width * KitStyle.roomKeptZoom >= pill - 0.5, "the name reads whole at 50%: \(width), the pill \(pill)")
+    },
     test("T1 panel 4: payments lands beside orders, its columns as SQL says them, a new table; its key to orders.id in the program, re-aiming the column's key; one step") {
         let h = try pasteHarness()
         let orders = h.add(orders(), titled: "orders")

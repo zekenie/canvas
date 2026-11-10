@@ -283,7 +283,48 @@ private let grouped = ["GET /health", "/users", "GET /{id}", "/orders", "GET /{i
         }
         b.press(.escape)
     },
+    test("the line with the caret sits at its resting height: its baseline where the row's text is drawn at rest, an endpoint's path, a column's name and an enum's value (UX walk 5, connect-7)") {
+        let b = try KitBench()
+        let api = b.api("orders API", ["GET /orders/{id}", "POST /orders/{id}/refunds"])
+        let table = b.table("orders", ["id uuid pk", "customer_id uuid"], at: CGPoint(x: 100, y: 400))
+        let values = b.enumType("status", ["pending", "paid"], at: CGPoint(x: 500, y: 400))
+        for (shape, font) in [(api, KitStyle.codeFont), (table, KitStyle.nameFont), (values, KitStyle.valueFont)] {
+            b.begin(shape)
+            b.press(.up)
+            let view = try require(b.view)
+            let field = b.field
+            let line = try require(view.rect(of: view.focus))
+            // At rest a row's text is set with its middle (half its ascender over its descender) on the row's middle.
+            let rest = line.midY + (font.ascender + font.descender) / 2
+            let typed = try require(baseline(of: field, in: view))
+            expect(abs(typed - rest) < 0.25, "\(font.fontName): the line's baseline \(typed), at rest \(rest)")
+            if shape == api {
+                // The method's chip, drawn round its word, is centered on the row as the chip at rest is.
+                let chip = try require(field.highlights.first { $0.range.location == 0 })
+                let frame = try require(field.frames(of: chip).first)
+                let middle = field.convert(frame, to: view).midY
+                expect(abs(middle - line.midY) < 0.75, "the chip's middle \(middle), the row's \(line.midY)")
+            }
+            b.press(.escape)
+            b.press(.escape)
+        }
+    },
 ])
+
+/// Where the first line of `field` sets its baseline, in `view`'s units (TextKit 2's first line fragment).
+@MainActor private func baseline(of field: LineField, in view: NSView) -> CGFloat? {
+    guard let layout = field.textLayoutManager else { return nil }
+    layout.ensureLayout(for: layout.documentRange)
+    var y: CGFloat?
+    layout.enumerateTextLayoutFragments(from: layout.documentRange.location, options: [.ensuresLayout]) { fragment in
+        if let first = fragment.textLineFragments.first {
+            y = fragment.layoutFragmentFrame.minY + first.typographicBounds.minY + first.glyphOrigin.y
+        }
+        return false
+    }
+    guard let y else { return nil }
+    return field.convert(CGPoint(x: 0, y: y + field.textContainerOrigin.y), to: view).y
+}
 
 /// The API's look constants the test reads.
 @MainActor enum APIStyleTest {

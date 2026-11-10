@@ -253,7 +253,7 @@ struct APILines: LineModel {
     var headerNoun: LineNoun? { LineNoun("path prefix", plural: "path prefixes") }
     /// As wide as every row's path and pills read whole at rest (`APIDrawing.wholeWidth`, as a pasted API is made): a commit
     /// widens it so.
-    func wholeWidth(of props: API, in editor: CanvasEditor) -> CGFloat? { APIDrawing.wholeWidth(of: props.endpoints) }
+    func wholeWidth(of shape: ShapeRecord<API>, in editor: CanvasEditor) -> CGFloat? { APIDrawing.wholeWidth(of: shape.props.endpoints) }
     var style: LineStyle { APILooks.line }
     func rows(of props: API) -> [APIRow] { props.endpoints }
     func setRows(_ rows: [APIRow], in props: inout API) { props.endpoints = rows }

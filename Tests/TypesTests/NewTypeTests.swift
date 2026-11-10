@@ -260,6 +260,33 @@ private struct NewChitsPlugin: CanvasPlugin {
         expectEqual(editor.cameraTarget.zoom, 1, "a pan, not a zoom")
         expectEqual(editor.selectedShapeIDs, [], "settled: nothing selected")
     },
+    test("a type made settled with the view full goes where the pan to it takes nothing it is kept with out of view: a type the same line names stays in view (UX walk 5 apis-5-1)") {
+        let editor = try typeEditor()
+        editor.viewportDidResize(to: CGSize(width: 1200, height: 700))
+        let height = memo().frame.height
+        // Memos ten apart over the whole view and past it; what it's made for in the middle, and a type its line names low in view,
+        // which a pan down to a spot above the middle (the nearest) would take out of view.
+        var grid: [[ShapeID]] = []
+        for column in 0..<6 {
+            grid.append([])
+            for row in 0..<Int((900 / (height + 10)).rounded(.up)) {
+                grid[column].append(editor.add(memo("m", at: CGPoint(x: -60 + CGFloat(column) * 250, y: -60 + CGFloat(row) * (height + 10)))))
+            }
+        }
+        let view = { editor.cameraTarget.toWorld(editor.unobscuredViewport) }
+        let before = view()
+        let api = grid[2][3]
+        let named = try require(grid[1].last { id in editor.document[id]?.box.map { before.contains($0) } ?? false })
+        @MainActor func shown(_ id: ShapeID) throws -> Bool { view().contains(try require(editor.document[id]?.box)) }
+        expect(try shown(named), "the named type is in view to begin with")
+        let made = try require(editor.newType(named: "Refund", besides: [named], givingType: false, editing: false, keeping: [api, named]))
+        let box = try require(editor.document[made]?.box)
+        expect(!before.contains(box), "nowhere clear in view: landed where it could, \(box)")
+        expect(view().contains(box), "brought into view: \(box) in \(view())")
+        expect(try shown(api), "what it was made for kept in view")
+        expect(try shown(named), "the type the line names kept in view")
+        expectEqual(editor.cameraTarget.zoom, 1, "a pan, not a zoom")
+    },
     test("a type's chip by its id, for another plugin: its name now in its color; a shape that is no type, or none, the words in a dashed pill") {
         let editor = try typeEditor()
         let ann = editor.add(memo("Ann"))

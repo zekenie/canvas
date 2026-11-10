@@ -299,6 +299,14 @@ public struct Surroundings {
         return Landing(board: reading.board, rect: best.rect, above: best.zones + (held == nil ? [] : [holder].compactMap { $0 }))
     }
 
+    /// The rects of the shapes in the view the board is read with (`reading.view`, world units) joined to `ids` by an edge
+    /// Topology knows, either way, or holding one of them: what a pan for a shape put down for a person working with `ids` may
+    /// not take away (UX walk 3 tables-1, walk 5 apis-5-1). None with no view, or without Topology.
+    public func joinedInView(to ids: [ShapeID]) -> [CGRect] {
+        guard let view = reading.view else { return [] }
+        return joined(to: ids, in: view)
+    }
+
     /// The rects of the shapes in `view` (world units) joined to `ids` by an edge Topology knows, either way, or holding one of
     /// them: what a person working with `ids` keeps in view as a shape is put down beside them. None without Topology.
     private func joined(to ids: [ShapeID], in view: CGRect) -> [CGRect] {

@@ -169,6 +169,22 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         set {}
     }
 
+    /// How far down from its top the field sets its line's baseline (its text container's origin and TextKit 2's first line, as
+    /// it lays the line out, whole points); for a line with nothing laid out, `font`'s ascender rounded up, as TextKit sets it.
+    /// What the session places the field by, so the line sits where the row's text is drawn at rest (UX walk 5 connect-7).
+    func firstBaseline(else font: NSFont) -> CGFloat {
+        let origin = textContainerOrigin.y
+        guard let layout = textLayoutManager else { return origin + ceil(font.ascender) }
+        var found: CGFloat?
+        layout.enumerateTextLayoutFragments(from: layout.documentRange.location, options: [.ensuresLayout]) { fragment in
+            if let line = fragment.textLineFragments.first {
+                found = fragment.layoutFragmentFrame.minY + line.typographicBounds.minY + line.glyphOrigin.y
+            }
+            return false
+        }
+        return origin + (found ?? ceil(font.ascender))
+    }
+
     // MARK: The text
 
     /// Shows `line`, its references carried, the caret at `caret` (UTF-16; nil: the end); its undo forgotten.

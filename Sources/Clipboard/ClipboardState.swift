@@ -437,8 +437,9 @@ final class ClipboardState {
         let touched = made + changed, shown = touched.isEmpty ? landed : touched
         let inside = Set(shown)
         editor.selectedShapeIDs = shown.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
-        // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone.
-        if case .beside(let ids) = site { editor.revealIfOffscreen(shown, keeping: ids) } else { editor.revealIfOffscreen(shown) }
+        // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone, unless the
+        // view is so far out it lands as a sketch: then the view zooms in to fit it, no closer than 100%.
+        if case .beside(let ids) = site { editor.revealIfOffscreen(shown, keeping: ids, zoomingIn: true) } else { editor.revealIfOffscreen(shown, zoomingIn: true) }
         guard !touched.isEmpty || editor.revision != before else {
             editor.announce(ClipboardStyle.nothingChanged, priority: .low)
             return

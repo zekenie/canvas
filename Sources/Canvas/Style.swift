@@ -180,6 +180,10 @@ public enum Style {
     /// How far in from the edges of the view (view points) an editing view's caret is kept
     /// (`EditContext.keepInView`).
     static let keepInViewMargin: CGFloat = 16
+    /// The least pan (view points, either way) that brings what an editing view keeps in view the margin in from the edges when
+    /// all of it is in the clear view already: a few points move every shape on the board and show nothing the person can't see
+    /// (UX walk 5 firstminute-5-2: a key's pick widened its line 4 points into the margin, and the board jumped 4 points).
+    static let leastKeepInViewPan: CGFloat = 8
     static let edgeScrollDistance: CGFloat = 8
     /// How long the pointer stays there before it scrolls, and then how long the speed eases in.
     static let edgeScrollDelay: CGFloat = 200

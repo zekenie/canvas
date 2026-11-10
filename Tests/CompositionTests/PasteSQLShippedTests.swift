@@ -291,6 +291,35 @@ private let payments = """
         let bounds = try require(editor.shapeContext.bounds(of: landed))
         expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(bounds), "all of it in view")
     },
+    test("a schema pasted with the view so far out it draws skeletons zooms in to fit it, no closer than 100%; one at a readable zoom never zooms in (UX walk 5 paste-5-2)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        // An undo of a paste as a note left the view at 10%.
+        editor.camera = Camera(origin: editor.camera.origin, zoom: 0.1)
+        expect(editor.drawsSkeletons)
+        let schema = (1...4).map { "CREATE TABLE t\($0) (id int PRIMARY KEY, name text);" }
+        pasteboardHolds(schema.joined(separator: "\n") + "\nCREATE TYPE payment_method AS ENUM ('card', 'cash');")
+        expect(commandV(w))
+        let landed = editor.selectedShapeIDs
+        expectEqual(landed.count, 5)
+        let zoom = editor.cameraTarget.zoom
+        expect(zoom > 0.35 && zoom <= 1, "zoomed in to read it: \(zoom)")
+        let bounds = try require(editor.shapeContext.bounds(of: landed))
+        expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(bounds), "all of it in view")
+        // At 100% one small paste fits as it is and stays at 100%; at 60% a paste in view leaves the zoom.
+        pasteboardHolds("CREATE TABLE lone (id int PRIMARY KEY);")
+        editor.camera = Camera(origin: editor.camera.origin, zoom: 0.6)
+        let camera = editor.cameraTarget
+        expect(commandV(w))
+        expectEqual(editor.cameraTarget.zoom, camera.zoom, "readable already: the zoom stays")
+        // One table pasted at 10% comes in at 100%, never closer.
+        pasteboardHolds("CREATE TABLE tiny (id int PRIMARY KEY);")
+        editor.camera = Camera(origin: editor.camera.origin, zoom: 0.1)
+        expect(commandV(w))
+        expectEqual(editor.cameraTarget.zoom, 1, "no closer than 100%")
+    },
     test("paste 04: pasted again, only what changed is said and selected; pasted again as it is, \"Nothing changed\", no step, all it found selected") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

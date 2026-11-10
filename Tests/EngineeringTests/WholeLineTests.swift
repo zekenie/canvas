@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -182,6 +183,30 @@ extension KitBench {
         b.press(.return)
         expectEqual(width(), whole)
         b.press(.escape)
+    },
+    test("an enum is as wide as its name reads in its pill down to 50%: a commit of its values widens it so, never narrower (UX walk 5 paste-5-1)") {
+        let b = try KitBench()
+        let methods = b.enumType("payment_method", ["card"])
+        let record = { try require(b.editor.document[methods]) }
+        // The name's pill at 100%, view points; at a zoom z the enum is z × its width on screen, and the pill is cut past that.
+        let pill = b.editor.adornmentLeastWidth(of: try record())
+        expect(pill > 0, "the pill is measured")
+        let initial = try require(record().box).width
+        expect(initial * KitStyle.roomKeptZoom < pill, "a new enum's 220 cuts the name at 50%: \(initial), the pill \(pill)")
+        b.begin(methods)
+        b.type("cash")
+        b.press(.return)
+        b.press(.escape)
+        let whole = try require(record().box).width
+        expect(whole * KitStyle.roomKeptZoom >= pill - 0.5, "the name reads whole at 50%: \(whole), the pill \(pill)")
+        expectEqual(b.undoName, "Add Value", "in the value's step")
+        // A short name leaves the width to its values, a new enum's at least.
+        let status = b.enumType("status", ["new"], at: CGPoint(x: 100, y: 500))
+        b.begin(status)
+        b.type("old")
+        b.press(.return)
+        b.press(.escape)
+        expectEqual(b.editor.document[status]?.box?.width, 220)
     },
     test("only a line's first → is a key's: its target in the pill, a later → and its target plain; a first that names no table leaves none") {
         let b = try KitBench()

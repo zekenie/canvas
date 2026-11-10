@@ -2514,7 +2514,9 @@ taking the nearest it covers. An endpoint is written `METHOD /path/{param} [(Bod
 pill, live, dashed while it names none; "New type Problem", last in the caret list and highlighted while no type is called
 or starts so (`LineOffer.action(_:_:isDefault:)`), makes the note through Types,
 which puts it down settled (`Placement.settled()`) and makes nothing an instance of it (with the view full, at the clear
-spot nearest the row its card hangs from, the view panned the least to it, the API or that row kept in view). Words written before their type was made are bound
+spot whose pan into view takes nothing the person works with out of it, the nearest the row its card hangs from or the API,
+the view panned the least to it, the API and the types the line names kept in view where they fit, else the API, else that
+row). Words written before their type was made are bound
 at rest, a name of several words is quoted after a status:
 
 ```swift
@@ -2584,7 +2586,8 @@ stay and so do the keys bound to them; a new column goes after the column pasted
 statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `→` is; one whose table or row is found
 nowhere is left out (a key the column had stays), and the paste lands anyway. The reading holds only the text: a key to a
 table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
-brought into it, and VoiceOver hears what was made and what changed (a paste again as it was: "Nothing changed", no step);
+brought into it, one pasted with the view so far out it draws skeletons is zoomed in to (no closer than 100%), an enum is made
+as wide as its name reads in its pill at 50%, and VoiceOver hears what was made and what changed (a paste again as it was: "Nothing changed", no step);
 SQL that reads as nothing says "Nothing to paste". The reader orders what it puts by the keys (enums on rows of their own,
 then the tables from the one most keys name, each after the one it keys to most, put in a grid four columns wide where each
 lands beside, above, below or corner to corner with the tables it keys to: `ReaderLayout.grid`, `DrawPut(grid:)`), and makes
@@ -2656,8 +2659,10 @@ line, ⇧↩ puts a shape beside, Home and End go to the first and last row. A r
 keyboard on the waiting line (VoiceOver told: "Entry removed"); the line's words, if the person had changed it, stay there as a draft written only as
 the caret leaves, and an untouched line is emptied, so leaving never puts back what was taken. A line typed wider than the shape lays it out as wide as the line needs
 (`LineRowsLayout.width`, provided), nothing written; a kind that says how wide its rows read whole at rest
-(`wholeWidth(of:in:)`) has a commit that leaves it narrower write that width in the same step, so the shape
-keeps it as the caret leaves. While it is laid out wider or taller than it stores, the core paints and hits the shape edited
+(`wholeWidth(of:in:)`, asked of the shape's record: an enum keeps its name whole in its pill too) has a commit that leaves it
+narrower write that width in the same step, so the shape keeps it as the caret leaves. The line's field is placed so its
+baseline is where the kind sets the row's text at rest (the style's font's middle on the row's middle), so nothing moves as
+the caret comes onto a row. While it is laid out wider or taller than it stores, the core paints and hits the shape edited
 above what it overlaps and no other shape's pill is drawn in its room, so a shape beside it never covers its rows. [line rows](../.claude/rules/line-rows.md) is
 the whole of it.
 
@@ -3394,8 +3399,11 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
   selection just made counted before it slides in (`unobscuredViewport` as the chrome is headed): it pans
   by as little as brings the shapes in, 40 points from the edges, at the zoom it has, never centering them,
   so what was beside them stays in view (`keeping:` a shape to keep in view with them when both fit: the
-  one Insert put the new shape beside; `orKeeping:` a rect to keep where that doesn't fit, the row a card hangs from, as a
-  type made from an endpoint's card with the view full is revealed); farther out only where they do not fit, never closer. One in view
+  one Insert put the new shape beside; `orKeeping:` a rect to keep where that doesn't fit, the row a card hangs from;
+  `revealIfOffscreen(_:keepingFirstOf:)` the first of several that fits, as a type made from an endpoint's line or card with
+  the view full is revealed, and `revealTakesAway(_:bringing:keepingFirstOf:)` what that pan would take out of view, for a
+  caller ranking spots); farther out only where they do not fit, never closer, but with `zoomingIn` (a paste) from a view
+  so far out it draws skeletons, zoomed in to fit them, no closer than 100%. One in view
   leaves it alone. Escape and ⌘↑ to a group or a container move nothing while any of it is in view, and
   otherwise pan to it, never zooming out (`revealEnclosure`).
 - **For a plugin.** `editor.shape(.next, from: id, among: { record in … })` (`.previous` too) is the
@@ -15034,7 +15042,9 @@ open (a placement's "Add ...") keeps the action's name.
 frame at their origin, which `frame` says) into the part of the canvas the host leaves clear, 16 points in from its edges,
 panning the camera at once by as little as it takes, with no zoom and no undo step: the canvas
 scrolls no text of its own, so a note's editor keeps its caret in view this way as the note grows
-past the window's bottom with what's typed, or an arrow key moves the caret out of view.
+past the window's bottom with what's typed, or an arrow key moves the caret out of view. A rect wholly in that part already
+is never nudged the 16 points in by a pan under 8 (`Style.leastKeepInViewPan`): a few points would move the whole board
+and show nothing that was out of sight.
 `startPoint` is where the press that began editing was, in world units, when whatever began it said
 so (`editor.beginEditing(id, at: point, clickCount:)`), and `startClickCount` how many clicks it
 was, for the view to put its selection there as a text view would (the character pressed, or the
