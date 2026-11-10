@@ -100,6 +100,8 @@ public struct EngineeringPlugin: ListedPlugin {
             type.details(header: { $type in TitleHeader($type, placeholder: EnumStyle.placeholder, systemImage: EnumStyle.symbol) }) {}
             type.accessibility { type, _ in AccessibleTraits(value: EnumStyle.accessibleRows(type.props.values.count)) }
             type.lineRows(EnumLines())
+            // A name typed in its pill, or renamed, reads whole at rest as a commit of its lines makes it (UX walk 5 paste-5-1).
+            type.keepsInStep(EnumDefinition.widenForTitle)
         }
         var placedAPI: Placement?
         registrar.shape(APIDefinition()) { api in

@@ -283,15 +283,23 @@ extension CanvasEditor {
     private func fallbackSpot(among found: Landing, _ surroundings: Surroundings, near at: CGRect, keeping: [ShapeID], owners: [ShapeID],
                               alternatives: [CGRect]) -> Landing {
         var spots = [found, surroundings.anywhere()]
-        var besides = [at]
-        for owner in owners { if let bounds = shapeContext.bounds(of: [owner]), !besides.contains(bounds) { besides.append(bounds) } }
-        for beside in besides {
-            for side in PlacingStyle.sides {
-                if let spot = surroundings.near(beside, avoiding: [beside], sides: [side]), !spots.contains(spot) { spots.append(spot) }
-            }
+        func add(_ spot: Landing?) { if let spot, !spots.contains(spot) { spots.append(spot) } }
+        // Beside a shape, never beside a part of one (the row a card hangs from): the gap is the shape's, so a spot above a row is
+        // above its shape's title row, not flush on its edge (U14-E1). `at` itself weighs only as the nearness.
+        let held = card != nil || keeping.count == 1 ? keeping.first : nil
+        let visible = surroundings.reading.view
+        var besides: [ShapeID] = held.map { [$0] } ?? []
+        // Owners out of view are left out: a spot beside one is out of view, and its pan takes more than the ones in view do.
+        for owner in owners where !besides.contains(owner) {
+            if let bounds = shapeContext.bounds(of: [owner]), visible.map(bounds.intersects) ?? true { besides.append(owner) }
         }
+        if held == nil { for side in PlacingStyle.sides { add(surroundings.near(at, avoiding: [at], sides: [side])) } }
+        for beside in besides { for side in PlacingStyle.sides { add(surroundings.near(beside, sides: [side])) } }
+        // What the person works with, each shape once: the shapes `keeping`, the owners, and what is joined to what it is kept with.
         var working = surroundings.joinedInView(to: keeping)
-        for id in keeping + owners { if let bounds = shapeContext.bounds(of: [id]) { working.append(bounds) } }
+        for id in keeping + owners {
+            if let bounds = shapeContext.bounds(of: [id]), !working.contains(bounds) { working.append(bounds) }
+        }
         // What it is kept beside first (the API, the card's shape) weighs more than all the rest: a spot whose pan takes it out of
         // view ranks under every one that keeps it.
         let first = shapeContext.bounds(of: Array(keeping.prefix(1)))

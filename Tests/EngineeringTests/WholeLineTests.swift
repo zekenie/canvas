@@ -191,8 +191,12 @@ extension KitBench {
         // The name's pill at 100%, view points; at a zoom z the enum is z × its width on screen, and the pill is cut past that.
         let pill = b.editor.adornmentLeastWidth(of: try record())
         expect(pill > 0, "the pill is measured")
+        // Put in with its name it is as wide as the name reads already (the title's rule); narrowed by hand, a new enum's 220
+        // cuts the name at 50%, and a commit of its values widens it so.
         let initial = try require(record().box).width
-        expect(initial * KitStyle.roomKeptZoom < pill, "a new enum's 220 cuts the name at 50%: \(initial), the pill \(pill)")
+        expect(initial * KitStyle.roomKeptZoom >= pill - 0.5, "put in with its name, wide enough: \(initial), the pill \(pill)")
+        b.editor.transact("Resize") { $0.update(methods) { $0.box = CGRect(x: 500, y: 100, width: 220, height: 100) } }
+        expect(220 * KitStyle.roomKeptZoom < pill, "a new enum's 220 cuts the name at 50%: the pill \(pill)")
         b.begin(methods)
         b.type("cash")
         b.press(.return)
@@ -207,6 +211,24 @@ extension KitBench {
         b.press(.return)
         b.press(.escape)
         expectEqual(b.editor.document[status]?.box?.width, 220)
+    },
+    test("an enum renamed (a name typed in its pill, /title) is as wide as the new name reads at 50%, in the rename's own step, and keeps a width it was given (U14-E3)") {
+        let b = try KitBench()
+        let methods = b.enumType("method", ["card"])
+        let fresh = try require(b.editor.document[methods]?.box).width
+        b.editor.transact("Rename") { $0.update(methods) { $0[TitleProperty.self] = "payment_method_chosen_at_checkout" } }
+        let renamed = try require(b.editor.document[methods])
+        let pill = b.editor.adornmentLeastWidth(of: renamed)
+        let width = try require(renamed.box).width
+        expect(width > fresh, "wider than a new enum's \(fresh): \(width)")
+        expect(width * KitStyle.roomKeptZoom >= pill - 0.5, "the name reads whole at 50%: \(width), the pill \(pill)")
+        expectEqual(b.undoName, "Rename")
+        b.editor.undo()
+        expectEqual(b.editor.document[methods]?.box?.width, fresh, "one step back")
+        // A shorter name leaves the width as it is.
+        b.editor.redo()
+        b.editor.transact("Rename") { $0.update(methods) { $0[TitleProperty.self] = "m" } }
+        expectEqual(b.editor.document[methods]?.box?.width, width)
     },
     test("only a line's first → is a key's: its target in the pill, a later → and its target plain; a first that names no table leaves none") {
         let b = try KitBench()

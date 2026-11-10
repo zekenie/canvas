@@ -154,8 +154,11 @@ public struct EditContext<Props: ShapeProps> {
     /// growing downward with what's typed), moving the camera at once, by as little as it takes, into
     /// the part of the view the host leaves clear, 16 points in from its edges; no zoom, and no undo
     /// step. `rect` is in the editing view's coordinates: world units, with the shape's editing frame
-    /// at their origin, as the view's bounds are. Nothing while a press is under way.
-    public func keepInView(_ rect: CGRect) { editor?.keepInView(rect, of: shapeID) }
+    /// at their origin, as the view's bounds are. Nothing while a press is under way. With `skippingNudges`, a rect already
+    /// wholly in the clear view is left where it is when the pan would be under `Style.leastKeepInViewPan`: for what a
+    /// pick or a step to another line changes at once, which a few points of pan would only move the board for; never for a
+    /// caret typed toward the edge, which is followed by each character.
+    public func keepInView(_ rect: CGRect, skippingNudges: Bool = false) { editor?.keepInView(rect, of: shapeID, skippingNudges: skippingNudges) }
 
     /// The pointer is on part of the view that has a popover (its anchor in the view's coordinates,
     /// as `keepInView`'s rect is), or on nothing that has one (nil), as `editor.hoverPopover` hears

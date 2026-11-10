@@ -373,7 +373,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let resting = line.height / 2 + (style.font.ascender + style.font.descender) / 2
         let fieldFrame = CGRect(x: -slide, y: resting - field.firstBaseline(else: style.font),
                                 width: max(textWidth + LineFieldStyle.textSlack + 2 * lead, clipFrame.width + slide), height: height)
-        if field.frame != fieldFrame { field.frame = fieldFrame }
+        field.place(at: fieldFrame)
         keepCaretInClip()
         needsDisplay = true
     }
@@ -421,7 +421,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         if caret.minX - lead - next < 0 { next = max(0, caret.minX - lead) }
         guard next != slide else { return }
         slide = next
-        field.frame.origin.x = -slide
+        field.place(at: field.frame.offsetBy(dx: -slide - field.frame.origin.x, dy: 0))
     }
 
     /// The band behind the line with the caret, its gutter's mark as it reads now, the fixed line's placeholder while it's empty,
@@ -571,7 +571,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         elements = [:]
         setAccessibilityLabel(groupLabel)
         NSAccessibility.post(element: focusedResponder, notification: .focusedUIElementChanged)
-        if let rect = stop == .title ? titleField?.frame : rect(of: stop) { context.keepInView(rect) }
+        if let rect = stop == .title ? titleField?.frame : rect(of: stop) { context.keepInView(rect, skippingNudges: true) }
         needsDisplay = true
     }
 
@@ -633,7 +633,9 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private func keepCaretInView() {
         guard let line = rect(of: focus), let caret = field.caretFrame else { return }
         let x = min(max(clip.frame.minX + caret.minX - slide, line.minX), line.maxX)
-        context.keepInView(CGRect(x: x, y: line.minY, width: max(1, line.maxX - x), height: line.height))
+        // A pick that widens the line (Tab on a key's target) a few points into the margin leaves the board where it is; a character
+        // typed toward the edge is followed, every one.
+        context.keepInView(CGRect(x: x, y: line.minY, width: max(1, line.maxX - x), height: line.height), skippingNudges: field.isPicking)
     }
 
     /// The shape laid out as wide as the line being typed needs (its text, the row's insets and gutter), never narrower
@@ -820,7 +822,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
                 reanchor()
                 field.setAccessibilityLabel("New \(model.noun.singular)")
                 NSAccessibility.post(element: focusedResponder, notification: .focusedUIElementChanged)
-                if let rect = rect(of: .waiting) { context.keepInView(rect) }
+                if let rect = rect(of: .waiting) { context.keepInView(rect, skippingNudges: true) }
                 editor.announce(LineFieldStyle.gone(model.noun.title, model.noun.singular, keeping: true))
             } else {
                 show(.waiting, at: .end, waitingAt: rows.count)
@@ -1045,7 +1047,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         shown = (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored)
         place()
         // Printed wider (a card's toggle wrote `null`): the row kept in the clear view, as a line typed wider keeps its caret.
-        if widened, let line = rect(of: focus) { context.keepInView(line) }
+        if widened, let line = rect(of: focus) { context.keepInView(line, skippingNudges: true) }
     }
 
     /// Return: on the title, the waiting line; on a line with words, the line committed and a waiting line under it (above it,

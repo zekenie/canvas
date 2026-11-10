@@ -60,6 +60,16 @@ extension EnumDefinition {
         wholeWidth(of: shape.props.values, title: shape[TitleProperty.self])
     }
 
+    /// The rule an enum keeps in step (`keepsInStep`): a title that changes (typed in its pill, `/title`, a rename) widens the
+    /// enum to read it whole at `KitStyle.roomKeptZoom`, as a commit of its lines does, in the same step; only ever wider.
+    static func widenForTitle(_ before: AnyShapeRecord?, _ record: inout AnyShapeRecord) {
+        guard before?[TitleProperty.self] != record[TitleProperty.self], let shape = record.typed(as: DatabaseEnum.self), let box = record.box
+        else { return }
+        let whole = wholeWidth(of: shape)
+        guard whole > box.width else { return }
+        record.box = CGRect(origin: box.origin, size: CGSize(width: whole, height: box.height))
+    }
+
     /// How wide an enum is for its title's pill (its list glyph and its name, `EnumStyle.titleTint`'s solid chip) to show whole
     /// at `KitStyle.roomKeptZoom` and closer, world units: the pill is drawn in view points, so it is that many over the zoom
     /// (`AdornmentLayout.scale(atZoom:)`). A pasted schema fitted to the view at 54% reads `payment_method` whole, not cut

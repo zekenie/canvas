@@ -545,6 +545,7 @@ private let models = #"""
         expect(shown.contains(box), "the new type in view: \(box) in \(shown)")
         let apiNow = try require(editor.shapeContext.frame(of: api.id))
         expect(shown.contains(apiNow), "the API kept in view: \(apiNow) in \(shown), the type \(box)")
+        expect(!box.insetBy(dx: -4, dy: -4).intersects(apiNow), "beside the API's shape with the usual gap, never flush on its edge or its title row: \(box), \(apiNow) (U14-E1)")
         expectEqual(editor.cameraTarget.zoom, 1, "a pan, not a zoom")
         expectEqual(editor.editingShapeID, api.id, "the caret kept in the API")
         walk.press(.escape)

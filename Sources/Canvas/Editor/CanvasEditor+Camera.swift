@@ -133,19 +133,21 @@ extension CanvasEditor {
     /// Pans the camera at once, by as little as it takes, so `rect` (world units from the shape's
     /// editing frame's origin: an editing view's coordinates) is in the part of the view the host leaves
     /// clear (`clearView`: out of the minimap's corner too), `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
-    /// corner in view. See `EditContext.keepInView`. A rect wholly in the clear view already is not moved the margin in by a pan
-    /// of less than `Style.leastKeepInViewPan`: nothing it shows was out of sight, and a nudge of a few points moves the board.
+    /// corner in view. See `EditContext.keepInView`. With `skippingNudges`, a rect wholly in the clear view already is not moved the margin in by a pan
+    /// of less than `Style.leastKeepInViewPan`: nothing it shows was out of sight, and a nudge of a few points moves the board (a
+    /// caret typed toward the edge never skips: it would pan every other character, by twice as much).
     ///
     /// While the camera glides (a reveal of the shape just put down), it is judged where the camera is headed: in view
     /// there, the glide goes on; otherwise the glide is sent on to where it is, never stopped where it is now, short of
     /// what it was bringing into view.
-    func keepInView(_ rect: CGRect, of id: ShapeID) {
+    func keepInView(_ rect: CGRect, of id: ShapeID, skippingNudges: Bool = false) {
         guard session == nil, let box = editingFrame(of: id) else { return }
         let view = clearView.insetBy(Style.keepInViewMargin)
         guard view.rect.width > 0, view.rect.height > 0 else { return }
         let world = rect.offsetBy(dx: box.minX, dy: box.minY)
         func needed(_ delta: CGSize, at camera: Camera) -> Bool {
             guard delta != .zero else { return false }
+            guard skippingNudges else { return true }
             let least = Style.leastKeepInViewPan
             return !(abs(delta.width) < least && abs(delta.height) < least && clearView.contains(camera.toView(world)))
         }

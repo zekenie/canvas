@@ -96,16 +96,25 @@ extension CanvasEditor {
     /// brings small shapes to); with `zoomingOut` false they are panned to, their top-left in view, and the
     /// zoom kept. With `zoomingIn`, a view so far out the canvas draws skeletons (`drawsSkeletons`), where what was brought
     /// would land as a sketch nobody reads (a paste after an undo left the view at 10%: UX walk 5 paste-5-2), is zoomed in to
-    /// fit them, no closer than 100% (`SelectionStyle.readableFitMaxZoom`), in view or not. Does nothing before the view has a
+    /// fit them (with `keeping` where that is closer than the view is now), no closer than 100% (`SelectionStyle.readableFitMaxZoom`), in view or
+    /// not, never farther out than the view is (a fit that is, is the ordinary reveal). Does nothing before the view has a
     /// size, or when none of the shapes has bounds.
     public func revealIfOffscreen(_ ids: [ShapeID], keeping: [ShapeID] = [], orKeeping second: CGRect? = nil, zoomingOut: Bool = true,
                                   zoomingIn: Bool = false) {
         guard let bounds = shapeContext.bounds(of: ids) else { return }
         if zoomingIn, drawsSkeletons, !unobscuredViewport.isEmpty {
-            animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.readableFitMaxZoom,
-                          duration: SelectionStyle.revealDuration)
-            settleIfSelected(ids)
-            return
+            // Fitted with what it was put beside (`keeping`) where that is closer than the view is now, else alone; a fit no closer
+            // than the camera's own leaves the view as it is for the ordinary reveal below (a block in view stays where it is).
+            let view = unobscuredViewport, zoom = cameraTarget.zoom
+            let candidates = [keeping.isEmpty ? nil : shapeContext.bounds(of: keeping).map { $0.union(bounds) }, bounds].compactMap { $0 }
+            if let rect = candidates.first(where: {
+                Camera(fitting: $0, in: view, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.readableFitMaxZoom).zoom > zoom
+            }) {
+                animateCamera(toFit: rect, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.readableFitMaxZoom,
+                              duration: SelectionStyle.revealDuration)
+                settleIfSelected(ids)
+                return
+            }
         }
         guard revealIfOffscreen(rect: bounds, keeping: [shapeContext.bounds(of: keeping), second].compactMap { $0 }, withRowAbove: true,
                                 zoomingOut: zoomingOut, settling: false)

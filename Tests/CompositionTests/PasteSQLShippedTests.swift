@@ -320,6 +320,21 @@ private let payments = """
         expect(commandV(w))
         expectEqual(editor.cameraTarget.zoom, 1, "no closer than 100%")
     },
+    test("a schema too big to read at any zoom the view could fit it at never zooms the view farther out than it was for being far out (U14-C1)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        editor.camera = Camera(origin: editor.camera.origin, zoom: 0.2)
+        expect(editor.drawsSkeletons)
+        let tables = (1...80).map { "CREATE TABLE big_\($0) (id int PRIMARY KEY, name text, note text, other text);" }
+        pasteboardHolds(tables.joined(separator: "\n"))
+        expect(commandV(w))
+        expect(editor.cameraTarget.zoom <= 0.2 + 1e-9, "no closer than it was: \(editor.cameraTarget.zoom)")
+        let landed = editor.selectedShapeIDs
+        let bounds = try require(editor.shapeContext.bounds(of: landed))
+        expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(bounds), "all of it in view")
+    },
     test("paste 04: pasted again, only what changed is said and selected; pasted again as it is, \"Nothing changed\", no step, all it found selected") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
