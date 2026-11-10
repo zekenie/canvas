@@ -9,6 +9,7 @@ import Engineering
 import Find
 import Geometry
 import LineRows
+import Mentions
 import Selection
 import ShippedTesting
 import TestKit
@@ -600,6 +601,122 @@ extension EmptyBoardWindow {
                 expect(!line.crosses(pill.insetBy(dx: -5, dy: -5).polygon), "\(arrow[ChannelProperty.self] ?? "?")'s pill clear of the \(other[ChannelProperty.self] ?? "?") line: \(pill)")
             }
         }
+    },
+    test("RowBundles' parting: a row's connections to different places part, `parted` the farthest far end first; the start's parting is the one kept when both ends part, whatever is edited (review U12-R2, C1)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "orders API" endpoints: "POST /orders/{id}/refunds"
+            api "Admin API" below "orders API" (gap: 150) endpoints: "POST /admin/refunds"
+            table "refunds" right of "orders API" (gap: 300) columns: "id uuid pk"
+            table "payments" below "refunds" (gap: 600) columns: "id uuid pk"
+            api "Stripe API" right of "refunds" (gap: 300) endpoints: "POST /v1/refunds"
+            edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
+            edge "orders API"."POST /orders/{id}/refunds" -> "payments" channel: reads
+            edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
+            edge "Admin API"."POST /admin/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
+            """#)
+        let editor = w.editor
+        w.window.settle()
+        let orders = try require(sixtyAPIAny(editor, "orders API")), admin = try require(sixtyAPIAny(editor, "Admin API"))
+        let arrows = sixtyArrows(editor)
+        let fromRow = arrows.filter { $0.props.start.binding?.shapeID == orders.id }
+        expectEqual(fromRow.count, 3)
+        let (writes, reads, calls) = (try require(fromRow.first { $0[ChannelProperty.self] == Writes.id }),
+                                      try require(fromRow.first { $0[ChannelProperty.self] == Reads.id }),
+                                      try require(fromRow.first { $0[ChannelProperty.self] == Calls.id }))
+        // Three places: the row's lines leave it in the order of their far ends, top to bottom (refunds, Stripe, payments by their
+        // heights), and stack out from it the one farthest above or below it first.
+        let bundles = try [writes, reads, calls].map { try require(editor.connectionBundle(of: $0.id)) }
+        for bundle in bundles {
+            expectEqual(bundle.parting?.count, 3, "three places part at the row")
+            expectEqual(Set(bundle.parted), Set([writes.id, reads.id, calls.id]))
+        }
+        expectEqual(bundles[1].parted.first, reads.id, "payments, farthest below the row, first in the stack")
+        // The calls arrow parts at both ends (a row of Stripe's endpoint has two callers): the start's is what it is drawn by, and
+        // an edit to either API's row, or a move of the other shape, never swaps it.
+        let first = try require(editor.connectionBundle(of: calls.id))
+        expectEqual(first.parting?.end, .start)
+        let startsBefore = try require(editor.arrowGeometry(of: calls.id)).start
+        for step in 0..<3 {
+            let target = step == 0 ? admin.id : (step == 1 ? orders.id : try require(sixtyAPIAny(editor, "Stripe API")).id)
+            editor.transact("Move") { $0.update(target, as: API.self) { $0.props.frame.origin.y += 12 } }
+            w.window.settle()
+            let again = try require(editor.connectionBundle(of: calls.id))
+            expectEqual(again.parting?.end, .start, "the start's parting, step \(step)")
+            expectEqual(again.parted, first.parted, "the same stack, step \(step)")
+        }
+        let startsAfter = try require(editor.arrowGeometry(of: calls.id)).start
+        expect(abs(startsAfter.x - startsBefore.x) < 1e-6, "it leaves the same side: \(startsBefore) to \(startsAfter)")
+    },
+    test("what a parted connection is laid against follows its siblings: after one is retyped, or a far table moved, laying every one out again changes none (review U12-E2)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "orders API" endpoints: "GET /orders/{id}\nPOST /orders/{id}/refunds"
+            table "refunds" right of "orders API" (gap: 300) columns: "id uuid pk\namount_cents int"
+            table "payments" below "refunds" (gap: 80) columns: "id uuid pk\namount_cents int"
+            api "Stripe API" below "orders API" (gap: 420) endpoints: "POST /v1/refunds"
+            edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
+            edge "orders API"."POST /orders/{id}/refunds" -> "payments" channel: reads
+            edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
+            """#)
+        let editor = w.editor
+        w.window.settle()
+        let api = try require(sixtyAPIAny(editor, "orders API"))
+        let row = api.props.endpoints[1].id
+        let ids = sixtyArrows(editor).filter { $0.props.start.binding?.part == row }.map(\.id)
+        expectEqual(ids.count, 3)
+        @MainActor func frames() -> [CGRect] { ids.compactMap { editor.shapeContext.geometry(of: $0)?.labelLead ?? editor.shapeContext.geometry(of: $0)?.label } }
+        @MainActor func expectCurrent(_ when: String) {
+            let shown = frames()
+            editor.connectionBundlesDidChange(Set(ids))
+            let laidAgain = frames()
+            expectEqual(shown, laidAgain, "\(when): every pill where laying them out again puts it")
+        }
+        expectCurrent("at rest")
+        // One of the three says more: the others are laid against its pill and its line.
+        let one = try require(ids.first { editor.document[$0]?.typed(as: Arrow.self)?.props.end.binding?.shapeID == editor.document.shapes.first { $0[TitleProperty.self] == "refunds" }?.id })
+        editor.transact("Retype") { $0.update(one, as: Arrow.self) { $0.props.text = "writes a great many refunds at once" } }
+        w.window.settle()
+        expectCurrent("retyped")
+        // A table moved: its line moves, and the pills laid clear of it.
+        let payments = try require(editor.document.shapes.first { $0[TitleProperty.self] == "payments" }?.id)
+        editor.transact("Move") { $0.update(payments, as: DatabaseTable.self) { $0.props.frame.origin.x -= 160; $0.props.frame.origin.y += 220 } }
+        w.window.settle()
+        expectCurrent("a far table moved")
+    },
+    test("a stacked pill follows its sibling's: retyped longer, the next pill is laid out again past it, never under it (review U12-E2)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "orders" columns: "id uuid pk\ntotal_cents int"
+            table "payments" below "orders" (gap: 400) columns: "id uuid pk\namount_cents int"
+            api "orders API" left of "orders" (gap: 300) endpoints: "POST /a\nPOST /b"
+            edge "orders API"."POST /a" -> "orders" channel: writes
+            edge "orders API"."POST /b" -> "orders" channel: writes
+            edge "orders API"."POST /a" -> "payments" channel: reads
+            edge "orders API"."POST /b" -> "payments" channel: reads
+            """#)
+        let editor = w.editor
+        w.window.settle()
+        let api = try require(sixtyAPIAny(editor, "orders API"))
+        let fromA = sixtyArrows(editor).filter { $0.props.start.binding?.part == api.props.endpoints[0].id }
+        expectEqual(fromA.count, 2)
+        let reads = try require(fromA.first { $0[ChannelProperty.self] == Reads.id }), writes = try require(fromA.first { $0[ChannelProperty.self] == Writes.id })
+        let before = try require(editor.shapeContext.geometry(of: writes.id)?.labelLead)
+        // The nearer pill (the reads) says more: the writes pill, stacked past it, is laid out again, as laying out every one again would.
+        editor.transact("Retype") { $0.update(reads.id, as: Arrow.self) { $0.props.text = "reads a great many things at once" } }
+        w.window.settle()
+        let after = try require(editor.shapeContext.geometry(of: writes.id)?.labelLead)
+        let nearer = try require(editor.shapeContext.geometry(of: reads.id)?.labelLead)
+        expect(!after.intersects(nearer), "clear of the retyped pill: \(after) beside \(nearer)")
+        expect(after.midX != before.midX, "laid out again, further out: \(before) to \(after)")
+        editor.connectionBundlesDidChange(Set(fromA.map(\.id)))
+        expectEqual(editor.shapeContext.geometry(of: writes.id)?.labelLead, after, "where laying out again puts it")
     },
     test("a line to a table as a whole comes in at a row clear of the key ending at its side; a reads arrow at a database's left inset stays inside it") {
         let w = try EmptyBoardWindow()

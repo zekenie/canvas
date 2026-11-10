@@ -273,7 +273,7 @@ import TestKit
         guard case .free(let point)? = b.arrow(two)?.end else { return expect(false, "the end is free") }
         expect(point.distance(to: drawn.visiblePoint(at: .end)) < 1e-6, "\(point) against \(drawn.visiblePoint(at: .end))")
     },
-    test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart and level and stay level-shaped, every other one's marks further out where the row is short; their labels slide to their starts") {
+    test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart and level and stay level-shaped, each further one's marks further out where the row is short; their labels slide to their starts") {
         let answers = BundleAnswers()
         let b = try bundleBoard(answers, looks: true)
         let ids = (0..<3).map { b.h.add(Arrow(start: b.end(b.left, $0), end: b.end(b.right, 1), text: "k")) }
@@ -301,13 +301,43 @@ import TestKit
             guard case .level(let cubic, _, _) = geometry.path else { return 0 }
             return geometry.end.x - cubic.end.x
         }
+        // Their lines run on up to the rows above (L is above R's row): each stub 30 past the one before it, the lower ones longer, so the
+        // line that turns first never crosses the longer stub of the one below it (review U12-C2).
         expectClose(stubs[0], 36, within: 1e-6)
-        expectClose(stubs[2], 36, within: 1e-6)
         expectClose(stubs[1], 66, within: 1e-6)
+        expectClose(stubs[2], 96, within: 1e-6)
         for (index, id) in ids.enumerated() {
             let label = try require(b.h.editor.arrowLabelFrame(of: id))
             expect(label.midX < middles[index].midX - 20, "slid toward its start: \(label) from \(middles[index])")
         }
+    },
+    test("two keys fanned into one row, their marks staggered, never cross, whether their lines turn down or up to the other table (review U12-C2)") {
+        for down in [false, true] {
+            let answers = BundleAnswers()
+            let b = try bundleBoard(answers, looks: true)
+            // Down: into L's row 0 from R's rows 1 and 2, below it; up: into R's row 2 from L's rows 0 and 1, above it.
+            let ids = down ? [1, 2].map { b.h.add(Arrow(start: b.end(b.right, $0), end: b.end(b.left, 0))) }
+                           : [0, 1].map { b.h.add(Arrow(start: b.end(b.left, $0), end: b.end(b.right, 2))) }
+            for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: index, count: 2)]) }
+            b.h.editor.connectionBundlesDidChange(Set(ids))
+            let geometries = try ids.map { try b.geometry($0) }
+            let offsets = geometries.map(\.markOffset.end)
+            expectEqual(offsets.filter { $0 > 0 }.count, 1, "one of two stands its marks further out (\(down ? "down" : "up")): \(offsets)")
+            // The one whose line runs on past the other's is the longer: the upper going down, the lower going up.
+            expect(down ? offsets[0] > 0 : offsets[1] > 0, "the longer stub is the one the other's line turns away from: \(offsets)")
+            expectEqual(arrowCrossings(try require(geometries[0].levelBody), try require(geometries[1].levelBody)), 0, "their lines never cross (\(down ? "down" : "up"))")
+        }
+    },
+    test("four connections parting from one short row leave it on four points, in order, however little room the row has (review U12-C3)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        let ids = [0, 1, 2, 0].map { b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, $0))) }
+        for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(parting: .init(end: .start, index: index, count: 4), parted: ids) }
+        b.h.editor.connectionBundlesDidChange(Set(ids))
+        let starts = try ids.map { try b.geometry($0).start.y }
+        let row = try require(b.h.editor.shapeContext.geometry(of: b.left)?.parts.frame(b.leftRows[1].id)?.rect)
+        for (a, c) in zip(starts, starts.dropFirst()) { expect(c > a + 2, "four distinct points, top to bottom: \(starts)") }
+        expect(starts.allSatisfy { $0 > row.minY && $0 < row.maxY }, "inside the row: \(starts) in \(row)")
     },
     test("an end at a shape as a whole, joined to a row of a shape above it whose span overlaps, comes in at the side that row leaves by, not back along it") {
         let answers = BundleAnswers()
@@ -355,3 +385,18 @@ import TestKit
         for geometry in geometries { expect(abs(geometry.point(17.5 + geometry.markOffset.end, along: .end).inward.y) < 1e-6, "level") }
     },
 ])
+
+/// How many times two lines cross, by their flattened segments.
+private func arrowCrossings(_ a: CubicChain, _ b: CubicChain) -> Int {
+    let p = a.flattened(segments: 160), q = b.flattened(segments: 160)
+    func cross(_ o: CGPoint, _ u: CGPoint, _ v: CGPoint) -> CGFloat { (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x) }
+    var count = 0
+    for i in 1..<p.count {
+        for j in 1..<q.count {
+            let (a1, a2, b1, b2) = (p[i - 1], p[i], q[j - 1], q[j])
+            let d1 = cross(b1, b2, a1), d2 = cross(b1, b2, a2), d3 = cross(a1, a2, b1), d4 = cross(a1, a2, b2)
+            if (d1 > 0) != (d2 > 0), (d3 > 0) != (d4 > 0), d1 != 0, d2 != 0, d3 != 0, d4 != 0 { count += 1 }
+        }
+    }
+    return count
+}

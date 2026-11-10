@@ -264,6 +264,7 @@ extension ArrowDefinition {
         if let fan = bundle.fan(at: .end) { (spread.endFan, spread.endFanCount) = (CGFloat(fan.spread), fan.count) }
         spread.startEntry = bundle.entries[.start]
         spread.endEntry = bundle.entries[.end]
+        spread.run = bundle.run
         return spread == ArrowSpread() ? nil : spread
     }
 }

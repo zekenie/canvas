@@ -98,8 +98,7 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
         }
         let (first, second) = (try view(wide), try view(beside))
         let rep = render(h.editor)
-        // The bar 6.5 above the table's top, 7.2 tall (UX walk 4 apis-2: clear of a selection's outline and handles).
-        let above = Int(first.minY) - 10
+        let above = Int(first.minY) - 5
         expect(bar(rep, Int(first.maxX) - 20..<Int(first.maxX) - 2, y: above), "its bar, over its own table, to its right edge")
         expect(!bar(rep, Int(first.maxX) + 2..<Int(second.minX) - 2, y: above), "none in the gap: it stops at its table's edge, never over the next table's bar")
         expect(bar(rep, Int(second.minX) + 4..<Int(second.minX) + 40, y: above), "the next table's own bar")
@@ -107,8 +106,17 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
         h.editor.transact { $0.update(wide, as: DatabaseTable.self) { $0.props.frame.size.width = 150 } }
         let narrow = render(h.editor)
         let table = try view(wide)
-        expect(!bar(narrow, Int(table.minX) + 3..<Int(table.maxX) - 3, y: Int(table.minY) - 10), "none above it, where the tab would hide it")
+        expect(!bar(narrow, Int(table.minX) + 3..<Int(table.maxX) - 3, y: Int(table.minY) - 5), "none above it, where the tab would hide it")
         expect(bar(narrow, Int(table.minX) + 3..<Int(table.minX) + 30, y: Int(table.minY) + 3), "its bar just inside its top edge")
+        // Selected, its bar starts past the corner handle that sits on the corner (review U12-E9): gray, as the bar is, never the handle's.
+        h.editor.selection = wide
+        let selected = render(h.editor)
+        @MainActor func gray(_ rep: NSBitmapImageRep, _ x: Range<Int>, y: Int) -> Bool {
+            some(rep, in: CGRect(x: x.lowerBound, y: y, width: x.count, height: 1)) { $0[0] < 120 && abs($0[0] - $0[2]) < 12 }
+        }
+        expect(!gray(selected, Int(table.minX) + 3..<Int(table.minX) + 5, y: Int(table.minY) + 3), "no bar under the corner handle")
+        expect(gray(selected, Int(table.minX) + 9..<Int(table.minX) + 30, y: Int(table.minY) + 3), "its bar, past it")
+        h.editor.selection = nil
         // Far out, with the table just below the database's top, the tab reaches over the table's top: the bar goes below the tab, as
         // the pill gives way to it in full (UX walk 4 structure-3).
         let more = (1...5).map { Column(name: "c\($0)", type: TypeRef("text")) }

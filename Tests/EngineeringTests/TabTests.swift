@@ -48,6 +48,24 @@ import Titles
             expect(zip(ground, middle).prefix(3).contains { abs($0 - $1) > 8 }, "\(dark ? "dark" : "light"): the tab is drawn: \(middle) on \(ground)")
         }
     },
+    test("adornmentRowTabs: where the tabs its row gives way to are, as one rect; nil for a shape in no container, or one the tab doesn't reach over (review U12-R5)") {
+        let h = try kitHarness()
+        let shop = h.add(Database(frame: CGRect(x: 100, y: 100, width: 800, height: 500)), titled: "shop")
+        let column = [ColumnGrammar.read("id uuid pk")!]
+        let near = h.add(DatabaseTable(frame: CGRect(x: 132, y: 132, width: 260, height: 0), columns: column), titled: "orders")
+        let far = h.add(DatabaseTable(frame: CGRect(x: 600, y: 300, width: 200, height: 0), columns: column), titled: "payments")
+        let outside = h.add(DatabaseTable(frame: CGRect(x: 1000, y: 132, width: 200, height: 0), columns: column), titled: "audit")
+        h.editor.put([near, far], in: shop)
+        h.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        _ = render(h.editor, size: CGSize(width: 400, height: 300))
+        let tab = try require(h.editor.adornmentFrames(of: shop).first { $0.adornment.placement == .onTopEdge }?.rect, "shop's tab")
+        let met = try require(h.editor.adornmentRowTabs(of: near), "the tab meets the first table's row")
+        expect(abs(met.minX - tab.minX) < 1 && abs(met.maxX - tab.maxX) < 1, "the tab's own rect: \(met) against \(tab)")
+        expectEqual(h.editor.adornmentRowTabs(of: far), nil, "a table lower in the database, under no tab")
+        expectEqual(h.editor.adornmentRowTabs(of: outside), nil, "a table in no container")
+        // What the row gives way to is the tab's end and the spacing past it: the same tab.
+        expect(132 + h.editor.adornmentRowStart(of: near) >= met.maxX, "the row starts past the rect it is given")
+    },
     test("a table's name typed in its pill starts where the pill was, past the database's tab, and the pill didn't move as typing began") {
         let b = try KitBench()
         let shop = b.h.add(Database(frame: CGRect(x: 100, y: 100, width: 800, height: 500)), titled: "shop")

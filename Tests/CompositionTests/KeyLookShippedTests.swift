@@ -157,6 +157,21 @@ private let billing = #"""
         }
         expectEqual(try crossings(billing, shipping), 1, "swapped: once")
         expectEqual(try crossings(customer, billing), 0, "in order: never")
+        // In the gap too narrow to stagger, the two keys' ends spread across customers.id but stay inside it, never on the line
+        // between it and the next row (review U12-E3).
+        let customers = try table(editor, "customers")
+        let idRow = try require(editor.shapeContext.geometry(of: customers.id)?.parts.frame(try require(customers.props.columns.first { $0.name == "id" }?.id))?.rect)
+        for geometry in [customer, shipping] {
+            let y = geometry.point(0, along: idEnd(geometry)).point.y
+            expect(y > idRow.minY + 1 && y < idRow.maxY - 1, "inside customers.id: \(y) in \(idRow.minY)...\(idRow.maxY)")
+        }
+        // Keys that keep their order run a column apart through the gap, not on top of each other (review U12-E8): the customer and billing
+        // keys, where they pass the middle half of it, are at least a stroke and a gap apart.
+        let gap = try require(editor.shapeContext.geometry(of: customers.id)?.bounds).maxX
+        let (one, other) = (try require(customer.levelBody), try require(billing.levelBody))
+        for point in one.flattened(segments: 200) where point.x > gap + 75 * 0.3 && point.x < gap + 75 * 0.7 {
+            expect(other.distance(to: point) > 5, "the keys in order apart in the gap's middle: \(point) is \(other.distance(to: point)) from the other")
+        }
     },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {
         let editor = try billingEditor()

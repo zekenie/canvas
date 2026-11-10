@@ -3,6 +3,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Geometry
+import Selection
 import TestKit
 import TextEditing
 import Titles
@@ -133,19 +134,34 @@ struct SignsPlugin: CanvasPlugin {
         expectEqual(editor.titleCover(of: sign), nil, "no cover on the shape")
         let drawn = renderBitmap(editor, size: CGSize(width: 200, height: 120))
         // The sign is 30 to 90 across and 30 to 66 down; its pill's row 3 to 21 down, the bar 40% of it (7.2) just above the sign's
-        // top, 6.5 clear of it (16.3 to 23.5), so it reads as the sign's and never as the footer of a shape above (UX walk 3 evolve-8),
-        // and the selection's outline (4 off the edge, 1.5 wide) and corner handles (4 across, a 1.5 stroke) stay clear of it
-        // (UX walk 4 apis-2).
-        expect(pixel(drawn, at: CGPoint(x: 36, y: 20))[0] < 120, "the bar, the pill's gray: \(pixel(drawn, at: CGPoint(x: 36, y: 20)))")
+        // top, 1.5 clear of it (21.3 to 28.5), so it reads as the sign's and never as the footer of a shape above (UX walk 3 evolve-8).
+        expect(pixel(drawn, at: CGPoint(x: 36, y: 25))[0] < 120, "the bar, the pill's gray: \(pixel(drawn, at: CGPoint(x: 36, y: 25)))")
         expect(pixel(drawn, at: CGPoint(x: 36, y: 12))[0] > 200, "not up where the pill's row is")
         expect(pixel(drawn, at: CGPoint(x: 36, y: 4))[0] > 200, "the bar is thinner than the pill")
-        expect(pixel(drawn, at: CGPoint(x: 88, y: 20))[0] > 200, "as long as Exit, not the sign")
-        expect(pixel(drawn, at: CGPoint(x: 36, y: 25))[0] > 200, "the canvas between the bar and the sign, where a selection's outline and handles go")
+        expect(pixel(drawn, at: CGPoint(x: 88, y: 25))[0] > 200, "as long as Exit, not the sign")
         let (tinted, green) = try signs(tinted: true)
         tinted.camera = Camera(origin: .zero, zoom: 0.3)
-        let colored = pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 20))
+        let colored = pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 25))
         expect(colored[1] > colored[0] + 40, "a look's tint: \(colored)")
         tinted.transact { $0.update(green) { $0[TitleProperty.self] = nil } }
-        expect(pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 20))[1] > 200, "an untitled one has none")
+        expect(pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 25))[1] > 200, "an untitled one has none")
+    },
+    test("zoomed out, a selected shape's bar clears its outline and corner handles, and stands nearer its own shape than the one above when it isn't (UX walk 4 apis-2, review U12-E1, R4)") {
+        let (editor, sign) = try signs()
+        editor.camera = Camera(origin: .zero, zoom: 0.3)
+        let plain = renderBitmap(editor, size: CGSize(width: 200, height: 120))
+        editor.selection = sign
+        let selected = renderBitmap(editor, size: CGSize(width: 200, height: 120))
+        // Selected, the bar is 6.5 clear of the sign's top (16.3 to 23.5), above the outline (4 off the edge, 1.5 wide) and the corner
+        // handle (4 across, a 1.5 stroke): its rows are the pill's gray from end to end and none of the selection's is among them.
+        for x in 36...45 { for y in [17, 19, 21] {
+            expect(pixel(selected, at: CGPoint(x: x, y: y))[0] < 120, "the bar is whole at (\(x), \(y)): \(pixel(selected, at: CGPoint(x: x, y: y)))")
+        } }
+        // The selection is drawn below it, round the sign.
+        var outlined = false
+        for y in 24...28 { for x in 31...88 where pixel(selected, at: CGPoint(x: x, y: y)) != pixel(plain, at: CGPoint(x: x, y: y)) && pixel(selected, at: CGPoint(x: x, y: y))[0] > 120 { outlined = true } }
+        expect(outlined, "the selection's outline or handle is drawn between the bar and the sign")
+        // Not selected, 1.5 clear: the bar is nearer its own shape than the shape above it could be.
+        expect(pixel(plain, at: CGPoint(x: 36, y: 27))[0] < 120, "unselected, down at the sign's top edge")
     },
 ])

@@ -7563,9 +7563,9 @@ whatever the line does after it (a C between stacked tables, a fan, rows far acr
 marks on each other, and keys between the same two shapes cross only where their ends' order swaps, once (in a narrow gap
 each turns at a column of its own); the line is then a `CubicChain` (Geometry's: the stubs and the curve),
 `ArrowGeometry.levelBody`. Keys fanned into one row come in level, a bar's height and a gap apart, or where the row is too
-short every other one's marks a stub further out. Where the ends face each
+short each one's marks a stub further out than its neighbor's, on the side its line turns away from. Where the ends face each
 other neither reach passes the way between them, so the curve never swings back behind where it starts. A key passing under
-a card it isn't bound to is drawn faint across the whole of it, edge to edge, in a gray that reads on light and dark cards (`ArrowUnderCardsOverlay`; far out, below 15%, a key whose ends face each other is one straight line, and a C stays its curve), and lit, its light goes under the cards with it
+a card it isn't bound to is drawn faint across the whole of it, edge to edge, in a gray that reads on light and dark cards (`ArrowUnderCardsOverlay`, quieter through the words of a row; far out, below 15%, a key whose ends face each other is one straight line, and a C stays its curve), and lit, its light goes under the cards with it
 (the core strokes a tinted outline of a shape painted below its anchor where it is painted). Which side of its row an end
 leaves by is Connections' `PartSide`, the one rule the connector draws by and the bundles pick rows by. A row's resting port
 dot is not drawn where a connection ends along that row's side, nor over another shape's face (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked

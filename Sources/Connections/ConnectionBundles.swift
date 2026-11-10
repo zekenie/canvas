@@ -65,9 +65,14 @@ public struct ConnectionBundle: Hashable, Sendable {
     /// whose other end is farthest above or below the row, whose line turns away soonest, so a line that stays level longer to
     /// carry its pill past never crosses one that has turned. Empty with no `parting`.
     public var parted: [ShapeID]
+    /// Its place among the connections between the same two shapes, at rows of both, where several run: `index` of `count`, top to
+    /// bottom by where they meet the shape on the right (`end` is the one of its ends at that shape), the order their middles turn
+    /// in across a gap too narrow for lines to run side by side (Arrows' narrow gap): each at a place of its own, keys that keep their
+    /// order never crossing. Nil for one alone between its shapes.
+    public var run: Fan?
 
     public init(role: Role = .alone, slot: Int = 0, slots: Int = 1, fans: [Fan] = [], entries: [End: PartID] = [:], parting: Fan? = nil,
-                parted: [ShapeID] = []) {
+                parted: [ShapeID] = [], run: Fan? = nil) {
         self.role = role
         self.slot = slot
         self.slots = slots
@@ -75,10 +80,11 @@ public struct ConnectionBundle: Hashable, Sendable {
         self.entries = entries
         self.parting = parting
         self.parted = parted
+        self.run = run
     }
 
     /// Says nothing: drawn as ever.
-    public var isPlain: Bool { role == .alone && slots <= 1 && fans.isEmpty && entries.isEmpty && parting == nil }
+    public var isPlain: Bool { role == .alone && slots <= 1 && fans.isEmpty && entries.isEmpty && parting == nil && run == nil }
 
     /// Drawn by another, its lead.
     public var lead: ShapeID? { if case .member(let lead) = role { lead } else { nil } }
