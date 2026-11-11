@@ -1,5 +1,5 @@
 // An SVG of one board of a drawing.json: frames, notes (title), pills (what they stand for), arrows and pill lines, straight as health reads them.
-// node render.mjs <drawing.json> <board> <out.svg> [labels: judge rows.json to colour judged arrows]
+// node render.mjs <drawing.json> <board> <out.svg> [labels: judge rows.json to colour judged arrows: blue keep, red chip, grey between]
 import fs from 'fs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';
 const { buildModel } = await import(TOOL + 'model.mjs');
@@ -22,12 +22,13 @@ const pad = 60; x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
 let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${x1 - x0} ${y1 - y0}" width="${Math.round((x1 - x0) / 4)}" height="${Math.round((y1 - y0) / 4)}" font-family="Helvetica, Arial">`;
 svg += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="#fbfaf7"/>`;
 for (const s of B.shapes.filter((s) => s.frame)) svg += `<rect x="${s.box.x}" y="${s.box.y}" width="${s.box.w}" height="${s.box.h}" rx="12" fill="#f1efe9" stroke="#b9b4a8" stroke-width="4"/><text x="${s.box.x + 10}" y="${s.box.y - 10}" font-size="34" fill="#6b665c">${esc(title(s.id))}</text>`;
-for (const l of B.lines) {
+// Lines are drawn as thick as a board's size needs to show at a picture's scale, and the judges' classes in the dataviz reference
+// palette's blue and red (a colour-blind-safe pair) with a neutral grey between: pale lines into pills first, keep and chip arrows on top.
+const k = (x1 - x0) / 1000, line = (l) => { const j = l.intoPill ? undefined : judged.get([l.a, l.b].sort().join('|')); return { l, j, rank: l.intoPill ? 0 : j == null ? 1 : j >= 3 || j === 0 ? 3 : 2 }; };
+for (const { l, j, rank } of B.lines.map(line).sort((p, q) => p.rank - q.rank)) {
   const pts = l.path.map((p) => p.join(',')).join(' ');
-  if (l.intoPill) { svg += `<polyline points="${pts}" fill="none" stroke="#9fb7cc" stroke-width="3"/>`; continue; }
-  const j = judged.get([l.a, l.b].sort().join('|'));
-  const col = j == null ? '#444' : j >= 3 ? '#1a8f3c' : j === 0 ? '#d0342c' : '#8a6d00';
-  svg += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${j == null ? 4 : 7}"/>`;
+  const [col, w] = rank === 0 ? ['#d6d3ca', Math.max(3, 0.8 * k)] : rank === 1 ? ['#52514e', Math.max(4, 1.6 * k)] : rank === 2 ? ['#a19d92', Math.max(5, 2 * k)] : [j >= 3 ? '#2a78d6' : '#e34948', Math.max(7, 3.2 * k)];
+  svg += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${w.toFixed(1)}" stroke-linejoin="round"/>`;
 }
 for (const s of B.shapes.filter((s) => !s.frame)) {
   const card = model.node(s.id).holds === 'board';

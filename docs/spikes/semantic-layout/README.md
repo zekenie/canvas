@@ -3,7 +3,7 @@
 **Verdict.** Similarity decides well which links become references, but on this codebase it needs no embedding model. Word overlap counted within each board does nearly as well as OpenAI's embedding, and Apple's on-device embedding, which every earlier round mixed in, made it worse. This round runs every step again with OpenAI's `text-embedding-3-large` and sets it beside Apple's.
 
 - **Ranked against the judges, Apple's embedding is the weakest input.** It ranks a link the judges keep above one they'd chip 73% of the time, below word overlap's 84%, and mixing it in pulled the earlier rounds' similarity down to 80%. OpenAI's does so 85% of the time alone, and 86% with word overlap. Where the two embeddings place a link more than a third of its board apart, the judges side with OpenAI 44 times to 24.
-- **Drawn, OpenAI's gain over word overlap is smaller than the engine's swing.** Over three counts from the background simulation, OpenAI's similarity draws 37 of the 76 keep links, with 21% of its judged arrows on chips. Word overlap alone draws 35 with 20%, and the earlier rounds' similarity 31 with 25%. Between nearby counts, one ranking's drawing moves by up to 11 keep links.
+- **Drawn, OpenAI's gain over word overlap is smaller than the engine's swing.** Over three counts from the background simulation, OpenAI's similarity draws 37 of the 76 keep links, with 21% of its judged arrows on chips. Word overlap alone draws 35 with 20%, and the earlier rounds' similarity 31 with 26%. Between nearby counts, one ranking's drawing moves by up to 11 keep links.
 - **A model reading the board adds the most, and then an embedding adds nothing.** Jev mixed with word overlap alone draws 42 keep links with 12% chips. Mixed with OpenAI's similarity it draws 39 with 14%, and with Apple's 41 with 15%. Ranked, Jev with word overlap and Jev with OpenAI's both score 95%.
 - **The engine is now the limit.** Better rankings cut fewer keep links themselves: 27 for the earlier rounds' similarity, 21 for OpenAI's, 11 for Jev with word overlap. Then the layout branch's engine cuts 18 to 26 more, mostly by geometry, to draw every board clean.
 - **Cost.** OpenAI's embedding read 42,167 tokens in 8 requests and 10 s, under a cent, and the texts leave the machine. Apple's runs on this Mac in 20 s. Word overlap is free.
@@ -40,6 +40,10 @@ Every round before this one measured how alike two notes are with Apple's embedd
 
 ### How they rank
 
+Each ranking orders the links the judges agree on: the further right its blue stripes sit, past the red, the better it ranks.
+
+![The 286 links both judges agree on, one stripe each, ordered from least to most alike by the judges themselves, Apple's embedding, Apple's with word overlap, word overlap alone, OpenAI's embedding, OpenAI's with word overlap, and Jev with word overlap. Keep links are blue and chips red; how often a keep link outranks a chip rises from 0.73 for Apple's to 0.95 for Jev with word overlap](pictures/rankings.png)
+
 On the 459 judged links. The last column cuts each board as far as the judges would (every link they wouldn't keep), the lowest first, and counts what is left; the judges leave all 76 keep links and no chip.
 
 | ranking | keep over chip | Selection | Mentions | Draw | Canvas/Model | References | keep over split | split over chip | at the judges' counts: keep / chip left |
@@ -67,6 +71,8 @@ On the 459 judged links. The last column cuts each board as far as the judges wo
 
 The two orders agree only loosely: a rank correlation of 0.61 over the 2,202 links inside boards. A link's place below is its rank among its board's judged links, from 0 (least alike) to 1.
 
+![Each link the judges agree on, placed by Apple's embedding across and OpenAI's up. Keep links sit higher under OpenAI's than across under Apple's, and in the two corners where the embeddings place a link more than a third of its board apart, the judges side with OpenAI on 44 and with Apple on 24. Four links are marked: a style file and a central file that fool Apple's, registration that fools OpenAI's, and a keep link OpenAI's gets right](pictures/disagree.png)
+
 - **OpenAI puts the judges' classes further apart.** Of the 76 keep links, it places 55 in their board's top third, Apple 40. Of the 210 chips, it places 96 in the bottom third, Apple 85.
 - **Where the two place a link more than a third of its board apart,** on links the judges agree on, the judges side with OpenAI on 44 and with Apple on 24.
 - **Apple is fooled by a module's shared files.** The 8 links it places furthest above OpenAI are all chips, links to a style or central file: ReferenceDefinition to ReferenceStyle (Apple 0.93, OpenAI 0.13), DrawTexts to Draw.swift (0.81, 0.08), MentionTextView to Mentionable (0.75, 0.00), Drawing to DrawPoints (0.90, 0.23).
@@ -76,11 +82,11 @@ The two orders agree only loosely: a rank correlation of 0.61 over the 2,202 lin
 
 On every board, each ranking cuts as many links as the background simulation broke there, the least alike first, and the engine draws the rest as in the rounds below. The counts are the simulation's at thresholds 0.4, 0.5 and 0.6, run with the earlier rounds' similarity, and held fixed, so only the ranking differs. Every drawing has all 72 boards clean, with 646 to 802 arrows.
 
-![Selection and Mentions drawn by the layout branch's engine three ways: Apple's embedding and word overlap cutting at the background simulation's counts, OpenAI's embedding and word overlap cutting at the same counts, and the judges' cut. Arrows are coloured by the judges: green keep, red chip, amber between](pictures/embeddings.jpg)
+![For each ranking, the keep links drawn as arrows and the share of judged arrows that are chips, at each of the three counts and their mean. Apple's with word overlap draws 31 keep links with 26% chips, word overlap alone 35 with 20%, OpenAI's 36 with 22%, OpenAI's with word overlap 37 with 21%, and with Jev 39 to 42 with 12% to 15%](pictures/drawn.png)
 
 | ranking | keep links drawn (of 76) at 0.4 / 0.5 / 0.6 | mean | chip arrows | keep links the ranking cut | the engine cut |
 |---|---|---|---|---|---|
-| Apple and word overlap (the earlier rounds') | 33 / 34 / 26 | 31 | 25% | 27 | 18 |
+| Apple and word overlap (the earlier rounds') | 33 / 34 / 26 | 31 | 26% | 27 | 18 |
 | word overlap alone | 39 / 31 / 36 | 35 | 20% | 22 | 19 |
 | OpenAI alone | 37 / 35 / 37 | 36 | 22% | 21 | 18 |
 | OpenAI and word overlap | 33 / 35 / 42 | 37 | 21% | 21 | 19 |
@@ -94,6 +100,10 @@ On every board, each ranking cuts as many links as the background simulation bro
 - **The ranking's own cut improves as the rankings' scores say.** Of the 76 keep links it takes 27 for the earlier rounds' similarity, 21 or 22 for word overlap and OpenAI's, 16 for Jev with Apple's, and 11 for Jev with OpenAI's or with word overlap.
 - **The engine's further cuts follow the ranking only in part.** They take 18 to 26 more keep links whatever the ranking, mostly by each board's geometry, and the most where the ranking left the most.
 - **One drawing moves by up to 11 keep links between nearby counts:** Jev, Apple and word overlap draws 35 to 46. The last round's 46 was its best of the three. Two rankings closer than that at one count can't be told apart.
+
+The boards behind the numbers, at threshold 0.5's counts. On Selection, OpenAI's similarity draws 4 of the 15 keep links and 6 chip arrows, against Apple's 7 and 5: like Apple's, it keeps links into the module's state and central files, and it adds the plugin's links to what it registers (SelectionPlugin to SelectionObservers). On Mentions it draws the most keep links, 15 of 27 against Apple's 12. Jev with word overlap draws one chip arrow on Selection.
+
+![Selection and Mentions drawn by the layout branch's engine four ways, at the background simulation's counts for threshold 0.5: Apple's embedding with word overlap, word overlap alone, OpenAI's embedding with word overlap, and Jev with word overlap. Arrows are coloured by the judges: blue keep, red chip, grey between](pictures/embeddings.jpg)
 
 ### Every step again with OpenAI's
 
@@ -532,7 +542,7 @@ The last panel below is cut exactly where both judges chip. That's the target, m
 
 ### Pictures from the earlier rounds
 
-Each picture shows one board under main, the layout branch, the branch's engine with the least-alike half cut first, and the first force model. Every arrow is coloured by the judges: green means both say keep side by side, red means both say chip, and amber is in between. Pills are blue, and pale lines go into pills.
+Each picture shows one board under main, the layout branch, the branch's engine with the least-alike half cut first, and the first force model. Every arrow is coloured by the judges: green means both say keep side by side, red means both say chip, and amber is in between. Pills are blue, and pale lines go into pills. The pictures of the comparison with OpenAI's embedding draw keep blue and between grey instead, which colour-blind readers can tell from red, and `reproduce.sh` now draws every picture that way, with arrows as thick as a board's size needs.
 
 ![Selection under main, the layout branch, the spike in the branch's engine, and the first force model](pictures/selection.jpg)
 
@@ -572,6 +582,6 @@ Everything is in this folder:
     - `semlayout2.mjs`, shared pills;
     - `semweights.mjs`, similarity as weights for the branch's engine, with `engine.patch` holding its three spike changes;
     - `cutjudge.mjs`, which says which of a drawing's cuts the judges would make.
-  - `score-drawing.mjs`, `render.mjs`, `compose.mjs`, `panel.mjs` and `stitch.swift`: health and pictures.
+  - `score-drawing.mjs`, `render.mjs`, `compose.mjs`, `panel.mjs` and `stitch.swift`: health and pictures. `charts.mjs`: the comparison's charts (how each ranking orders the links, where the embeddings disagree, what each drew).
 
 The scripts import the layout branch's canvas-digest tool (`DIGEST_TOOL`, its `lib/` folder; commit 4bc3494e on `claude/canvas-layout-strategy-f81c7d`, a local branch). `reproduce.sh` runs every measure above and draws the pictures again, in about 30 minutes. It uses Jev's answers and OpenAI's vectors in `data/`, and asks again only with `ASK_JEV=1` or `ASK_OPENAI=1`. With `EMB=openai-3-large` it runs every step with OpenAI's embedding instead; that run goes in a copy of this folder, as its header says, and is where [every step again with OpenAI's](#every-step-again-with-openais) comes from. If swiftc says the SDK isn't supported, set `SDKROOT` to one that matches the compiler, as the repository's build notes say.

@@ -243,15 +243,6 @@ for v in "same05=Apple + words" "oa-same05=OpenAI + words" "oaemb-same05=OpenAI 
   n=${v%%=*}; node engine-eval.mjs "${v#*=}" out/e-$n/drawing.json out/bg-$n/cut.json
 done
 for n in same05 oa-same05 oaemb-same05 words-same05 jbo-sim05; do EACH=1 node engine-eval.mjs "$n" out/e-$n/drawing.json out/bg-$n/cut.json | tail -1; done
-echo "== pictures of the two embeddings (build/pictures)"
-set --
-for b in Selection Mentions; do
-  pan out/e-same05 module:$b emb-apple-$b "$b: Apple's embedding and word overlap, at the simulation's counts"
-  pan out/e-oa-same05 module:$b emb-openai-$b "$b: OpenAI's embedding and word overlap, the same counts"
-  pan out/e-judges module:$b emb-judges-$b "$b: the judges' cut"
-  set -- "$@" build/pictures/emb-apple-$b.svg.png build/pictures/emb-openai-$b.svg.png build/pictures/emb-judges-$b.svg.png
-done
-build/stitch build/pictures/embeddings.jpg 3 "$@"
 echo "== the same rankings at the simulation's counts for thresholds 0.4 and 0.6 (Apple's), so the engine's own cuts can be seen to vary"
 for s in 0.4 0.6; do node background.mjs --snap=$s --out=out/bg-sim$s > /dev/null; done
 for s in 0.4 0.6; do
@@ -272,4 +263,16 @@ node rank-eval.mjs 'Jev + words=out/score-board+words.json' 'Jev + Apple + words
 for s in 0.4 0.5 0.6; do c=out/bg-sim$s/stats.json; [ $s = 0.5 ] && c=out/bg-sim05/stats.json; node background.mjs --score=board+words --snap=0.5 --emit=same --counts=$c --out=out/bg-sens-jw-$s > /dev/null; done
 for s in 0.4 0.5 0.6; do (SIM_CUT=out/bg-sens-jw-$s/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-sens-jw-$s/graph.json out/e-sens-jw-$s) & done; wait
 for s in 0.4 0.5 0.6; do node engine-eval.mjs "Jev + words, $s" out/e-sens-jw-$s/drawing.json out/bg-sens-jw-$s/cut.json; done
+echo "== pictures of the comparison (build/pictures): the charts (charts.mjs), and Selection and Mentions drawn by four of the rankings"
+node charts.mjs build/pictures
+set --
+for v in "same05=Apple’s + word overlap (earlier rounds)" "words-same05=word overlap alone" "oa-same05=OpenAI’s + word overlap" "sens-jw-0.5=Jev + word overlap"; do
+  n=${v%%=*}
+  for b in Selection Mentions; do
+    node panel.mjs out/e-$n/drawing.json module:$b build/pictures/emb-$n-$b.svg "$b: ${v#*=}" judge/rows.json
+    qlmanage -t -s 1400 -o build/pictures build/pictures/emb-$n-$b.svg > /dev/null 2>&1
+    set -- "$@" build/pictures/emb-$n-$b.svg.png
+  done
+done
+build/stitch build/pictures/embeddings.jpg 2 --head build/pictures/boards-head.png "$@"
 fi
