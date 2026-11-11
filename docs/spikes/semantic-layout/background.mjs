@@ -22,13 +22,14 @@
 // Similarity is the mix with what each board shares taken out (springs.mjs --sim=board). --score ranks links by something else wherever
 // similarity would: the springs' strength, the controls and the cuts (jev.mjs's answers: --score=board is data/jev-board.json, each
 // probability a logit; levels.more, one field of such a file; several joined with +, each a z-score over the links inside boards, sim for
-// similarity itself; a>b ranks by a and breaks its ties by b). --counts=FILE takes
+// similarity itself, emb for the embedding alone and words for word overlap alone; a>b ranks by a and breaks its ties by b). --counts=FILE takes
 // each board's number of links to cut (same) from an earlier run's stats.json; --emit=below cuts every link whose first answer's
 // probability is under --below. --dump=FILE writes each link's score. Deterministic: no randomness.
 //   node background.mjs [--physics=load|crowding|meaning] [--snap=1] [--sfloor=0.25] [--refmass=0.25] [--rest=160] [--lambda=1]
 //     [--others=hide] [--boards=module:A,...] [--auc=1] [--line=LABEL] [--each=1] [--bands=1] [--emit=sim|simcut|same|half|frac|...]
 //     [--score=board+sim] [--counts=out/x/stats.json] [--below=0.5] [--dump=FILE] --out=DIR
 import fs from 'fs';
+import { EMB, readVectors } from './sim.mjs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';
 const { buildModel } = await import(TOOL + 'model.mjs');
 const { sizesFrom, refusedEdges, pillKey } = await import(TOOL + 'sizes.mjs');
@@ -54,8 +55,8 @@ const node = (k) => model.node(k);
 const byKey = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const SEP = '\u0000';
 
-// ---- similarity: contextual embedding plus word overlap, what each board shares taken out, each a z-score over the links inside boards ----
-const raw = rd('./data/vec-contextual.json');
+// ---- similarity: the embedding (EMB: Apple's contextual unless it names another) plus word overlap, what each board shares taken out, each a z-score over the links inside boards ----
+const raw = readVectors(EMB);
 const texts = new Map(rd('./data/texts.json').map((t) => [t.key, t.text]));
 const STOP = new Set('a an the and or of to in on for by with is are be as it its at from that this what which into each one when where how not no but than then so their they them a s t'.split(' '));
 const words = (k) => (texts.get(k) || '').toLowerCase().match(/[a-z][a-z0-9]+/g)?.filter((w) => !STOP.has(w) && w.length > 2) || [];
@@ -104,6 +105,8 @@ if (args.score) {
   const [main, tie] = args.score.split('>');
   const parts = main.split('+').map((name, n) => {
     if (name === 'sim') return zs(all.map((p) => p.sim));
+    if (name === 'emb') return zs(all.map((p) => cosC(p.a, p.b)));
+    if (name === 'words') return zs(all.map((p) => cosT(p.a, p.b)));
     const [file, field] = name.split('.'), S = rd(`./data/jev-${file}.json`)[field || 'scores'];
     return zs(all.map((p) => { const q = S[p.a + '|' + p.b]; if (q == null) throw new Error(`no answer for ${p.a} | ${p.b} in data/jev-${name}.json`); if (p.prob == null) p.prob = q; const c = Math.min(0.999, Math.max(0.001, q)); return Math.log(c / (1 - c)); }));
   });

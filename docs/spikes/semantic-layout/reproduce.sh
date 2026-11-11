@@ -3,8 +3,12 @@
 # DIGEST_TOOL is the layout branch's canvas-digest tool, the folder that holds main.js and lib/ (commit 4bc3494e of
 # claude/canvas-layout-strategy-f81c7d), for instance:
 #   git worktree add /tmp/slice4 4bc3494e && DIGEST_TOOL=/tmp/slice4/.claude/skills/canvas-digest/tool sh reproduce.sh
-# Needs macOS 14 or later (NaturalLanguage's contextual embedding), node, swiftc and git. Takes about 25 minutes. Jev's answers are
+# Needs macOS 14 or later (NaturalLanguage's contextual embedding), node, swiftc and git. Takes about 35 minutes. Jev's answers are
 # read from data/jev-*.json; ASK_JEV=1 asks Jev again (jev.mjs, which needs the TypeSafe key and never prints it).
+# EMB names the embedding every step uses (sim.mjs): Apple's contextual, made on this Mac, unless EMB is openai-3-large or openai-3-small,
+# OpenAI's text-embedding-3 models, read from data/emb-openai-*.f16; ASK_OPENAI=1 embeds again (embed-openai.mjs, node 24, which needs
+# OPENAI_API_KEY and never prints it). A run with EMB set goes in a copy of this folder inside the repository, its out/ and build/ its own:
+#   cp -R . ../oa-large && rm -rf ../oa-large/out ../oa-large/out-* ../oa-large/build && EMB=openai-3-large sh ../oa-large/reproduce.sh
 set -eu
 cd "$(dirname "$0")"
 : "${DIGEST_TOOL:?set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)}"
@@ -12,12 +16,13 @@ export DIGEST_TOOL
 mkdir -p build out
 plan() { node "$1/main.js" plan "$2" data/measure.json "$3" --kinds data/kinds.json --view 1322x893 > "$3.log" 2>&1; }
 
-echo '== the vectors'
+echo "== the vectors (every step's embedding: ${EMB:-contextual})"
 node texts.mjs
 swiftc -O embed.swift -o build/embed
 build/embed data
+if [ "${ASK_OPENAI:-}" = 1 ]; then node embed-openai.mjs; fi
 echo '== does similarity carry meaning'
-node check-sim.mjs contextual
+node check-sim.mjs "${EMB:-contextual}"
 node judge-input.mjs
 
 echo '== the drawings: main as of the spike (218388bc), and the layout branch'
@@ -211,3 +216,60 @@ for b in Selection Mentions; do
   set -- "$@" build/pictures/jev-sim-$b.svg.png build/pictures/jev-jev-$b.svg.png build/pictures/jev-judges-$b.svg.png
 done
 build/stitch build/pictures/model.jpg 3 "$@"
+
+# the comparison holds the counts at Apple's simulation's, so it runs only in the run with Apple's embedding
+if [ "${EMB:-contextual}" = contextual ]; then
+echo "== Apple's embedding against OpenAI's: each alone, with word overlap, and with Jev, against the judges (rank-eval.mjs, emb-diff.mjs)"
+node background.mjs --auc=1 --score=words --dump=out/score-words.json > /dev/null
+for e in sentence contextual openai-3-small openai-3-large; do
+  EMB=$e node background.mjs --auc=1 --score=emb --dump=out/score-emb-$e.json > /dev/null
+  EMB=$e node background.mjs --auc=1 --dump=out/score-mix-$e.json > /dev/null
+done
+EMB=openai-3-large node background.mjs --auc=1 --score=board+sim --dump=out/score-board+mix-openai-3-large.json > /dev/null
+node rank-eval.mjs 'word overlap alone=out/score-words.json' 'Apple sentence alone=out/score-emb-sentence.json' 'Apple contextual alone=out/score-emb-contextual.json' \
+  'OpenAI 3-small alone=out/score-emb-openai-3-small.json' 'OpenAI 3-large alone=out/score-emb-openai-3-large.json' 'Apple contextual + words=out/score-mix-contextual.json' \
+  'OpenAI 3-small + words=out/score-mix-openai-3-small.json' 'OpenAI 3-large + words=out/score-mix-openai-3-large.json' 'Jev, the board=out/score-board.json' \
+  'Jev + Apple + words=out/score-board+sim.json' 'Jev + OpenAI + words=out/score-board+mix-openai-3-large.json'
+node emb-diff.mjs Apple=out/score-emb-contextual.json OpenAI=out/score-emb-openai-3-large.json --top=8
+node emb-diff.mjs Apple+words=out/score-mix-contextual.json OpenAI+words=out/score-mix-openai-3-large.json --top=0
+echo "== each ranking at the background simulation's counts (Apple's, 0.5), drawn by the layout branch's engine"
+for c in "oa-same05:openai-3-large:--snap=0.5 --emit=same" "oaemb-same05:openai-3-large:--score=emb --snap=0.5 --emit=same" \
+  "words-same05:contextual:--score=words --snap=0.5 --emit=same" "jbo-sim05:openai-3-large:--score=board+sim --snap=0.5 --emit=same"; do
+  n=${c%%:*}; r=${c#*:}; e=${r%%:*}; a=${r#*:}
+  EMB=$e node background.mjs $a --counts=out/bg-sim05/stats.json --out=out/bg-$n > /dev/null
+done
+for n in oa-same05 oaemb-same05 words-same05 jbo-sim05; do (SIM_CUT=out/bg-$n/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-$n/graph.json out/e-$n) & done; wait
+for v in "same05=Apple + words" "oa-same05=OpenAI + words" "oaemb-same05=OpenAI alone" "words-same05=word overlap alone" "jbs-sim05=Jev + Apple + words" "jbo-sim05=Jev + OpenAI + words"; do
+  n=${v%%=*}; node engine-eval.mjs "${v#*=}" out/e-$n/drawing.json out/bg-$n/cut.json
+done
+for n in same05 oa-same05 oaemb-same05 words-same05 jbo-sim05; do EACH=1 node engine-eval.mjs "$n" out/e-$n/drawing.json out/bg-$n/cut.json | tail -1; done
+echo "== pictures of the two embeddings (build/pictures)"
+set --
+for b in Selection Mentions; do
+  pan out/e-same05 module:$b emb-apple-$b "$b: Apple's embedding and word overlap, at the simulation's counts"
+  pan out/e-oa-same05 module:$b emb-openai-$b "$b: OpenAI's embedding and word overlap, the same counts"
+  pan out/e-judges module:$b emb-judges-$b "$b: the judges' cut"
+  set -- "$@" build/pictures/emb-apple-$b.svg.png build/pictures/emb-openai-$b.svg.png build/pictures/emb-judges-$b.svg.png
+done
+build/stitch build/pictures/embeddings.jpg 3 "$@"
+echo "== the same rankings at the simulation's counts for thresholds 0.4 and 0.6 (Apple's), so the engine's own cuts can be seen to vary"
+for s in 0.4 0.6; do node background.mjs --snap=$s --out=out/bg-sim$s > /dev/null; done
+for s in 0.4 0.6; do
+  for c in "aw:contextual:" "ow:openai-3-large:" "o:openai-3-large:--score=emb" "w:contextual:--score=words" "ja:contextual:--score=board+sim" "jo:openai-3-large:--score=board+sim"; do
+    n=${c%%:*}; r=${c#*:}; e=${r%%:*}; a=${r#*:}
+    EMB=$e node background.mjs $a --snap=0.5 --emit=same --counts=out/bg-sim$s/stats.json --out=out/bg-sens-$n-$s > /dev/null
+  done
+done
+for s in 0.4 0.6; do
+  for n in aw ow o w ja jo; do (SIM_CUT=out/bg-sens-$n-$s/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-sens-$n-$s/graph.json out/e-sens-$n-$s) & done; wait
+done
+for s in 0.4 0.6; do for v in "aw=Apple + words" "ow=OpenAI + words" "o=OpenAI alone" "w=word overlap alone" "ja=Jev + Apple + words" "jo=Jev + OpenAI + words"; do
+  n=${v%%=*}; node engine-eval.mjs "${v#*=}, $s" out/e-sens-$n-$s/drawing.json out/bg-sens-$n-$s/cut.json
+done; done
+echo "== Jev and word overlap alone, no embedding: ranked, and drawn at the three counts"
+node background.mjs --auc=1 --score=board+words --dump=out/score-board+words.json > /dev/null
+node rank-eval.mjs 'Jev + words=out/score-board+words.json' 'Jev + Apple + words=out/score-board+sim.json' 'Jev + OpenAI + words=out/score-board+mix-openai-3-large.json' | tail -n +4
+for s in 0.4 0.5 0.6; do c=out/bg-sim$s/stats.json; [ $s = 0.5 ] && c=out/bg-sim05/stats.json; node background.mjs --score=board+words --snap=0.5 --emit=same --counts=$c --out=out/bg-sens-jw-$s > /dev/null; done
+for s in 0.4 0.5 0.6; do (SIM_CUT=out/bg-sens-jw-$s/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-sens-jw-$s/graph.json out/e-sens-jw-$s) & done; wait
+for s in 0.4 0.5 0.6; do node engine-eval.mjs "Jev + words, $s" out/e-sens-jw-$s/drawing.json out/bg-sens-jw-$s/cut.json; done
+fi

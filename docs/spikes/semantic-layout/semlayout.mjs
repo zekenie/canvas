@@ -4,10 +4,10 @@
 // (another board, or in or out of a frame) is a reference from the start. References are light: a pill rides in its note's strip
 // (this branch's stripAlts) and pushes on nothing but its own footprint.
 //
-//   node semlayout.mjs --order=sem|struct --sim=mix|contextual|tfidf|sentence --out=DIR
+//   node semlayout.mjs --order=sem|struct --sim=mix|emb|tfidf|sentence (emb: the embedding EMB names) --out=DIR
 //   sem: the least similar crowded link breaks first. struct (the control): the most crowded link breaks first, no similarity anywhere.
 import fs from 'fs';
-import { loadSim } from './sim.mjs';
+import { EMB, loadSim } from './sim.mjs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';
 const { buildModel } = await import(TOOL + 'model.mjs');
 const { sizesFrom, refusedEdges, pillKey } = await import(TOOL + 'sizes.mjs');
@@ -81,12 +81,12 @@ for (const e of edges) {
 }
 
 // ---- similarity: ranks within a container decide, so only the order of the scores matters ----
-const sims = Object.fromEntries(['contextual', 'tfidf', 'sentence'].map((m) => [m, loadSim(m)]));
+const sims = { emb: loadSim(EMB), tfidf: loadSim('tfidf'), sentence: loadSim('sentence') };
 const allPairs = [...C.values()].flatMap((X) => [...X.pairs.values()]);
 // a pair lifted from a link into a frame is as alike as the link's own ends
 const endsOf = (p) => (p.lifted ? p.dirs[0] : [p.a, p.b]);
 function zFor(f) { const v = allPairs.map((p) => f(...endsOf(p))); const mu = v.reduce((a, b) => a + b, 0) / v.length; const sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length) || 1; return (a, b) => (f(a, b) - mu) / sd; }
-const simOf = SIM === 'mix' ? (() => { const zc = zFor(sims.contextual), zt = zFor(sims.tfidf); return (a, b) => zc(a, b) + zt(a, b); })() : sims[SIM];
+const simOf = SIM === 'mix' ? (() => { const zc = zFor(sims.emb), zt = zFor(sims.tfidf); return (a, b) => zc(a, b) + zt(a, b); })() : sims[SIM];
 for (const X of C.values()) {
   const ps = [...X.pairs.values()];
   for (const p of ps) p.sim = p.lifted ? Math.max(...p.dirs.map(([u, v]) => simOf(u, v))) : simOf(p.a, p.b);
@@ -122,7 +122,7 @@ const choice = new Map();     // note key -> the arrangement index it takes
 function pillList(k) {
   const t = [...(pillsOf.get(k) || [])];
   // the most similar nearest the note's middle
-  t.sort((x, y) => sims.contextual(k, y) - sims.contextual(k, x) || byKey(x, y));
+  t.sort((x, y) => sims.emb(k, y) - sims.emb(k, x) || byKey(x, y));
   const c = cont(k);
   return t.map((target) => ({ target, w: sizes.pillWidth[pillKey(target, c)] || sizes.pillWidth[target] || 120 }));
 }

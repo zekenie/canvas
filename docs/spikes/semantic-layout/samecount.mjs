@@ -1,8 +1,8 @@
 // Selection cut by similarity alone, as many links as both judges chip: how many of them the judges chip, and what the misses are.
 import fs from 'fs';
-import { loadSim } from './sim.mjs';
+import { EMB, loadSim } from './sim.mjs';
 const rows = JSON.parse(fs.readFileSync(new URL('./judge/rows.json', import.meta.url), 'utf8')).filter((r) => r.board === 'Selection');
-const c = loadSim('contextual'), t = loadSim('tfidf');
+const c = loadSim(EMB), t = loadSim('tfidf');
 const z = (v) => { const mu = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length) || 1; return v.map((x) => (x - mu) / sd); };
 const zc = z(rows.map((r) => c(r.a, r.b))), zt = z(rows.map((r) => t(r.a, r.b)));
 rows.forEach((r, i) => { r.sim = zc[i] + zt[i]; r.cls = r.ja + r.jb === 0 ? 'chip' : r.ja + r.jb >= 3 ? 'keep' : 'split'; });

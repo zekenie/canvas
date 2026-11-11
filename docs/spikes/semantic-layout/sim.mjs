@@ -1,6 +1,29 @@
-// Similarity between two notes from their vectors: centered on the corpus mean, then cosine. Models: sentence, contextual, tfidf.
+// Similarity between two notes from their vectors: centered on the corpus mean, then cosine. Models: sentence and contextual (Apple's
+// NaturalLanguage, on this Mac: embed.swift), openai-3-small and openai-3-large (OpenAI's text-embedding-3 models: embed-openai.mjs), tfidf.
+// EMB is the embedding every script uses where it says "the embedding": Apple's contextual unless EMB names another.
 import fs from 'fs';
+import crypto from 'crypto';
 const here = (p) => new URL(p, import.meta.url);
+export const EMB = process.env.EMB || 'contextual';
+// what the vectors were made from: every note's key and text
+export const textsHash = (texts) => crypto.createHash('sha256').update(texts.map((t) => t.key + '\u0000' + t.text).join('\u0001')).digest('hex');
+// The vectors of one embedding by note key: data/vec-<name>.json (embed.swift's), or data/emb-<name>.f16 with its keys in data/emb-<name>.json
+// (embed-openai.mjs's, half floats one vector after another), refused if the texts have changed since.
+export function readVectors(name) {
+  const json = here('./data/vec-' + name + '.json');
+  if (fs.existsSync(json)) return JSON.parse(fs.readFileSync(json, 'utf8'));
+  if (!fs.existsSync(here('./data/emb-' + name + '.json'))) throw new Error(`no vectors for ${name}: data/vec-${name}.json or data/emb-${name}.f16`);
+  const meta = JSON.parse(fs.readFileSync(here('./data/emb-' + name + '.json'), 'utf8')), buf = fs.readFileSync(here('./data/emb-' + name + '.f16'));
+  const texts = JSON.parse(fs.readFileSync(here('./data/texts.json'), 'utf8'));
+  if (meta.texts !== textsHash(texts)) throw new Error(`data/emb-${name}: the texts changed since they were embedded; ASK_OPENAI=1 embeds them again`);
+  const d = meta.dimensions, out = {};
+  if (buf.length !== meta.keys.length * d * 2) throw new Error(`data/emb-${name}.f16: ${buf.length} bytes for ${meta.keys.length} vectors of ${d}`);
+  meta.keys.forEach((k, j) => { const v = new Array(d); for (let i = 0; i < d; i++) v[i] = HALF[buf.readUInt16LE(2 * (j * d + i))]; out[k] = v; });
+  return out;
+}
+// every half float's value (sign, 5 exponent bits, 10 of mantissa)
+const HALF = new Float64Array(65536);
+for (let h = 0; h < 65536; h++) { const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, m = h & 1023; HALF[h] = e === 0 ? s * m * 2 ** -24 : e === 31 ? (m ? NaN : s * Infinity) : s * (1024 + m) * 2 ** (e - 25); }
 function unit(v) { let s = 0; for (const x of v) s += x * x; s = Math.sqrt(s) || 1; return v.map((x) => x / s); }
 function centered(vecs) {
   const keys = Object.keys(vecs).sort(); const d = vecs[keys[0]].length; const mean = new Array(d).fill(0);
@@ -27,6 +50,6 @@ export function loadSim(model) {
     const V = tfidf();
     return (a, b) => { const x = V[a], y = V[b]; if (!x || !y) return 0; let s = 0; const [p, q] = x.size < y.size ? [x, y] : [y, x]; for (const [i, w] of p) { const u = q.get(i); if (u) s += w * u; } return s; };
   }
-  const V = centered(JSON.parse(fs.readFileSync(here('./data/vec-' + model + '.json'))));
+  const V = centered(readVectors(model));
   return (a, b) => { const x = V[a], y = V[b]; if (!x || !y) return 0; let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * y[i]; return s; };
 }

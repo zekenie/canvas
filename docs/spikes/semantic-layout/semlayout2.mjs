@@ -6,10 +6,10 @@
 // broken link whose straight line is clear is an arrow again, the most alike first. A link across containers (another board, in or out of
 // a frame) is a reference from the start.
 //
-//   node semlayout2.mjs --order=sem|struct --sim=mix|contextual|tfidf|sentence --out=DIR [--boards=a,b]
+//   node semlayout2.mjs --order=sem|struct --sim=mix|emb|tfidf|sentence (emb: the embedding EMB names) --out=DIR [--boards=a,b]
 //   sem: the least alike crowded link breaks first. struct (the control): the most crowded first, and no similarity anywhere.
 import fs from 'fs';
-import { loadSim } from './sim.mjs';
+import { EMB, loadSim } from './sim.mjs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';
 const { buildModel } = await import(TOOL + 'model.mjs');
 const { sizesFrom, refusedEdges, pillKey } = await import(TOOL + 'sizes.mjs');
@@ -71,10 +71,10 @@ for (const e of edges) {
 }
 
 // ---- similarity (ranks within a container decide, so only the order of the scores matters) ----
-const sims = Object.fromEntries(['contextual', 'tfidf', 'sentence'].map((m) => [m, loadSim(m)]));
+const sims = { emb: loadSim(EMB), tfidf: loadSim('tfidf'), sentence: loadSim('sentence') };
 const allPairs = [...C.values()].flatMap((X) => [...X.pairs.values()]);
 function zFor(f) { const v = allPairs.map((p) => f(p.a, p.b)); const mu = v.reduce((a, b) => a + b, 0) / v.length; const sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length) || 1; return (a, b) => (f(a, b) - mu) / sd; }
-const simOf = SIM === 'mix' ? (() => { const zc = zFor(sims.contextual), zt = zFor(sims.tfidf); return (a, b) => zc(a, b) + zt(a, b); })() : sims[SIM];
+const simOf = SIM === 'mix' ? (() => { const zc = zFor(sims.emb), zt = zFor(sims.tfidf); return (a, b) => zc(a, b) + zt(a, b); })() : sims[SIM];
 for (const X of C.values()) {
   const ps = [...X.pairs.values()];
   for (const p of ps) p.sim = simOf(p.a, p.b);
@@ -98,7 +98,7 @@ const choice = new Map();
 const pillW = (t, cid) => sizes.pillWidth[pillKey(t, cid)] || sizes.pillWidth[t] || 120;
 function ownPills(X, k) {
   const t = [...(refsOf.get(k) || [])].filter((x) => !sharedFor(X, k, x));
-  t.sort((x, y) => sims.contextual(k, y) - sims.contextual(k, x) || byKey(x, y));
+  t.sort((x, y) => sims.emb(k, y) - sims.emb(k, x) || byKey(x, y));
   return t.map((target) => ({ target, w: pillW(target, X.id) }));
 }
 function footprint(X, id) {
@@ -289,7 +289,7 @@ function layOut(X) {
       const near = new Set(badArrows.flatMap((p) => [p.a, p.b]));
       for (const p of X.pairs.values()) if (near.has(p.a) || near.has(p.b)) p.k = P.floor + (1 - P.floor) * p.rank;
     }
-    const simLine = (l) => sims.contextual(l.ref.host, l.ref.target);
+    const simLine = (l) => sims.emb(l.ref.host, l.ref.target);
     badLines.sort(ORDER === 'sem' ? (x, y) => simLine(x) - simLine(y) || byKey(x.ref.host + x.ref.target, y.ref.host + y.ref.target) : (x, y) => y.crowd - x.crowd || byKey(x.ref.host + x.ref.target, y.ref.host + y.ref.target));
     for (const l of badLines.slice(0, Math.max(1, Math.ceil(badLines.length * P.batch)))) { X.split.add(l.ref.host + '\u0000' + l.ref.target); st.split++; }
     const crowdOf = new Map(bad.filter((l) => l.kind === 'arrow').map((l) => [l.ref, l.crowd]));

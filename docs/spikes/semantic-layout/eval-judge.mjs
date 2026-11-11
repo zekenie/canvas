@@ -29,14 +29,18 @@ const g = rd(new URL('./data/graph.json', import.meta.url));
 const deg = new Map(); for (const e of g.edges) { deg.set(e.from, (deg.get(e.from) || 0) + 1); deg.set(e.to, (deg.get(e.to) || 0) + 1); }
 const indeg = new Map(); for (const e of g.edges) indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
 const weight = new Map(); for (const e of g.edges) { const k = [e.from, e.to].sort().join('|'); weight.set(k, (weight.get(k) || 0) + ((e.layout && e.layout.weight) || 1)); }
-const sims = Object.fromEntries(['sentence', 'contextual', 'tfidf'].map((m) => [m, loadSim(m)]));
+const sims = Object.fromEntries(['sentence', 'contextual', 'openai-3-small', 'openai-3-large', 'tfidf'].map((m) => [m, loadSim(m)]));
 const z = (m) => { const v = rows.map((r) => sims[m](r.a, r.b)); const mu = v.reduce((a, b) => a + b) / v.length; const sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length); return new Map(rows.map((r, i) => [r, (v[i] - mu) / sd])); };
-const zc = z('contextual'), zt = z('tfidf');
+const zt = z('tfidf'), mix = (m) => { const zm = z(m); return (r) => zm.get(r) + zt.get(r); };
 const rankers = {
   'similarity: sentence (on-device)': (r) => sims.sentence(r.a, r.b),
   'similarity: contextual (on-device)': (r) => sims.contextual(r.a, r.b),
+  'similarity: OpenAI text-embedding-3-small': (r) => sims['openai-3-small'](r.a, r.b),
+  'similarity: OpenAI text-embedding-3-large': (r) => sims['openai-3-large'](r.a, r.b),
   'similarity: tf-idf words': (r) => sims.tfidf(r.a, r.b),
-  'similarity: contextual + tf-idf': (r) => zc.get(r) + zt.get(r),
+  'similarity: contextual + tf-idf': mix('contextual'),
+  'similarity: 3-small + tf-idf': mix('openai-3-small'),
+  'similarity: 3-large + tf-idf': mix('openai-3-large'),
   'link weight (uses)': (r) => weight.get([r.a, r.b].sort().join('|')),
   'popularity: busier end (in-degree), low keeps': (r) => -Math.max(indeg.get(r.a) || 0, indeg.get(r.b) || 0),
 };

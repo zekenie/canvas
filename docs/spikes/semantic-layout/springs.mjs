@@ -15,7 +15,7 @@
 //   node springs.mjs [--break=strength|stretch|force] [--core=3] [--floor=0.1] [--snap=3] [--sfloor=0.25] [--cut=0] [--refmass=0.25]
 //     [--sim=board] [--frames=arrows] [--others=hide] [--boards=module:A,...] [--auc=1] --out=DIR
 import fs from 'fs';
-import { loadSim } from './sim.mjs';
+import { EMB, loadSim, readVectors } from './sim.mjs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';
 const { buildModel } = await import(TOOL + 'model.mjs');
 const { sizesFrom, refusedEdges, pillKey } = await import(TOOL + 'sizes.mjs');
@@ -95,14 +95,14 @@ for (const e of edges) {
   X.refs.set(pk, Math.min(0.3, (X.refs.get(pk) || 0) + P.refK));
 }
 
-// ---- similarity: on-device contextual embedding plus word overlap, each as a z-score over the corpus's arrows ----
-const sims = Object.fromEntries(['contextual', 'tfidf'].map((m) => [m, loadSim(m)]));
+// ---- similarity: the embedding (EMB: Apple's on-device contextual unless it names another) plus word overlap, each as a z-score over the corpus's arrows ----
+const sims = { emb: loadSim(EMB), tfidf: loadSim('tfidf') };
 // --sim=board (an adjustment, not the rule as stated): what every note on a board shares is taken out first. The embedding is centred
 // on its board's mean rather than the corpus's, and a word counts by how few of its board's notes use it, so a module's own name,
 // which runs through all its files, ties nothing together
 if (args.sim === 'board') {
   const unit = (v) => { let s = 0; for (const x of v) s += x * x; s = Math.sqrt(s) || 1; return v.map((x) => x / s); };
-  const raw = JSON.parse(fs.readFileSync(new URL('./data/vec-contextual.json', import.meta.url), 'utf8'));
+  const raw = readVectors(EMB);
   const texts = new Map(JSON.parse(fs.readFileSync(new URL('./data/texts.json', import.meta.url), 'utf8')).map((t) => [t.key, t.text]));
   const STOP = new Set('a an the and or of to in on for by with is are be as it its at from that this what which into each one when where how not no but than then so their they them a s t'.split(' '));
   const words = (k) => (texts.get(k) || '').toLowerCase().match(/[a-z][a-z0-9]+/g)?.filter((w) => !STOP.has(w) && w.length > 2) || [];
@@ -124,18 +124,18 @@ if (args.sim === 'board') {
       s = Math.sqrt(s) || 1; for (const [w, x] of v) v.set(w, x / s); bag.set(k, v);
     }
   }
-  sims.contextual = (a, b) => { const x = vec.get(a), y = vec.get(b); if (!x || !y) return 0; let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * y[i]; return s; };
+  sims.emb = (a, b) => { const x = vec.get(a), y = vec.get(b); if (!x || !y) return 0; let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * y[i]; return s; };
   sims.tfidf = (a, b) => { const x = bag.get(a), y = bag.get(b); if (!x || !y) return 0; let s = 0; const [p, q] = x.size < y.size ? [x, y] : [y, x]; for (const [w, u] of p) { const t = q.get(w); if (t) s += u * t; } return s; };
 }
 const allPairs = [...C.values()].flatMap((X) => [...X.pairs.values()]);
 const endsOf = (p) => (p.lifted ? p.dirs[0] : [p.a, p.b]);
 function zFor(f) { const v = allPairs.map((p) => f(...endsOf(p))); const mu = v.reduce((a, b) => a + b, 0) / v.length; const sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length) || 1; return (a, b) => (f(a, b) - mu) / sd; }
-const zc = zFor(sims.contextual), zt = zFor(sims.tfidf), simOf = (a, b) => zc(a, b) + zt(a, b);
+const zc = zFor(sims.emb), zt = zFor(sims.tfidf), simOf = (a, b) => zc(a, b) + zt(a, b);
 // --auc=1: how well this similarity ranks the judged links (the chance a link both judges keep outranks one both chip), then stop
 if (args.auc) {
   const rows = JSON.parse(fs.readFileSync(new URL('./judge/rows.json', import.meta.url), 'utf8'));
   const auc = (f) => { const Kp = rows.filter((r) => r.ja + r.jb >= 3), Ch = rows.filter((r) => r.ja + r.jb === 0); let w = 0; for (const k of Kp) for (const c of Ch) { const a = f(k.a, k.b), b = f(c.a, c.b); w += a > b ? 1 : a === b ? 0.5 : 0; } return +(w / Kp.length / Ch.length).toFixed(2); };
-  console.log(JSON.stringify({ sim: args.sim || 'corpus', mix: auc(simOf), contextual: auc(sims.contextual), words: auc(sims.tfidf) }));
+  console.log(JSON.stringify({ sim: args.sim || 'corpus', mix: auc(simOf), emb: EMB, embedding: auc(sims.emb), words: auc(sims.tfidf) }));
   process.exit(0);
 }
 
@@ -174,7 +174,7 @@ const frameBox = new Map();   // frame key -> { w, h, above, ox, oy }
 const choice = new Map();     // note key -> the arrangement index it takes
 function pillList(k) {
   const t = [...(pillsOf.get(k) || [])];
-  t.sort((x, y) => sims.contextual(k, y) - sims.contextual(k, x) || byKey(x, y));   // the most alike nearest the note's middle
+  t.sort((x, y) => sims.emb(k, y) - sims.emb(k, x) || byKey(x, y));   // the most alike nearest the note's middle
   const c = cont(k);
   return t.map((target) => ({ target, w: sizes.pillWidth[pillKey(target, c)] || sizes.pillWidth[target] || 120 }));
 }
