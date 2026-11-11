@@ -3,7 +3,8 @@
 # DIGEST_TOOL is the layout branch's canvas-digest tool, the folder that holds main.js and lib/ (commit 4bc3494e of
 # claude/canvas-layout-strategy-f81c7d), for instance:
 #   git worktree add /tmp/slice4 4bc3494e && DIGEST_TOOL=/tmp/slice4/.claude/skills/canvas-digest/tool sh reproduce.sh
-# Needs macOS 14 or later (NaturalLanguage's contextual embedding), node, swiftc and git. Takes about 20 minutes.
+# Needs macOS 14 or later (NaturalLanguage's contextual embedding), node, swiftc and git. Takes about 25 minutes. Jev's answers are
+# read from data/jev-*.json; ASK_JEV=1 asks Jev again (jev.mjs, which needs the TypeSafe key and never prints it).
 set -eu
 cd "$(dirname "$0")"
 : "${DIGEST_TOOL:?set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)}"
@@ -177,3 +178,36 @@ for b in Selection Mentions; do
   set -- "$@" build/pictures/bg-branch-$b.svg.png build/pictures/bg-sim-$b.svg.png build/pictures/bg-same-$b.svg.png build/pictures/bg-judges-$b.svg.png
 done
 build/stitch build/pictures/background.jpg 4 "$@"
+
+echo '== a model ranks the links: Jev asked the judges question about every link inside a board (jev.mjs), against the judges (rank-eval.mjs)'
+if [ "${ASK_JEV:-}" = 1 ]; then for v in pair roles board boardroles levels; do node jev.mjs --variant=$v; done; fi
+node background.mjs --auc=1 --dump=out/score-sim.json > /dev/null
+for c in pair roles board boardroles levels levels.more levels.one 'board>sim' board+sim; do node background.mjs --auc=1 --score="$c" --dump="out/score-$c.json" > /dev/null; done
+node rank-eval.mjs 'similarity=out/score-sim.json' 'Jev, a link alone=out/score-pair.json' 'Jev, a link with roles=out/score-roles.json' 'Jev, the board=out/score-board.json' \
+  'Jev, the board with roles=out/score-boardroles.json' 'Jev, two questions=out/score-levels.json' '  more than incidental=out/score-levels.more.json' '  one idea=out/score-levels.one.json' \
+  'Jev, the board, ties by sim=out/score-board>sim.json' 'Jev and similarity=out/score-board+sim.json' --probs=data/jev-board.json,data/jev-pair.json
+echo '== its cuts at four counts, drawn by the layout branch engine'
+for c in "jb-judges:--score=board --emit=simjudges" "jbs-judges:--score=board+sim --emit=simjudges" "jb-chips:--score=board --emit=simchips" "jbs-chips:--score=board+sim --emit=simchips" \
+  "jb-sim05:--score=board --snap=0.5 --emit=same --counts=out/bg-sim05/stats.json" "jbs-sim05:--score=board+sim --snap=0.5 --emit=same --counts=out/bg-sim05/stats.json" \
+  "jb-frac66:--score=board --emit=frac --frac=0.66" "jbs-frac66:--score=board+sim --emit=frac --frac=0.66" \
+  "jbs-below50:--score=board+sim --emit=below --below=0.5" "jbs-below40:--score=board+sim --emit=below --below=0.4" "jbs-bg05:--score=board+sim --snap=0.5" "jbs-bg1:--score=board+sim --snap=1"; do
+  n=${c%%:*}; a=${c#*:}
+  node background.mjs $a --out=out/bg-$n > /dev/null
+done
+for n in jb-judges jbs-judges jb-chips jbs-chips jb-sim05 jbs-sim05; do (SIM_CUT=out/bg-$n/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-$n/graph.json out/e-$n) & done; wait
+for n in jb-frac66 jbs-frac66 jbs-below50 jbs-below40 jbs-bg05 jbs-bg1; do (SIM_CUT=out/bg-$n/cut.json SIM_KEEPCUT=1 plan build/simtool out/bg-$n/graph.json out/e-$n) & done; wait
+for v in "jb-sim05=Jev, the simulation's counts" "jbs-sim05=Jev and similarity, the simulation's counts" "jb-frac66=Jev, a flat two-thirds" "jbs-frac66=Jev and similarity, a flat two-thirds" \
+  "jb-judges=Jev, the judges' counts" "jbs-judges=Jev and similarity, the judges' counts" "jb-chips=Jev, the chips' counts" "jbs-chips=Jev and similarity, the chips' counts" \
+  "jbs-below50=Jev's own no (under 0.5)" "jbs-below40=Jev's own no (under 0.4)" "jbs-bg05=the simulation, Jev and similarity its strength, 0.5" "jbs-bg1=the simulation, Jev and similarity its strength, 1"; do
+  n=${v%%=*}; node engine-eval.mjs "${v#*=}" out/e-$n/drawing.json out/bg-$n/cut.json
+done
+for n in same05 jbs-sim05; do EACH=1 node engine-eval.mjs "$n" out/e-$n/drawing.json out/bg-$n/cut.json | tail -1; done
+echo "== pictures of the model's ranking (build/pictures)"
+set --
+for b in Selection Mentions; do
+  pan out/e-same05 module:$b jev-sim-$b "$b: similarity, at the simulation's counts"
+  pan out/e-jbs-sim05 module:$b jev-jev-$b "$b: Jev and similarity, the same counts"
+  pan out/e-judges module:$b jev-judges-$b "$b: the judges' cut"
+  set -- "$@" build/pictures/jev-sim-$b.svg.png build/pictures/jev-jev-$b.svg.png build/pictures/jev-judges-$b.svg.png
+done
+build/stitch build/pictures/model.jpg 3 "$@"

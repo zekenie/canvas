@@ -19,9 +19,15 @@
 // links as the simulation broke there, the least alike), half, frac (--frac of each board's links, the least alike), judges (every judged
 // link the judges wouldn't keep), chips (every judged link both judges chip), and simjudges and simchips (on each judged board as many
 // links as those two cut there, the least alike); all but sim and simcut weighted by similarity, as same is.
-// Similarity is the mix with what each board shares taken out (springs.mjs --sim=board). Deterministic: no randomness.
+// Similarity is the mix with what each board shares taken out (springs.mjs --sim=board). --score ranks links by something else wherever
+// similarity would: the springs' strength, the controls and the cuts (jev.mjs's answers: --score=board is data/jev-board.json, each
+// probability a logit; levels.more, one field of such a file; several joined with +, each a z-score over the links inside boards, sim for
+// similarity itself; a>b ranks by a and breaks its ties by b). --counts=FILE takes
+// each board's number of links to cut (same) from an earlier run's stats.json; --emit=below cuts every link whose first answer's
+// probability is under --below. --dump=FILE writes each link's score. Deterministic: no randomness.
 //   node background.mjs [--physics=load|crowding|meaning] [--snap=1] [--sfloor=0.25] [--refmass=0.25] [--rest=160] [--lambda=1]
-//     [--others=hide] [--boards=module:A,...] [--auc=1] [--line=LABEL] [--each=1] [--bands=1] [--emit=sim|simcut|same|half|frac|...] --out=DIR
+//     [--others=hide] [--boards=module:A,...] [--auc=1] [--line=LABEL] [--each=1] [--bands=1] [--emit=sim|simcut|same|half|frac|...]
+//     [--score=board+sim] [--counts=out/x/stats.json] [--below=0.5] [--dump=FILE] --out=DIR
 import fs from 'fs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';
 const { buildModel } = await import(TOOL + 'model.mjs');
@@ -92,6 +98,20 @@ const all = [...pairsOn.values()].flatMap((M) => [...M.values()]);
 const zOf = (f) => { const v = all.map((p) => f(p.a, p.b)); const mu = v.reduce((s, x) => s + x, 0) / v.length; const sd = Math.sqrt(v.reduce((s, x) => s + (x - mu) ** 2, 0) / v.length) || 1; return (a, b) => (f(a, b) - mu) / sd; };
 const zc = zOf(cosC), zt = zOf(cosT), simOf = (a, b) => zc(a, b) + zt(a, b);
 for (const p of all) p.sim = simOf(p.a, p.b);
+if (args.score) {
+  const zs = (v) => { const mu = v.reduce((s, x) => s + x, 0) / v.length, sd = Math.sqrt(v.reduce((s, x) => s + (x - mu) ** 2, 0) / v.length) || 1; return v.map((x) => (x - mu) / sd); };
+  // a>b ranks by a and breaks its ties by b (Jev's probabilities come in hundredths, so many links tie)
+  const [main, tie] = args.score.split('>');
+  const parts = main.split('+').map((name, n) => {
+    if (name === 'sim') return zs(all.map((p) => p.sim));
+    const [file, field] = name.split('.'), S = rd(`./data/jev-${file}.json`)[field || 'scores'];
+    return zs(all.map((p) => { const q = S[p.a + '|' + p.b]; if (q == null) throw new Error(`no answer for ${p.a} | ${p.b} in data/jev-${name}.json`); if (p.prob == null) p.prob = q; const c = Math.min(0.999, Math.max(0.001, q)); return Math.log(c / (1 - c)); }));
+  });
+  const ties = tie ? zs(tie === 'sim' ? all.map((p) => p.sim) : (() => { const S = rd(`./data/jev-${tie}.json`).scores; return all.map((p) => S[p.a + '|' + p.b]); })()) : null;
+  all.forEach((p, i) => { p.sim = parts.reduce((s, z) => s + z[i], 0) + (ties ? 1e-3 * ties[i] : 0); });
+}
+if (args.dump) fs.writeFileSync(args.dump, JSON.stringify(Object.fromEntries(all.map((p) => [p.a + '|' + p.b, +p.sim.toFixed(4)]))));
+const countOf = args.counts ? new Map(JSON.parse(fs.readFileSync(args.counts, 'utf8')).boards.map((b) => [b.board, b.broken])) : null;
 all.slice().sort((x, y) => x.sim - y.sim || byKey(x.key, y.key)).forEach((p, i, xs) => { p.grank = xs.length > 1 ? i / (xs.length - 1) : 1; });
 
 // ---- the simulation of one board ----
@@ -199,10 +219,13 @@ for (const r of results) {
   if (EMIT === 'simcut') {
     const bySim = r.ps.slice().sort((x, y) => x.sim - y.sim || byKey(x.key, y.key));
     broken = bySim.filter((p) => p.broken); held = bySim.filter((p) => !p.broken);
+  } else if (EMIT === 'below') {
+    const bySim = r.ps.slice().sort((x, y) => x.sim - y.sim || byKey(x.key, y.key)), under = (p) => p.prob != null && p.prob < +args.below;
+    broken = bySim.filter(under); held = bySim.filter((p) => !under(p));
   } else if (EMIT !== 'sim' && !['same', 'half', 'frac', 'judges', 'chips', 'simjudges', 'simchips'].includes(EMIT)) {
-    throw new Error('--emit is sim, simcut, same, half, frac, judges, chips, simjudges or simchips');
+    throw new Error('--emit is sim, simcut, same, half, frac, below, judges, chips, simjudges or simchips');
   } else if (EMIT !== 'sim') {
-    const bySim = r.ps.slice().sort((x, y) => x.sim - y.sim || byKey(x.key, y.key)), m = EMIT === 'half' ? Math.floor(r.ps.length / 2) : EMIT === 'frac' ? Math.floor(r.ps.length * +args.frac) : r.order.length;
+    const bySim = r.ps.slice().sort((x, y) => x.sim - y.sim || byKey(x.key, y.key)), m = EMIT === 'half' ? Math.floor(r.ps.length / 2) : EMIT === 'frac' ? Math.floor(r.ps.length * +args.frac) : countOf ? countOf.get(r.board) ?? 0 : r.order.length;
     broken = bySim.slice(0, m); held = bySim.slice(m);
   }
   const out = new Set(broken);
