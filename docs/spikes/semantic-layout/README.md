@@ -1,5 +1,12 @@
 # Spike: let meaning decide which links are arrows
 
+## The owner's plan, respiked: no new frames
+
+[Issue 26](https://github.com/zekenie/canvas/issues/26) holds the owner's plan and its open points. This round is the spike's decomposition with nothing added: each board's links weighted by how alike their two files are, each container's files and frames (a lens frame one piece) split into groups by those links, and the links between groups made pills before layout, inside the boards and frames the lens draws, with no frame added. Slice 4's engine draws the rest. The owner judged it modestly better than slice 4.
+
+- `strategy.sh`'s last plan step draws it (`out/e-noframes`, from `out/cl-1-units/graph.json`, the lens's graph with the engine's weights) and counts it: 779 of 2,202 links inside boards drawn as arrows, 72 of 72 boards clean; the six boards 163 of 557, with 281 cut between groups and 113 more by the engine. Its boards and frames are the lens's, node for node.
+- `pictures/respike`: the root board and eight module boards in the app, slice 4 beside the respike.
+
 ## Where it ended: clusters in new frames (an alternative, not the owner's plan)
 
 The owner's plan, stated in [issue 26](https://github.com/zekenie/canvas/issues/26), places notes by the topology the lens already draws (its boards and frames) first and by meaning second, with no new groupings. This round did something else: it clustered each board by meaning and drew each cluster in a new, untitled frame the lens never made. The frames began as a device to make slice 4's engine lay clusters out as blocks (cluster-frames.mjs says they were only for the picture), and were then presented as the owner's idea, which they are not. They are kept here as an alternative the owner may consider. `strategy.sh` makes its numbers and pictures from this folder's data, with no key and no app:

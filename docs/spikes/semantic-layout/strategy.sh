@@ -36,7 +36,11 @@ rm -rf build/simtool && cp -R "$DIGEST_TOOL" build/simtool && (cd build/simtool 
 SIM_CUT=$U/cut.json SIM_KEEPCUT=1 plan build/simtool $U/graph-framed-weighted.json out/e-units
 [ -f out-branch/drawing.json ] || plan "$DIGEST_TOOL" data/graph.json out-branch
 node strategy-counts.mjs data/graph.json out-branch/drawing.json "slice 4"
-node strategy-counts.mjs $U/graph-framed-weighted.json out/e-units/drawing.json "the strategy" $U
+node strategy-counts.mjs $U/graph-framed-weighted.json out/e-units/drawing.json "the alternative, new frames" $U
+
+echo "== the owner's plan, respiked: the same groups and cut, drawn with no new frame (the lens's boards and frames as they are)"
+SIM_CUT=$U/cut.json SIM_KEEPCUT=1 plan build/simtool $U/graph.json out/e-noframes
+node strategy-counts.mjs $U/graph.json out/e-noframes/drawing.json "respike, no new frames" $U
 
 echo "== a sketch of Selection and Mentions before and after (build/pictures/strategy), coloured by cluster"
 B=module:Selection,module:Mentions,module:Draw,module:Canvas/Model,module:Types/Form,module:References
