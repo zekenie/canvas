@@ -1,6 +1,7 @@
 #!/bin/sh
-# The strategy the spike ended on (2026-11-13), from this folder's data, with no key and no app: topology first, then meaning, and the
-# links between the clusters they make cut.
+# The alternative the spike ended on (2026-11-13), from this folder's data, with no key and no app: each board clustered by meaning, each
+# cluster drawn in a new untitled frame, the links between clusters cut. Not the owner's plan, which places notes by the topology the lens
+# already draws first and by meaning second, with no new groupings (issue 26).
 #   1. What holds what comes first: on each board a frame is one piece, and its own notes are grouped inside it.
 #   2. Each link is as tight as its two notes are alike: OpenAI's text-embedding-3-large (data/emb-openai-3-large.f16), each note's vector
 #      centred on its board's mean, ranked within the board.

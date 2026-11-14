@@ -1,19 +1,19 @@
 # Spike: let meaning decide which links are arrows
 
-## Where it ended: the strategy
+## Where it ended: clusters in new frames (an alternative, not the owner's plan)
 
-Topology first, then meaning, and the loose links between the clusters they make cut. [Issue 26](https://github.com/zekenie/canvas/issues/26) says it in full, with the boards in the app. `strategy.sh` makes every number and picture there from this folder's data, with no key and no app:
+The owner's plan, stated in [issue 26](https://github.com/zekenie/canvas/issues/26), places notes by the topology the lens already draws (its boards and frames) first and by meaning second, with no new groupings. This round did something else: it clustered each board by meaning and drew each cluster in a new, untitled frame the lens never made. The frames began as a device to make slice 4's engine lay clusters out as blocks (cluster-frames.mjs says they were only for the picture), and were then presented as the owner's idea, which they are not. They are kept here as an alternative the owner may consider. `strategy.sh` makes its numbers and pictures from this folder's data, with no key and no app:
 
 - `cluster.mjs --frames=units` gives each link inside a board its tightness: how alike its two notes are, by OpenAI's `text-embedding-3-large` (`data/emb-openai-3-large.f16`), each note's vector centred on its board's mean and ranked within the board. It groups each board's pieces into clusters by their links, the tighter counting more (Louvain, in key order), with a frame one piece and its own notes grouped inside it, and cuts the links between clusters (`out/cl-1-units`).
 - `cluster-frames.mjs` puts each cluster of two or more in an untitled frame of its own.
 - The layout branch's engine (slice 4, 4bc3494e) draws it, with `engine.patch` and `simcut.patch`: the cut links are pills from the start, and its own cuts take the loosest link first (`out/e-units`). `strategy-counts.mjs` sets it beside slice 4.
 - `semlayout.mjs` (`--tight`, `--cutfile`, `--graph`) and `render-idea.mjs` draw the sketch of a board before and after, coloured by cluster.
-- `pictures/strategy`: the sketches, and six boards in the app beside slice 4.
+- `pictures/strategy`: the sketches, and six boards in the app beside slice 4, captioned as the alternative they are.
 - `data/groups.json`: the clusters, each container's items and the cluster each is in, kept for the build to match.
 
 ## The earlier rounds, superseded
 
-These rounds tested rules the strategy replaced: Apple's on-device embedding, word overlap, Jev, a simulation in the background, a force placer, and a rule of mine. Their measures stand; their verdicts and plans don't.
+These rounds came before it, and tested rules the owner's plan replaced: Apple's on-device embedding, word overlap, Jev, a simulation in the background, a force placer, and a rule of mine. Their measures stand; their verdicts and plans don't.
 
 
 **Verdict.** Similarity decides well which links become references, but on this codebase it needs no embedding model. Word overlap counted within each board does nearly as well as OpenAI's embedding, and Apple's on-device embedding, which every earlier round mixed in, made it worse. This round runs every step again with OpenAI's `text-embedding-3-large` and sets it beside Apple's.
