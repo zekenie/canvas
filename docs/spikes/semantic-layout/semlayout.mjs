@@ -29,9 +29,12 @@ const P = {
   margin: 24,    // the room kept between an arrow and a shape it passes
 };
 const rd = (p) => JSON.parse(fs.readFileSync(new URL(p, import.meta.url), 'utf8'));
-const graph = rd('./data/graph.json'), measure = rd('./data/measure.json'), kinds = rd('./data/kinds.json');
+// --graph=FILE: another graph document to lay out (cluster-frames.mjs's, each cluster in a frame of its own)
+const graph = args.graph ? JSON.parse(fs.readFileSync(args.graph, 'utf8')) : rd('./data/graph.json'), measure = rd('./data/measure.json'), kinds = rd('./data/kinds.json');
 const model = buildModel(graph, kinds, { refused: refusedEdges(measure) });
 const sizes = sizesFrom(model, measure), K = sizes.constants;
+const TIGHT = args.tight ? JSON.parse(fs.readFileSync(args.tight, 'utf8')) : null;
+const CUT = args.cutfile ? new Set(JSON.parse(fs.readFileSync(args.cutfile, 'utf8')).map(([u, v]) => u + '\u0000' + v)) : null;
 const node = (k) => model.node(k);
 const cont = (k) => node(k).container;                  // 'b:board' or 'f:frame'
 const isFrame = (k) => node(k).holds === 'shapes';
@@ -66,7 +69,8 @@ for (const e of edges) {
   // --frames=arrows: a link into or out of a frame is an arrow, drawn between its ends; its spring joins the two items that hold them
   // where their containers meet
   if (args.frames === 'arrows' && at && at[1] !== cvs.get(at[0])) {
-    const X = box(at[0]), [a, b] = [at[1], cvs.get(at[0])].sort(byKey), pk = a + '\u0000' + b;
+    // with --tight (cluster.mjs's), each link into a frame is a pair of its own, so the cut can take one and keep another
+    const X = box(at[0]), [a, b] = [at[1], cvs.get(at[0])].sort(byKey), pk = a + '\u0000' + b + (args.tight ? '\u0000' + [u, v].sort(byKey).join('\u0000') : '');
     if (!X.pairs.has(pk)) X.pairs.set(pk, { key: pk, a, b, dirs: [], broken: false, lifted: true });
     X.pairs.get(pk).dirs.push([u, v]);
     continue;
@@ -89,7 +93,9 @@ function zFor(f) { const v = allPairs.map((p) => f(...endsOf(p))); const mu = v.
 const simOf = SIM === 'mix' ? (() => { const zc = zFor(sims.emb), zt = zFor(sims.tfidf); return (a, b) => zc(a, b) + zt(a, b); })() : sims[SIM];
 for (const X of C.values()) {
   const ps = [...X.pairs.values()];
-  for (const p of ps) p.sim = p.lifted ? Math.max(...p.dirs.map(([u, v]) => simOf(u, v))) : simOf(p.a, p.b);
+  // --tight=FILE (cluster.mjs's tight.json): a link's tightness is the clusters' weight for it, so the springs pull as the clusters were made
+  const tightOf = TIGHT && ((u, v) => TIGHT[[u, v].sort(byKey).join('\u0000')] ?? 0);
+  for (const p of ps) p.sim = TIGHT ? Math.max(...p.dirs.map(([u, v]) => tightOf(u, v))) : p.lifted ? Math.max(...p.dirs.map(([u, v]) => simOf(u, v))) : simOf(p.a, p.b);
   // --hub=L: a link at a busy note is cut sooner: its score less L times how busy its busier end is (both as z-scores in the container)
   if (args.hub && ps.length > 1) {
     const deg = new Map(); for (const p of ps) for (const t of [p.a, p.b]) deg.set(t, (deg.get(t) || 0) + 1);
@@ -114,6 +120,8 @@ for (const X of C.values()) {
   }
   // --budget=F: a share F of each container's links, the least alike, are references before anything is drawn (and no more are cut)
   if (args.budget != null) for (const p of sorted.slice(0, Math.floor(+args.budget * ps.length))) { p.broken = true; p.pre = true; for (const [u, v] of p.dirs) addPill(u, v); }
+  // --cutfile=FILE (cluster.mjs's cut.json): the links between clusters are references before anything is drawn (and no more are cut)
+  if (CUT) for (const p of ps) if (p.dirs.some(([u, v]) => CUT.has(u + '\u0000' + v))) { p.broken = true; p.pre = true; for (const [u, v] of p.dirs) addPill(u, v); }
 }
 
 // ---- footprints: a note with its pills' strip (one of stripAlts' arrangements), a frame as laid out, a card ----

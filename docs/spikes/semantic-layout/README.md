@@ -1,5 +1,21 @@
 # Spike: let meaning decide which links are arrows
 
+## Where it ended: the strategy
+
+Topology first, then meaning, and the loose links between the clusters they make cut. [Issue 26](https://github.com/zekenie/canvas/issues/26) says it in full, with the boards in the app. `strategy.sh` makes every number and picture there from this folder's data, with no key and no app:
+
+- `cluster.mjs --frames=units` gives each link inside a board its tightness: how alike its two notes are, by OpenAI's `text-embedding-3-large` (`data/emb-openai-3-large.f16`), each note's vector centred on its board's mean and ranked within the board. It groups each board's pieces into clusters by their links, the tighter counting more (Louvain, in key order), with a frame one piece and its own notes grouped inside it, and cuts the links between clusters (`out/cl-1-units`).
+- `cluster-frames.mjs` puts each cluster of two or more in an untitled frame of its own.
+- The layout branch's engine (slice 4, 4bc3494e) draws it, with `engine.patch` and `simcut.patch`: the cut links are pills from the start, and its own cuts take the loosest link first (`out/e-units`). `strategy-counts.mjs` sets it beside slice 4.
+- `semlayout.mjs` (`--tight`, `--cutfile`, `--graph`) and `render-idea.mjs` draw the sketch of a board before and after, coloured by cluster.
+- `pictures/strategy`: the sketches, and six boards in the app beside slice 4.
+- `data/groups.json`: the clusters, each container's items and the cluster each is in, kept for the build to match.
+
+## The earlier rounds, superseded
+
+These rounds tested rules the strategy replaced: Apple's on-device embedding, word overlap, Jev, a simulation in the background, a force placer, and a rule of mine. Their measures stand; their verdicts and plans don't.
+
+
 **Verdict.** Similarity decides well which links become references, but on this codebase it needs no embedding model. Word overlap counted within each board does nearly as well as OpenAI's embedding, and Apple's on-device embedding, which every earlier round mixed in, made it worse. This round runs every step again with OpenAI's `text-embedding-3-large` and sets it beside Apple's.
 
 - **Ranked against the judges, Apple's embedding is the weakest input.** It ranks a link the judges keep above one they'd chip 73% of the time, below word overlap's 84%, and mixing it in pulled the earlier rounds' similarity down to 80%. OpenAI's does so 85% of the time alone, and 86% with word overlap. Where the two embeddings place a link more than a third of its board apart, the judges side with OpenAI 44 times to 24.
@@ -12,7 +28,7 @@
 
 This is a spike: evidence and a pre-plan, no feature work. It is meant to replace both of today's strategies: main's (popular shapes become pills) and the layout branch's (`claude/canvas-layout-strategy-f81c7d`, slices 1 to 4, not landed: the fewest cuts that draw every board clean). Its earliest rounds tested a rule of mine instead of the owner's. They are kept at the end for what they measured.
 
-## How it was measured
+### How it was measured
 
 - **Corpus.** This repository drawn by canvas-ingest. It has 72 boards, 891 notes, 56 frames and 71 module cards. Of its 8,282 links, 2,498 are inside a board and 5,784 go between boards.
 - **Vectors.** Each note's text is its title plus the doc comment and declarations the lens gives it, with code names split into words.
@@ -30,7 +46,7 @@ This is a spike: evidence and a pre-plan, no feature work. It is meant to replac
 - **One ruler.** Every strategy writes canvas-digest's drawing format, and every drawing is scored by the layout branch's own health check (crossings, lines over shapes, shapes on top). So main, the branch and the spike are measured alike.
 - **Chips and keeps.** A chip arrow is an arrow on a link both judges would make a chip; a keep arrow, one on a link they'd keep side by side. "Keep links drawn" counts the 76 keep links drawn as arrows.
 
-## Apple's embedding against OpenAI's
+### Apple's embedding against OpenAI's
 
 Every round before this one measured how alike two notes are with Apple's embedding, on this Mac. This round embeds the same texts with OpenAI's and runs every step again, so the two can be set side by side.
 
@@ -38,7 +54,7 @@ Every round before this one measured how alike two notes are with Apple's embedd
 - **OpenAI's**: `text-embedding-3-large` (3,072 numbers) and `text-embedding-3-small` (1,536). Each read 42,167 tokens in 8 requests, in 10 s and 5 s, for under a cent each. The texts leave the machine. `embed-openai.mjs` asks, and the vectors are kept in `data/` as half floats, so drawing again needs no key.
 - **Everything else is the same**: the texts (each note's title, doc comment and declarations), each vector centred on its board's mean, word overlap counted within the board, each a z-score over the links inside boards. `EMB` picks the embedding for every step (`sim.mjs`).
 
-### How they rank
+#### How they rank
 
 Each ranking orders the links the judges agree on: the further right its blue stripes sit, past the red, the better it ranks.
 
@@ -67,7 +83,7 @@ On the 459 judged links. The last column cuts each board as far as the judges wo
 - **It also tells linked notes from unlinked ones better.** Across every board, a linked pair outranks an unlinked pair of the same board 73% of the time with OpenAI's, 67% with Apple's contextual, 64% with its sentence embedding, and 73% with word overlap.
 - **With Jev, the embedding stops mattering.** Jev mixed with OpenAI's similarity scores 0.95, and keep over split, the distinction the tight counts need, rises to 0.82. Jev mixed with word overlap alone scores the same, and leaves the most keep links at the judges' counts (48).
 
-### Where they disagree
+#### Where they disagree
 
 The two orders agree only loosely: a rank correlation of 0.61 over the 2,202 links inside boards. A link's place below is its rank among its board's judged links, from 0 (least alike) to 1.
 
@@ -78,7 +94,7 @@ The two orders agree only loosely: a rank correlation of 0.61 over the 2,202 lin
 - **Apple is fooled by a module's shared files.** The 8 links it places furthest above OpenAI are all chips, links to a style or central file: ReferenceDefinition to ReferenceStyle (Apple 0.93, OpenAI 0.13), DrawTexts to Draw.swift (0.81, 0.08), MentionTextView to Mentionable (0.75, 0.00), Drawing to DrawPoints (0.90, 0.23).
 - **OpenAI is fooled by registration.** Of the 8 links it places furthest above Apple, 2 are keep links it gets right (ReferenceEditing to ReferenceEdits, 0.14 to 0.90). The other 6 are chips: a plugin and the parts it registers (SelectionPlugin to SelectionObservers, 0.16 to 0.86; to CanvasButtons, 0.21 to 0.76), and files beside a style, state or central file. What a link is for, registration or plumbing, is still a role no embedding sees.
 
-### Drawn by the layout branch's engine
+#### Drawn by the layout branch's engine
 
 On every board, each ranking cuts as many links as the background simulation broke there, the least alike first, and the engine draws the rest as in the rounds below. The counts are the simulation's at thresholds 0.4, 0.5 and 0.6, run with the earlier rounds' similarity, and held fixed, so only the ranking differs. Every drawing has all 72 boards clean, with 646 to 802 arrows.
 
@@ -105,7 +121,7 @@ The boards behind the numbers, at threshold 0.5's counts. On Selection, OpenAI's
 
 ![Selection and Mentions drawn by the layout branch's engine four ways, at the background simulation's counts for threshold 0.5: Apple's embedding with word overlap, word overlap alone, OpenAI's embedding with word overlap, and Jev with word overlap. Arrows are coloured by the judges: blue keep, red chip, grey between](pictures/embeddings.jpg)
 
-### Every step again with OpenAI's
+#### Every step again with OpenAI's
 
 `reproduce.sh` with `EMB=openai-3-large` runs every step of every round with OpenAI's embedding in place of Apple's: the rule as stated, the background simulation with OpenAI's similarity as its springs, and the engine's drawings at that simulation's counts. Word overlap is mixed in as before.
 
@@ -131,7 +147,7 @@ Every engine drawing has all 72 boards clean.
 - **Each later step gains a little.** The background simulation leaves 9 points fewer chip arrows before drawing. Of the five drawings above the judges' own cut, OpenAI's draws 5 or 6 more keep links than Apple's in four, with as many chips or fewer. At the simulation's counts it draws one fewer, with 18% chips against 24%.
 - **The weights reach the engine.** Given the judges' own cut, the engine draws 63 keep links with OpenAI's similarity as its weights and 56 with Apple's: it cuts 13 keep links to draw clean instead of 20. So its further cuts follow the weights in part.
 
-## A model reads the board: Jev
+### A model reads the board: Jev
 
 The previous round asked a model, not an embedding. Jev answers a yes-or-no question about each link. Every link inside a board was asked, 2,202 of them, not only the 459 the judges labelled. "Similarity" in this section is the earlier rounds', Apple's embedding plus word overlap. Jev mixed with OpenAI's is in the section above.
 
@@ -150,7 +166,7 @@ The previous round asked a model, not an embedding. Jev answers a yes-or-no ques
   After the first results, one more was decided before its answers came back: the judges' three labels as two questions, "more than incidental?" and "one idea, more than related?".
 - **Cost.** Asked by board, the corpus took 70 requests and 0.58 million input tokens. A request holds at most 150 questions, so the root's 359 links went in three. The median request took 0.14 s. A link at a time took 2,202 requests and 1.4 million tokens, 30 s with eight at once. Answers are kept by a hash of the request, so a board asked again unchanged asks nothing.
 
-### How it ranks
+#### How it ranks
 
 How often a link of one class outranks one of another (AUC), on the 459 judged links:
 
@@ -175,7 +191,7 @@ One judge ranks the other's 2s over their 0s at 0.99. "Jev and similarity" adds 
 
   Mixed, each covers some of the other's misses, and keep over split rises to 0.81. Breaking Jev's ties by similarity, without the mix, barely changes it.
 
-### Drawn by the layout branch's engine
+#### Drawn by the layout branch's engine
 
 Each ranking's cut at four counts, drawn as in the background simulation's round. The cut is given before layout and kept (`simcut.patch`), and each link's place in the ranking is its weight for the engine's further cuts.
 
@@ -214,7 +230,7 @@ Every row draws all 72 boards clean but two, noted below.
 - **The simulation sets the count, and the ranking sets the order.** With Jev and similarity as its springs' strength, the simulation's own order draws 40 keep links with 21% chips. The ranking at its counts draws 46 with 13%.
 - **Where the engine cut alone, one board came out unclean.** At the judges' and the chips' counts, the given cut covers only the judged boards. The engine cut the other 67 by the mix's weights, and left Types/Form with 8 lines over shapes. With the simulation's counts on every board, all 72 are clean.
 
-## A simulation in the background decides what breaks
+### A simulation in the background decides what breaks
 
 The owner's follow-up, on the finding that in a dense area the graph decides how far an arrow stretches, not its own spring:
 
@@ -231,7 +247,7 @@ This simulation is never drawn. Its only output is which links break, and the la
 - **Drawn by the layout branch's engine.** The breaks become pills before layout and are never put back (`simcut.patch`, over the earlier rounds' `engine.patch`). Each link's place in the simulation's order is its weight, which the engine's own further cuts follow.
 - **The control.** Each run is set against similarity alone cutting the same number of links on each board, the least alike first, and weighted by similarity.
 
-### It picks what similarity picks
+#### It picks what similarity picks
 
 On the five judged boards (459 links), before anything is drawn:
 
@@ -251,7 +267,7 @@ The ranges cover four thresholds for crowding only, and two strengths of meaning
 - **Where crowding sets it, the order is the board's shape.** Under crowding only, what breaks has a mean rank of 0.40 (similarity's own cut: 0.30; chance: 0.5), and the judges agree with it less.
 - **Hubs do break now.** A hub's fan of notes crowds, so its spokes take load. On Selection, at a threshold of 0.5, the registration hub (the `selection` plugin) loses 10 of its 14 links, all chips. Drawn, it keeps 4 arrows, all chips, where the branch keeps 12. But similarity, cutting as many links on that board, leaves it 1.
 
-### It decides how many break, and where
+#### It decides how many break, and where
 
 Load against strength; 68 of the 72 boards have links inside them.
 
@@ -263,7 +279,7 @@ Load against strength; 68 of the 72 boards have links inside them.
 | 40 to 79 | 11 | 36% | 60% |
 | 80 or more | 6 | 52% | 70% |
 
-### Drawn by the layout branch's engine
+#### Drawn by the layout branch's engine
 
 ![Selection and Mentions drawn by the layout branch's engine four ways: as the branch cuts, as the background simulation cuts (threshold 0.5), as similarity cuts at the simulation's counts, and as the judges cut. Arrows are coloured by the judges: green keep, red chip, amber between](pictures/background.jpg)
 
@@ -288,7 +304,7 @@ Every row but main draws all 72 boards clean. "The judges' cut" makes a pill of 
 - **The ranking is what's missing.** At the judges' own counts, their ranking draws 56 keep links and no chip; similarity draws 30 keep links and 8 chips. The engine isn't the limit: given the right cut, it draws three in four keep links on clean boards.
 - **Putting the simulation's cuts back where there's room** raises its arrows from 778 to 920, but brings chips back: 33% of its judged arrows.
 
-## The strategy, as stated
+### The strategy, as stated
 
 The owner's words:
 
@@ -317,9 +333,9 @@ How `springs.mjs` builds it:
 
 It is deterministic, with no randomness. Crossings are allowed, and nothing is put back. All 72 boards draw in 30 seconds.
 
-## Results of the rule as stated
+### Results of the rule as stated
 
-### Against main and the layout branch
+#### Against main and the layout branch
 
 ![Three boards under main, the layout branch and the strategy as stated: the system's root, Selection and Mentions. Arrows are coloured by the judges: green keep, red chip, amber between](pictures/strategy.jpg)
 
@@ -348,7 +364,7 @@ The three boards in the picture compare like this:
 | Selection (88 links) | 10 arrows, 592 crossings | 39 arrows, clean | 53 arrows, 45 crossings |
 | Mentions (123 links) | 11 arrows, 366 crossings | 33 arrows, clean | 74 arrows, 113 crossings |
 
-### Why it doesn't work as stated
+#### Why it doesn't work as stated
 
 1. **Frames as references cut the links that matter most.**
    - On the judged boards, 39 links cross a frame's edge, and 24 of them are keep links. Only 1 is a chip.
@@ -382,7 +398,7 @@ The threshold sets how many links break. On Selection it leaves:
 
 At every setting, the hub stars stay.
 
-### What holds up: similarity as the threshold
+#### What holds up: similarity as the threshold
 
 ![Selection and Mentions in three versions: as stated; with links into frames as arrows; and broken where the force is weak, with what each board shares taken out](pictures/variants.jpg)
 
@@ -395,7 +411,7 @@ At every setting, the hub stars stay.
   - That beats the branch (20% keep, 43% chips) and the rule as stated (13% and 51%). It draws 50 to 56 of the 76 keep links, against the branch's 30.
 - **It still crosses,** 266 to 496 times on the five boards. And the registration star inside the frame keeps its red spokes, since a star is never congested.
 
-## Pre-plan, if this goes on
+### Pre-plan, if this goes on
 
 The rule to build: Jev reads each board and ranks its links, mixed with word overlap; the background simulation says how many become references on each board; and the layout branch's engine draws the rest, cutting further by the same ranking.
 
@@ -410,14 +426,14 @@ The rule to build: Jev reads each board and ranks its links, mixed with word ove
 
 **The test bed.** The 459 judged links and Jev's answers to them become a fixture. The keep links drawn and the share of chip arrows can't regress, measured over several counts, since one count swings by up to 11 keep links. Every board stays clean, and arrows and area are reported. A new version of Jev is scored on them before it is used.
 
-## Open questions for the owner
+### Open questions for the owner
 
 1. Where is the model asked? canvas-digest could ask Jev itself, with its own key and cache. Or the app could, through `canvas decide` taking a graph document's links, with its key and its memory of answers. The app keeps answers for a day; layout wants them kept for as long as the board reads the same.
 2. Should the app have an embedding at all? On this codebase word overlap does nearly as well as OpenAI's embedding, and as well once Jev is mixed in, and Apple's on-device one does worse. Boards of prose may differ, and a hosted embedding sends the board's text out.
 3. Should links into frames be arrows? 24 of the 76 keep links cross a frame's edge.
 4. How should references look so they don't crowd: chips inside the note, one pill per module, or hidden under a floor?
 
-## Earlier rounds of this spike
+### Earlier rounds of this spike
 
 These rounds came before the owner's strategy was built. They tested a rule of mine, not the owner's: a link broke when its line was crowded in the picture, the least alike first, a tenth of the crowded links each round. They are kept for what they measured:
 
@@ -425,7 +441,7 @@ These rounds came before the owner's strategy was built. They tested a rule of m
 - similarity inside the layout branch's engine;
 - Selection along a continuum of cuts, ending with the cut both judges would make.
 
-### Similarity carries the judgment
+#### Similarity carries the judgment
 
 The table gives each ranker's AUC: the chance a "keep" link outranks a "chip" link. 0.5 is chance.
 
@@ -445,7 +461,7 @@ The table gives each ranker's AUC: the chance a "keep" link outranks a "chip" li
 
 The nearest notes make sense. On the Selection board, Faces.swift's nearest notes are ShapeFaces (0.72), Buttons, Popovers and Parts, and its farthest is the `selection` plugin hub. Across all boards, linked pairs score above unlinked pairs on the same board (AUC 0.64 to 0.73 by model).
 
-### Neither engine draws by meaning
+#### Neither engine draws by meaning
 
 These are arrows on the 459 judged links. "Similarity alone" draws the same number of arrows on each board, the most alike links first, with no regard for whether the drawing can hold them.
 
@@ -461,7 +477,7 @@ Why each engine misses:
 - **The layout branch.** Its cut keeps the heavier link first, then the one at the busier end, so that a hub keeps its arrows. That is the opposite of what both judges did: they chipped registration lists, style files and shared state.
 - **Main.** It is sparse, so its few arrows are better ones, but its boards aren't clean.
 
-### The first force model went all the way to islands
+#### The first force model went all the way to islands
 
 ![The first force model, on Selection: every note in a halo of its own pills, and 60 of 61 links broken](pictures/force-collapse.jpg)
 
@@ -490,7 +506,7 @@ That force model worked like this:
 
 But no judged board ended clean.
 
-### Similarity inside the layout branch's engine
+#### Similarity inside the layout branch's engine
 
 First the engine is left as it is, and each link's `layout.weight` is set to its similarity rank on its board (1 to 100). The weight already orders the planar cut, the mend's ties and the put-back, and the star placement weighs it in where notes go. Then come three small patches (`engine.patch`):
 
@@ -515,15 +531,15 @@ First the engine is left as it is, and each link's `layout.weight` is set to its
 
 **Cutting by meaning first helps.** Every board stays clean, the area is smaller, and the share of arrows that are chips falls from 43% to 35–38%. But the engine's geometry still decides which of the remaining links survive.
 
-### Frames: the links into them matter most
+#### Frames: the links into them matter most
 
 24 of the 76 keep links cross a frame's edge, against 1 of the 210 chip links. Of those 24 links, 14 join an extension point to the file that declares it, and 9 join a plugin to a file. The layout branch's slice 4, which draws links into frames as arrows, was right.
 
-### Meaning is not role
+#### Meaning is not role
 
 A module's entry file lists every name the module declares, and its style and state files carry the module's own name. So word overlap ties them to every file on their board, and their links survive. A hub penalty adds a little (0.79 to 0.80). Counting a word by how few of its board's notes use it adds more: word overlap goes from 0.78 to 0.84 (the latest round). The lens could also declare a role, such as registration or plumbing. 22 notes have no text at all (11 of them plugins), and these embed by their title alone.
 
-### Along the continuum
+#### Along the continuum
 
 These boards use the first force placer, on Selection only, with crossings allowed and arrows into frames. Links are cut least alike first, from none to half. The top row shows the pills for other boards, and the bottom row hides them.
 
@@ -540,7 +556,7 @@ The last panel below is cut exactly where both judges chip. That's the target, m
 
 ![Selection cut 25% and 50% by similarity, and cut where both judges chip](pictures/judges-cut.jpg)
 
-### Pictures from the earlier rounds
+#### Pictures from the earlier rounds
 
 Each picture shows one board under main, the layout branch, the branch's engine with the least-alike half cut first, and the first force model. Every arrow is coloured by the judges: green means both say keep side by side, red means both say chip, and amber is in between. Pills are blue, and pale lines go into pills. The pictures of the comparison with OpenAI's embedding draw keep blue and between grey instead, which colour-blind readers can tell from red, and `reproduce.sh` now draws every picture that way, with arrows as thick as a board's size needs.
 
@@ -548,7 +564,7 @@ Each picture shows one board under main, the layout branch, the branch's engine 
 
 ![Mentions, the same four](pictures/mentions.jpg)
 
-## Caveats
+### Caveats
 
 - OpenAI's vectors are kept as half floats, and every number here is computed from those (`text-embedding-3`, asked on 2026-11-11). Rounding to half floats moves a cosine by less than a thousandth.
 - Apple's embedding was used one way: the contextual model's token vectors averaged, over the same texts. Another pooling might do better; none was tried.
@@ -565,7 +581,7 @@ Each picture shows one board under main, the layout branch, the branch's engine 
 - Main is measured by the branch's straight-line check.
 - The spike's earlier runs used the layout branch's tool with its uncommitted slice 5 work, which plans a fresh document byte for byte as slice 4 does. `reproduce.sh` uses slice 4 as committed.
 
-## Reproduce
+### Reproduce
 
 Everything is in this folder:
 

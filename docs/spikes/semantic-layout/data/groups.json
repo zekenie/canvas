@@ -1,0 +1,1596 @@
+{
+ "made": "cluster.mjs --frames=units, EMB=openai-3-large, resolution 1",
+ "boards": [
+  {
+   "board": "module:Adornments",
+   "levels": {
+    "b:module:Adornments": {
+     "file:Sources/Adornments/AdornmentContent.swift": 0,
+     "file:Sources/Adornments/AdornmentLayout.swift": 1,
+     "file:Sources/Adornments/AdornmentOverlay.swift": 1,
+     "file:Sources/Adornments/AdornmentState.swift": 1,
+     "file:Sources/Adornments/Adornments.swift": 0,
+     "file:Sources/Adornments/ChipFade.swift": 1,
+     "frame:Plugin system:module:Adornments": 0
+    },
+    "f:frame:Plugin system:module:Adornments": {
+     "extension-point:ShapeAdornments": 0,
+     "plugin:adornments": 0
+    }
+   }
+  },
+  {
+   "board": "module:Arrows",
+   "levels": {
+    "b:module:Arrows": {
+     "file:Sources/Arrows/ArrowConnecting.swift": 0,
+     "file:Sources/Arrows/ArrowDefinition.swift": 0,
+     "file:Sources/Arrows/ArrowEndLine.swift": 1,
+     "file:Sources/Arrows/ArrowGeometry.swift": 1,
+     "file:Sources/Arrows/ArrowHandleDragSession.swift": 2,
+     "file:Sources/Arrows/ArrowLabel.swift": 1,
+     "file:Sources/Arrows/ArrowLabelEditing.swift": 1,
+     "file:Sources/Arrows/ArrowLights.swift": 0,
+     "file:Sources/Arrows/ArrowLoops.swift": 2,
+     "file:Sources/Arrows/ArrowModel.swift": 0,
+     "file:Sources/Arrows/ArrowPairs.swift": 0,
+     "file:Sources/Arrows/ArrowParts.swift": 1,
+     "file:Sources/Arrows/ArrowPorts.swift": 0,
+     "file:Sources/Arrows/ArrowRow.swift": 0,
+     "file:Sources/Arrows/ArrowSkeleton.swift": 1,
+     "file:Sources/Arrows/ArrowStyle.swift": 1,
+     "file:Sources/Arrows/ArrowTargeting.swift": 1,
+     "file:Sources/Arrows/ArrowThrough.swift": 1,
+     "file:Sources/Arrows/Connectables.swift": 2,
+     "frame:Plugin system:module:Arrows": 0
+    },
+    "f:frame:Plugin system:module:Arrows": {
+     "extension-point:ArrowBindingRules": 0,
+     "kind:arrow": 1,
+     "plugin:arrow-lights": 2,
+     "plugin:arrow-ports": 0,
+     "plugin:arrows": 1
+    }
+   }
+  },
+  {
+   "board": "module:Automation",
+   "levels": {
+    "b:module:Automation": {
+     "file:Sources/Automation/Automation.swift": 0,
+     "file:Sources/Automation/Capture.swift": 1,
+     "file:Sources/Automation/Commands.swift": 1,
+     "file:Sources/Automation/Params.swift": 1,
+     "file:Sources/Automation/QueryRefusals.swift": 0,
+     "file:Sources/Automation/Show.swift": 1,
+     "frame:Plugin system:module:Automation": 0
+    },
+    "f:frame:Plugin system:module:Automation": {
+     "extension-point:AutomationCommands": 0,
+     "plugin:automation": 0
+    }
+   }
+  },
+  {
+   "board": "module:Boards",
+   "levels": {
+    "b:module:Boards": {
+     "file:Sources/Boards/BoardCrumbs.swift": 0,
+     "file:Sources/Boards/BoardHeadings.swift": 1,
+     "file:Sources/Boards/BoardPath.swift": 0,
+     "file:Sources/Boards/BoardQueries.swift": 1,
+     "file:Sources/Boards/Boards.swift": 0,
+     "file:Sources/Boards/BoardsStyle.swift": 0,
+     "file:Sources/Boards/OpensBoard.swift": 0,
+     "file:Sources/Boards/PathValidation.swift": 1,
+     "file:Sources/Boards/ShapePaths.swift": 1,
+     "frame:Plugin system:module:Boards": 1
+    },
+    "f:frame:Plugin system:module:Boards": {
+     "extension-point:BoardKinds": 0,
+     "plugin:board-contents": 1,
+     "plugin:board-headings": 2,
+     "plugin:board-navigation": 0,
+     "plugin:board-queries": 3,
+     "plugin:path-validation": 4
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Editor",
+   "levels": {
+    "b:module:Canvas/Editor": {
+     "file:Sources/Canvas/Editor/Accessibility.swift": 0,
+     "file:Sources/Canvas/Editor/BoardReading.swift": 1,
+     "file:Sources/Canvas/Editor/BoardSwitching.swift": 1,
+     "file:Sources/Canvas/Editor/CanvasEditor+Camera.swift": 2,
+     "file:Sources/Canvas/Editor/CanvasEditor+Host.swift": 3,
+     "file:Sources/Canvas/Editor/CanvasEditor+Inserting.swift": 0,
+     "file:Sources/Canvas/Editor/CanvasEditor+Layout.swift": 1,
+     "file:Sources/Canvas/Editor/CanvasEditor+Undo.swift": 2,
+     "file:Sources/Canvas/Editor/CanvasEditor+Whole.swift": 0,
+     "file:Sources/Canvas/Editor/CanvasEditor.swift": 0,
+     "file:Sources/Canvas/Editor/Cards.swift": 2,
+     "file:Sources/Canvas/Editor/CoveredEdges.swift": 0,
+     "file:Sources/Canvas/Editor/EdgeScrolling.swift": 3,
+     "file:Sources/Canvas/Editor/EditorService.swift": 1,
+     "file:Sources/Canvas/Editor/Glide.swift": 3,
+     "file:Sources/Canvas/Editor/Input.swift": 3,
+     "file:Sources/Canvas/Editor/MenuPopUp.swift": 0,
+     "file:Sources/Canvas/Editor/PendingPlacement.swift": 3,
+     "file:Sources/Canvas/Editor/Popovers.swift": 3,
+     "file:Sources/Canvas/Editor/ReadsAsText.swift": 4,
+     "file:Sources/Canvas/Editor/Scheduler.swift": 3,
+     "file:Sources/Canvas/Editor/ShapeIndex.swift": 1,
+     "file:Sources/Canvas/Editor/SpatialGrid.swift": 1,
+     "file:Sources/Canvas/Editor/UndoHistory.swift": 2
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Model",
+   "levels": {
+    "b:module:Canvas/Model": {
+     "file:Sources/Canvas/Model/AddedProperty.swift": 0,
+     "file:Sources/Canvas/Model/BoardID.swift": 1,
+     "file:Sources/Canvas/Model/CanvasDocument.swift": 2,
+     "file:Sources/Canvas/Model/CanvasFile.swift": 1,
+     "file:Sources/Canvas/Model/ChangeSet.swift": 1,
+     "file:Sources/Canvas/Model/Containment.swift": 3,
+     "file:Sources/Canvas/Model/DocumentDelta.swift": 1,
+     "file:Sources/Canvas/Model/Enclosing.swift": 3,
+     "file:Sources/Canvas/Model/FileProperty.swift": 0,
+     "file:Sources/Canvas/Model/Identity.swift": 0,
+     "file:Sources/Canvas/Model/ReverseIndex.swift": 0,
+     "file:Sources/Canvas/Model/Settling.swift": 3,
+     "file:Sources/Canvas/Model/ShapeMap.swift": 2,
+     "file:Sources/Canvas/Model/ShapeMeta.swift": 0,
+     "file:Sources/Canvas/Model/ShapeNaming.swift": 0,
+     "file:Sources/Canvas/Model/ShapeRecord.swift": 0,
+     "file:Sources/Canvas/Model/ShapeStack.swift": 2,
+     "file:Sources/Canvas/Model/StackReplay.swift": 2,
+     "file:Sources/Canvas/Model/StackingKey.swift": 2,
+     "file:Sources/Canvas/Model/Transaction.swift": 3
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Persistence",
+   "levels": {
+    "b:module:Canvas/Persistence": {
+     "file:Sources/Canvas/Persistence/BoardCodec.swift": 0,
+     "file:Sources/Canvas/Persistence/JSONValue.swift": 1,
+     "file:Sources/Canvas/Persistence/OpaqueProps.swift": 0,
+     "file:Sources/Canvas/Persistence/PropsMigration.swift": 1
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Plugins",
+   "levels": {
+    "b:module:Canvas/Plugins": {
+     "file:Sources/Canvas/Plugins/CanvasPlugin.swift": 0,
+     "file:Sources/Canvas/Plugins/Commands.swift": 1,
+     "file:Sources/Canvas/Plugins/CorePoints.swift": 2,
+     "file:Sources/Canvas/Plugins/ExtensionPoint.swift": 0,
+     "file:Sources/Canvas/Plugins/FileProperties.swift": 0,
+     "file:Sources/Canvas/Plugins/HostSlots.swift": 2,
+     "file:Sources/Canvas/Plugins/MenuBarSections.swift": 1,
+     "file:Sources/Canvas/Plugins/Order.swift": 1,
+     "file:Sources/Canvas/Plugins/PropertyTable.swift": 0,
+     "file:Sources/Canvas/Plugins/Registry.swift": 0,
+     "file:Sources/Canvas/Plugins/ShapeScopes.swift": 0,
+     "file:Sources/Canvas/Plugins/ShippedList.swift": 3,
+     "file:Sources/Canvas/Plugins/ShippedText.swift": 3,
+     "frame:Plugin system:module:Canvas/Plugins": 2
+    },
+    "f:frame:Plugin system:module:Canvas/Plugins": {
+     "extension-point:AccessibleOrder": 0,
+     "extension-point:AccessibleParts": 0,
+     "extension-point:CommandShapes": 0,
+     "extension-point:Commands": 0,
+     "extension-point:DefaultTool": 0,
+     "extension-point:FilePropertyDeclarations": 0,
+     "extension-point:HostCommands": 0,
+     "extension-point:HostInspectors": 0,
+     "extension-point:HostOverlays": 0,
+     "extension-point:HostSidebars": 0,
+     "extension-point:ImageSources": 0,
+     "extension-point:InsertionSpots": 0,
+     "extension-point:KeepsInStep": 0,
+     "extension-point:KeyHints": 0,
+     "extension-point:KeyReleases": 0,
+     "extension-point:KeyStrokes": 0,
+     "extension-point:KeyboardHelp": 0,
+     "extension-point:KindLabels": 0,
+     "extension-point:KindTints": 0,
+     "extension-point:LayoutProviders": 0,
+     "extension-point:MadeBeside": 0,
+     "extension-point:MenuKeys": 0,
+     "extension-point:OutlineSources": 0,
+     "extension-point:Overlays": 0,
+     "extension-point:PropertyDeclarations": 0,
+     "extension-point:PropertyOptIns": 0,
+     "extension-point:ReadOnlyRules": 0,
+     "extension-point:ResizeAdjusters": 0,
+     "extension-point:SecondaryClickMenu": 0,
+     "extension-point:SelectionMenu": 0,
+     "extension-point:Services": 0,
+     "extension-point:SettingsPanes": 0,
+     "extension-point:ShapeAccessibility": 0,
+     "extension-point:ShapeTints": 0,
+     "extension-point:Shapes": 0,
+     "extension-point:ToolTips": 0,
+     "extension-point:Tools": 0,
+     "extension-point:TranslationAdjusters": 0,
+     "extension-point:WillDelete": 0,
+     "extension-point:WindowSubtitles": 0,
+     "plugin:core": 0
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Rendering",
+   "levels": {
+    "b:module:Canvas/Rendering": {
+     "file:Sources/Canvas/Rendering/BoardPicture.swift": 0,
+     "file:Sources/Canvas/Rendering/BoardPreviews.swift": 0,
+     "file:Sources/Canvas/Rendering/CanvasEditor+Drawing.swift": 1,
+     "file:Sources/Canvas/Rendering/DotGrid.swift": 1,
+     "file:Sources/Canvas/Rendering/OutlineMembers.swift": 2,
+     "file:Sources/Canvas/Rendering/OutlineStandoff.swift": 1,
+     "file:Sources/Canvas/Rendering/Overlay.swift": 2,
+     "file:Sources/Canvas/Rendering/ShapeShadows.swift": 1,
+     "file:Sources/Canvas/Rendering/Silhouettes.swift": 0,
+     "file:Sources/Canvas/Rendering/SkeletonText.swift": 3,
+     "file:Sources/Canvas/Rendering/SkeletonTextBars.swift": 3,
+     "file:Sources/Canvas/Rendering/TintedRings.swift": 2
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Schema",
+   "levels": {
+    "b:module:Canvas/Schema": {
+     "file:Sources/Canvas/Schema/JSONSchema.swift": 0,
+     "file:Sources/Canvas/Schema/JSONValueEncoder.swift": 1,
+     "file:Sources/Canvas/Schema/KindSchema.swift": 0,
+     "file:Sources/Canvas/Schema/SchemaDefined.swift": 0,
+     "file:Sources/Canvas/Schema/SchemaFormats.swift": 2,
+     "file:Sources/Canvas/Schema/SchemaValidator.swift": 2,
+     "file:Sources/Canvas/Schema/ShapeSchemaChecking.swift": 1
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Shapes",
+   "levels": {
+    "b:module:Canvas/Shapes": {
+     "file:Sources/Canvas/Shapes/Capabilities.swift": 0,
+     "file:Sources/Canvas/Shapes/Erasure.swift": 1,
+     "file:Sources/Canvas/Shapes/LayoutInputs.swift": 0,
+     "file:Sources/Canvas/Shapes/ShapeDefinition.swift": 1
+    }
+   }
+  },
+  {
+   "board": "module:Canvas/Tools",
+   "levels": {
+    "b:module:Canvas/Tools": {
+     "file:Sources/Canvas/Tools/CoreTools.swift": 0,
+     "file:Sources/Canvas/Tools/HandTool.swift": 0,
+     "file:Sources/Canvas/Tools/ResizeAdjusting.swift": 1,
+     "file:Sources/Canvas/Tools/Tool.swift": 0,
+     "file:Sources/Canvas/Tools/Translating.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:CanvasCLI",
+   "levels": {
+    "b:module:CanvasCLI": {
+     "file:Sources/CanvasCLI/Install.swift": 0,
+     "file:Sources/CanvasCLI/Invocation.swift": 0,
+     "file:Sources/CanvasCLI/Output.swift": 0,
+     "file:Sources/CanvasCLI/main.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:CanvasQuickLook",
+   "levels": {
+    "b:module:CanvasQuickLook": {
+     "file:Sources/CanvasQuickLook/BoardPictures.swift": 0,
+     "file:Sources/CanvasQuickLook/PreviewProvider.swift": 0,
+     "file:Sources/CanvasQuickLook/ThumbnailProvider.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:CanvasRPC",
+   "levels": {
+    "b:module:CanvasRPC": {
+     "file:Sources/CanvasRPC/Arguments.swift": 0,
+     "file:Sources/CanvasRPC/Client.swift": 1,
+     "file:Sources/CanvasRPC/Commands.swift": 0,
+     "file:Sources/CanvasRPC/Help.swift": 0,
+     "file:Sources/CanvasRPC/JSON.swift": 1,
+     "file:Sources/CanvasRPC/Listener.swift": 1,
+     "file:Sources/CanvasRPC/Messages.swift": 1,
+     "file:Sources/CanvasRPC/Socket.swift": 1
+    }
+   }
+  },
+  {
+   "board": "module:CanvasUI",
+   "levels": {
+    "b:module:CanvasUI": {
+     "file:Sources/CanvasUI/BoardChrome.swift": 0,
+     "file:Sources/CanvasUI/BoardDocument.swift": 0,
+     "file:Sources/CanvasUI/BoardMenus.swift": 0,
+     "file:Sources/CanvasUI/BoardWindow.swift": 0,
+     "file:Sources/CanvasUI/BoardWindowController.swift": 0,
+     "file:Sources/CanvasUI/CanvasUIStyle.swift": 1,
+     "file:Sources/CanvasUI/CanvasView.swift": 1,
+     "file:Sources/CanvasUI/CardView.swift": 1,
+     "file:Sources/CanvasUI/CommandServer.swift": 0,
+     "file:Sources/CanvasUI/KeyboardShortcutsWindow.swift": 2,
+     "file:Sources/CanvasUI/MinimapPicture.swift": 3,
+     "file:Sources/CanvasUI/MinimapView.swift": 3,
+     "file:Sources/CanvasUI/PopoverView.swift": 1,
+     "file:Sources/CanvasUI/SecondaryWindow.swift": 2,
+     "file:Sources/CanvasUI/SettingsWindow.swift": 2,
+     "file:Sources/CanvasUI/ShapeElements.swift": 1,
+     "file:Sources/CanvasUI/SwiftUIBridge.swift": 1,
+     "file:Sources/CanvasUI/ZoomIndicator.swift": 3
+    }
+   }
+  },
+  {
+   "board": "module:Clipboard",
+   "levels": {
+    "b:module:Clipboard": {
+     "file:Sources/Clipboard/Clipboard.swift": 0,
+     "file:Sources/Clipboard/ClipboardState.swift": 0,
+     "frame:Plugin system:module:Clipboard": 0
+    },
+    "f:frame:Plugin system:module:Clipboard": {
+     "extension-point:ShapeCopyability": 0,
+     "plugin:clipboard": 0
+    }
+   }
+  },
+  {
+   "board": "module:Colors",
+   "levels": {
+    "b:module:Colors": {
+     "file:Sources/Colors/ColorBook.swift": 0,
+     "file:Sources/Colors/ColorCommand.swift": 0,
+     "file:Sources/Colors/ColorList.swift": 0,
+     "file:Sources/Colors/ColorMenu.swift": 0,
+     "file:Sources/Colors/ColorPanel.swift": 1,
+     "file:Sources/Colors/ColorPanelModel.swift": 0,
+     "file:Sources/Colors/ColorTints.swift": 1,
+     "file:Sources/Colors/ColorValidation.swift": 1,
+     "file:Sources/Colors/ColorWords.swift": 1,
+     "file:Sources/Colors/Colors.swift": 1,
+     "file:Sources/Colors/FileColors.swift": 0,
+     "file:Sources/Colors/NamedColors.swift": 0,
+     "file:Sources/Colors/ShapeColor.swift": 0,
+     "frame:Plugin system:module:Colors": 1
+    },
+    "f:frame:Plugin system:module:Colors": {
+     "extension-point:ColorDefaults": 0,
+     "extension-point:InheritedColors": 0,
+     "plugin:color-details": 1,
+     "plugin:color-names": 2,
+     "plugin:color-queries": 3,
+     "plugin:color-validation": 4,
+     "plugin:colors": 0,
+     "property:color": 0
+    }
+   }
+  },
+  {
+   "board": "module:Connections",
+   "levels": {
+    "b:module:Connections": {
+     "file:Sources/Connections/Connect.swift": 0,
+     "file:Sources/Connections/ConnectionParts.swift": 0,
+     "file:Sources/Connections/PortEdges.swift": 0,
+     "file:Sources/Connections/PortOverlay.swift": 1,
+     "file:Sources/Connections/PortState.swift": 1,
+     "file:Sources/Connections/PortTable.swift": 1,
+     "file:Sources/Connections/Ports.swift": 0,
+     "frame:Plugin system:module:Connections": 0
+    },
+    "f:frame:Plugin system:module:Connections": {
+     "extension-point:Channels": 0,
+     "extension-point:ConnectionMade": 0,
+     "extension-point:Connectors": 0,
+     "extension-point:ShapePorts": 0,
+     "plugin:connect-menu": 1,
+     "plugin:port-edges": 2,
+     "plugin:ports": 0,
+     "property:channel": 0
+    }
+   }
+  },
+  {
+   "board": "module:ContextMenus",
+   "levels": {
+    "b:module:ContextMenus": {
+     "file:Sources/ContextMenus/ContextMenus.swift": 0,
+     "file:Sources/ContextMenus/MenuItems.swift": 1,
+     "file:Sources/ContextMenus/Resolution.swift": 1,
+     "frame:Plugin system:module:ContextMenus": 0
+    },
+    "f:frame:Plugin system:module:ContextMenus": {
+     "extension-point:CanvasContextMenu": 0,
+     "extension-point:ShapeContextMenus": 0,
+     "plugin:context-menus": 0
+    }
+   }
+  },
+  {
+   "board": "module:DecisionCommands",
+   "levels": {
+    "b:module:DecisionCommands": {
+     "file:Sources/DecisionCommands/DecideParams.swift": 0,
+     "file:Sources/DecisionCommands/DecisionCommands.swift": 0,
+     "frame:Plugin system:module:DecisionCommands": 0
+    },
+    "f:frame:Plugin system:module:DecisionCommands": {
+     "plugin:decision-commands": 0
+    }
+   }
+  },
+  {
+   "board": "module:DecisionModels",
+   "levels": {
+    "b:module:DecisionModels": {
+     "file:Sources/DecisionModels/DecisionMemory.swift": 0,
+     "file:Sources/DecisionModels/DecisionModel.swift": 0,
+     "file:Sources/DecisionModels/DecisionModelsPlugin.swift": 1,
+     "file:Sources/DecisionModels/JevModel.swift": 2,
+     "file:Sources/DecisionModels/LanguageDecisionModel.swift": 0,
+     "file:Sources/DecisionModels/ScriptedDecisionModel.swift": 0,
+     "file:Sources/DecisionModels/TypeSafeSettings.swift": 2,
+     "frame:Plugin system:module:DecisionModels": 1
+    },
+    "f:frame:Plugin system:module:DecisionModels": {
+     "plugin:decision-models": 0
+    }
+   }
+  },
+  {
+   "board": "module:DetailPanel",
+   "levels": {
+    "b:module:DetailPanel": {
+     "file:Sources/DetailPanel/BoardHeadings.swift": 0,
+     "file:Sources/DetailPanel/CodeCompletions.swift": 1,
+     "file:Sources/DetailPanel/Controls.swift": 1,
+     "file:Sources/DetailPanel/DetailPanel.swift": 2,
+     "file:Sources/DetailPanel/DetailPanelPlugin.swift": 0,
+     "file:Sources/DetailPanel/DetailPanelState.swift": 2,
+     "file:Sources/DetailPanel/DetailPanelView.swift": 1,
+     "file:Sources/DetailPanel/DetailTabView.swift": 2,
+     "file:Sources/DetailPanel/DetailTakeovers.swift": 0,
+     "file:Sources/DetailPanel/ListRows.swift": 1,
+     "file:Sources/DetailPanel/ShapeBinding.swift": 2,
+     "file:Sources/DetailPanel/TextViews.swift": 1,
+     "frame:Plugin system:module:DetailPanel": 0
+    },
+    "f:frame:Plugin system:module:DetailPanel": {
+     "extension-point:BoardHeadings": 0,
+     "extension-point:DetailBands": 0,
+     "extension-point:DetailStatuses": 0,
+     "extension-point:DetailTakeovers": 0,
+     "extension-point:ShapeDetails": 0,
+     "plugin:detail-panel": 0
+    }
+   }
+  },
+  {
+   "board": "module:Draw",
+   "levels": {
+    "b:module:Draw": {
+     "file:Sources/Draw/Draw.swift": 0,
+     "file:Sources/Draw/DrawBoard.swift": 1,
+     "file:Sources/Draw/DrawBrought.swift": 2,
+     "file:Sources/Draw/DrawCommit.swift": 2,
+     "file:Sources/Draw/DrawGroups.swift": 2,
+     "file:Sources/Draw/DrawIDs.swift": 1,
+     "file:Sources/Draw/DrawLayout.swift": 2,
+     "file:Sources/Draw/DrawObstacles.swift": 2,
+     "file:Sources/Draw/DrawPaths.swift": 1,
+     "file:Sources/Draw/DrawPoints.swift": 0,
+     "file:Sources/Draw/DrawQueries.swift": 3,
+     "file:Sources/Draw/DrawStandIns.swift": 1,
+     "file:Sources/Draw/DrawTexts.swift": 3,
+     "file:Sources/Draw/DrawVocabulary.swift": 3,
+     "file:Sources/Draw/Drawing.swift": 3,
+     "file:Sources/Draw/Kinds.swift": 3,
+     "file:Sources/Draw/Measure.swift": 1,
+     "file:Sources/Draw/StandInRoute.swift": 4,
+     "file:Sources/Draw/Surroundings.swift": 4,
+     "frame:Plugin system:module:Draw": 0
+    },
+    "f:frame:Plugin system:module:Draw": {
+     "extension-point:DrawChecks": 0,
+     "extension-point:DrawEdgeIdentities": 0,
+     "extension-point:DrawEdges": 0,
+     "extension-point:DrawEngines": 0,
+     "extension-point:DrawGroups": 0,
+     "extension-point:DrawLabels": 0,
+     "extension-point:DrawNames": 0,
+     "extension-point:DrawReports": 0,
+     "extension-point:DrawTextFormats": 0,
+     "extension-point:DrawValueWriters": 0,
+     "plugin:draw-engine": 0
+    }
+   }
+  },
+  {
+   "board": "module:DrawScript",
+   "levels": {
+    "b:module:DrawScript": {
+     "file:Sources/DrawScript/DrawScript.swift": 0,
+     "file:Sources/DrawScript/LayoutProblem.swift": 1,
+     "file:Sources/DrawScript/Lexer.swift": 0,
+     "file:Sources/DrawScript/ObstacleGrid.swift": 1,
+     "file:Sources/DrawScript/Parser.swift": 0,
+     "file:Sources/DrawScript/ScriptError.swift": 0,
+     "file:Sources/DrawScript/Solver.swift": 1,
+     "file:Sources/DrawScript/Syntax.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:Find",
+   "levels": {
+    "b:module:Find": {
+     "file:Sources/Find/Find.swift": 0,
+     "file:Sources/Find/FindIndex.swift": 1,
+     "file:Sources/Find/FindOverlay.swift": 1,
+     "file:Sources/Find/FindPanel.swift": 0,
+     "file:Sources/Find/FindSearch.swift": 1,
+     "file:Sources/Find/FindState.swift": 1,
+     "file:Sources/Find/FindStyle.swift": 1,
+     "frame:Plugin system:module:Find": 0
+    },
+    "f:frame:Plugin system:module:Find": {
+     "extension-point:FindableTexts": 0,
+     "plugin:find-in-boards": 0,
+     "plugin:find-panel": 1
+    }
+   }
+  },
+  {
+   "board": "module:Frames",
+   "levels": {
+    "b:module:Frames": {
+     "file:Sources/Frames/CreateFrame.swift": 0,
+     "file:Sources/Frames/FrameDefinition.swift": 1,
+     "file:Sources/Frames/FrameHeader.swift": 1,
+     "file:Sources/Frames/FrameLinks.swift": 2,
+     "file:Sources/Frames/FrameRow.swift": 1,
+     "file:Sources/Frames/FrameSkeleton.swift": 1,
+     "file:Sources/Frames/FrameStyle.swift": 0,
+     "file:Sources/Frames/FrameTool.swift": 0,
+     "file:Sources/Frames/Frames.swift": 2,
+     "frame:Plugin system:module:Frames": 2
+    },
+    "f:frame:Plugin system:module:Frames": {
+     "kind:frame": 0,
+     "plugin:framing": 0
+    }
+   }
+  },
+  {
+   "board": "module:FuzzyMatching",
+   "levels": {
+    "b:module:FuzzyMatching": {
+     "file:Sources/FuzzyMatching/BoundedHeap.swift": 0,
+     "file:Sources/FuzzyMatching/FuzzyMatcher.swift": 1,
+     "file:Sources/FuzzyMatching/PathMatcher.swift": 1,
+     "file:Sources/FuzzyMatching/Suggestions.swift": 2,
+     "file:Sources/FuzzyMatching/TextSearch.swift": 3
+    }
+   }
+  },
+  {
+   "board": "module:Grouping",
+   "levels": {
+    "b:module:Grouping": {
+     "file:Sources/Grouping/BoardGroups.swift": 0,
+     "file:Sources/Grouping/GroupDraw.swift": 1,
+     "file:Sources/Grouping/GroupIndex.swift": 0,
+     "file:Sources/Grouping/GroupQueries.swift": 1,
+     "file:Sources/Grouping/Grouping.swift": 1,
+     "frame:Plugin system:module:Grouping": 1
+    },
+    "f:frame:Plugin system:module:Grouping": {
+     "plugin:group-draw": 0,
+     "plugin:group-queries": 1,
+     "plugin:grouping": 2,
+     "property:groups": 2
+    }
+   }
+  },
+  {
+   "board": "module:JumpTo",
+   "levels": {
+    "b:module:JumpTo": {
+     "file:Sources/JumpTo/JumpTo.swift": 0,
+     "file:Sources/JumpTo/JumpToCatalog.swift": 1,
+     "file:Sources/JumpTo/JumpToPalette.swift": 2,
+     "file:Sources/JumpTo/JumpToRows.swift": 1,
+     "file:Sources/JumpTo/JumpToSearch.swift": 1,
+     "file:Sources/JumpTo/JumpToState.swift": 1,
+     "file:Sources/JumpTo/JumpToStyle.swift": 2,
+     "frame:Plugin system:module:JumpTo": 0
+    },
+    "f:frame:Plugin system:module:JumpTo": {
+     "plugin:jump-to": 0
+    }
+   }
+  },
+  {
+   "board": "module:Keyboard",
+   "levels": {
+    "b:module:Keyboard": {
+     "file:Sources/Keyboard/KeyChord.swift": 0,
+     "file:Sources/Keyboard/Keyboard.swift": 0,
+     "frame:Plugin system:module:Keyboard": 0
+    },
+    "f:frame:Plugin system:module:Keyboard": {
+     "extension-point:KeyboardShortcuts": 0,
+     "extension-point:PressFocused": 0,
+     "plugin:keyboard": 0
+    }
+   }
+  },
+  {
+   "board": "module:LanguageModels",
+   "levels": {
+    "b:module:LanguageModels": {
+     "file:Sources/LanguageModels/AnthropicKeyStore.swift": 0,
+     "file:Sources/LanguageModels/AnthropicModel.swift": 1,
+     "file:Sources/LanguageModels/AnthropicSettings.swift": 0,
+     "file:Sources/LanguageModels/AnthropicSettingsView.swift": 0,
+     "file:Sources/LanguageModels/ClaudeCode.swift": 2,
+     "file:Sources/LanguageModels/ClaudeCodeModel.swift": 2,
+     "file:Sources/LanguageModels/KeySettingsView.swift": 0,
+     "file:Sources/LanguageModels/LanguageModel.swift": 1,
+     "file:Sources/LanguageModels/LanguageModelsPlugin.swift": 1,
+     "file:Sources/LanguageModels/ModelAnswer.swift": 3,
+     "file:Sources/LanguageModels/ScriptedLanguageModel.swift": 1,
+     "file:Sources/LanguageModels/SignIn.swift": 2,
+     "file:Sources/LanguageModels/SignInSettings.swift": 2,
+     "frame:Plugin system:module:LanguageModels": 1
+    },
+    "f:frame:Plugin system:module:LanguageModels": {
+     "plugin:language-models": 0
+    }
+   }
+  },
+  {
+   "board": "module:LanguageRules",
+   "levels": {
+    "b:module:LanguageRules": {
+     "file:Sources/LanguageRules/IgnoredRules.swift": 0,
+     "file:Sources/LanguageRules/LanguageRulesPlugin.swift": 0,
+     "file:Sources/LanguageRules/RuleBook.swift": 1,
+     "file:Sources/LanguageRules/RuleBoxes.swift": 1,
+     "file:Sources/LanguageRules/RuleChecks.swift": 2,
+     "file:Sources/LanguageRules/RuleChips.swift": 1,
+     "file:Sources/LanguageRules/RuleContext.swift": 1,
+     "file:Sources/LanguageRules/RuleLights.swift": 2,
+     "file:Sources/LanguageRules/RuleMenus.swift": 2,
+     "file:Sources/LanguageRules/RulePrompts.swift": 2,
+     "file:Sources/LanguageRules/RuleWalk.swift": 0,
+     "file:Sources/LanguageRules/RuleWriter.swift": 0,
+     "file:Sources/LanguageRules/RulesChip.swift": 2,
+     "file:Sources/LanguageRules/RulesPanel.swift": 1,
+     "file:Sources/LanguageRules/RulesStyle.swift": 2,
+     "frame:Plugin system:module:LanguageRules": 0
+    },
+    "f:frame:Plugin system:module:LanguageRules": {
+     "plugin:language-rules": 0,
+     "plugin:rule-details": 1,
+     "property:ignoredRules": 0
+    }
+   }
+  },
+  {
+   "board": "module:Locking",
+   "levels": {
+    "b:module:Locking": {
+     "file:Sources/Locking/LockState.swift": 0,
+     "file:Sources/Locking/Locking.swift": 0,
+     "frame:Plugin system:module:Locking": 0
+    },
+    "f:frame:Plugin system:module:Locking": {
+     "plugin:locking": 0,
+     "property:locked": 0
+    }
+   }
+  },
+  {
+   "board": "module:Mentions",
+   "levels": {
+    "b:module:Mentions": {
+     "file:Sources/Mentions/MentionCatalog.swift": 0,
+     "file:Sources/Mentions/MentionChoices.swift": 0,
+     "file:Sources/Mentions/MentionCommands.swift": 1,
+     "file:Sources/Mentions/MentionDrawing.swift": 2,
+     "file:Sources/Mentions/MentionEdges.swift": 3,
+     "file:Sources/Mentions/MentionFaces.swift": 2,
+     "file:Sources/Mentions/MentionFind.swift": 4,
+     "file:Sources/Mentions/MentionLabels.swift": 0,
+     "file:Sources/Mentions/MentionLayout.swift": 4,
+     "file:Sources/Mentions/MentionLights.swift": 3,
+     "file:Sources/Mentions/MentionMatching.swift": 0,
+     "file:Sources/Mentions/MentionMenus.swift": 2,
+     "file:Sources/Mentions/MentionParts.swift": 2,
+     "file:Sources/Mentions/MentionPicker.swift": 1,
+     "file:Sources/Mentions/MentionPill.swift": 1,
+     "file:Sources/Mentions/MentionPlaces.swift": 0,
+     "file:Sources/Mentions/MentionProblems.swift": 4,
+     "file:Sources/Mentions/MentionQueries.swift": 3,
+     "file:Sources/Mentions/MentionQuote.swift": 3,
+     "file:Sources/Mentions/MentionRows.swift": 3,
+     "file:Sources/Mentions/MentionScope.swift": 4,
+     "file:Sources/Mentions/MentionSlashBar.swift": 4,
+     "file:Sources/Mentions/MentionState.swift": 0,
+     "file:Sources/Mentions/MentionStyle.swift": 1,
+     "file:Sources/Mentions/MentionText.swift": 3,
+     "file:Sources/Mentions/MentionTextArea.swift": 1,
+     "file:Sources/Mentions/MentionTextFormat.swift": 4,
+     "file:Sources/Mentions/MentionTextStyle.swift": 1,
+     "file:Sources/Mentions/MentionTextView.swift": 1,
+     "file:Sources/Mentions/MentionTexts.swift": 4,
+     "file:Sources/Mentions/MentionValidation.swift": 4,
+     "file:Sources/Mentions/Mentionable.swift": 4,
+     "file:Sources/Mentions/Mentions.swift": 2,
+     "frame:Plugin system:module:Mentions": 4
+    },
+    "f:frame:Plugin system:module:Mentions": {
+     "extension-point:MentionLayouts": 0,
+     "extension-point:MentionScopeJoins": 0,
+     "extension-point:MentionScopes": 0,
+     "extension-point:MentionTexts": 0,
+     "extension-point:ShapeMentions": 0,
+     "plugin:mention-find": 1,
+     "plugin:mention-lights": 2,
+     "plugin:mention-queries": 3,
+     "plugin:mention-slash-bar": 4,
+     "plugin:mention-texts": 5,
+     "plugin:mention-validation": 6,
+     "plugin:mentions": 0
+    }
+   }
+  },
+  {
+   "board": "module:Moving",
+   "levels": {
+    "b:module:Moving": {
+     "file:Sources/Moving/Dropping.swift": 0,
+     "file:Sources/Moving/Landing.swift": 0,
+     "file:Sources/Moving/Move.swift": 0,
+     "file:Sources/Moving/MoveToMenu.swift": 0,
+     "file:Sources/Moving/Moving.swift": 1,
+     "frame:Plugin system:module:Moving": 1
+    },
+    "f:frame:Plugin system:module:Moving": {
+     "plugin:moving": 0
+    }
+   }
+  },
+  {
+   "board": "module:Neighbors",
+   "levels": {
+    "b:module:Neighbors": {
+     "file:Sources/Neighbors/NeighborDetails.swift": 0,
+     "file:Sources/Neighbors/NeighborList.swift": 0,
+     "file:Sources/Neighbors/NeighborState.swift": 1,
+     "file:Sources/Neighbors/NeighborStyle.swift": 0,
+     "file:Sources/Neighbors/Neighbors.swift": 1,
+     "frame:Plugin system:module:Neighbors": 1
+    },
+    "f:frame:Plugin system:module:Neighbors": {
+     "extension-point:NeighborLights": 0,
+     "plugin:neighbor-details": 1,
+     "plugin:neighbors": 0
+    }
+   }
+  },
+  {
+   "board": "module:Palette",
+   "levels": {
+    "b:module:Palette": {
+     "file:Sources/Palette/Appearance.swift": 0,
+     "file:Sources/Palette/OKLCH.swift": 1,
+     "file:Sources/Palette/RGB.swift": 1,
+     "file:Sources/Palette/Swatch.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:ProseMaps",
+   "levels": {
+    "b:module:ProseMaps": {
+     "file:Sources/ProseMaps/ProseMap.swift": 0,
+     "file:Sources/ProseMaps/ProseMapPrompt.swift": 1,
+     "file:Sources/ProseMaps/ProseMapService.swift": 1,
+     "file:Sources/ProseMaps/ProseMapText.swift": 0,
+     "file:Sources/ProseMaps/ProseMapsPlugin.swift": 2,
+     "file:Sources/ProseMaps/ProseTarget.swift": 0,
+     "frame:Plugin system:module:ProseMaps": 2
+    },
+    "f:frame:Plugin system:module:ProseMaps": {
+     "plugin:prose-maps": 0
+    }
+   }
+  },
+  {
+   "board": "module:Publishing",
+   "levels": {
+    "b:module:Publishing": {
+     "file:Sources/Publishing/PublicChip.swift": 0,
+     "file:Sources/Publishing/PublicStyle.swift": 0,
+     "file:Sources/Publishing/PublishMenus.swift": 0,
+     "file:Sources/Publishing/Publishing.swift": 1,
+     "file:Sources/Publishing/PublishingState.swift": 0,
+     "frame:Plugin system:module:Publishing": 1
+    },
+    "f:frame:Plugin system:module:Publishing": {
+     "extension-point:PublishingDials": 0,
+     "plugin:publishing": 0,
+     "property:public": 0
+    }
+   }
+  },
+  {
+   "board": "module:Queries",
+   "levels": {
+    "b:module:Queries": {
+     "file:Sources/Queries/Comparing.swift": 0,
+     "file:Sources/Queries/Evaluation.swift": 1,
+     "file:Sources/Queries/Hints.swift": 2,
+     "file:Sources/Queries/MainFacts.swift": 1,
+     "file:Sources/Queries/PathTest.swift": 0,
+     "file:Sources/Queries/Queries.swift": 2,
+     "file:Sources/Queries/QueryBinding.swift": 1,
+     "file:Sources/Queries/QueryBudget.swift": 1,
+     "file:Sources/Queries/QueryPlan.swift": 0,
+     "file:Sources/Queries/QueryPoints.swift": 2,
+     "file:Sources/Queries/QueryResult.swift": 1,
+     "file:Sources/Queries/QuerySnapshot.swift": 1,
+     "file:Sources/Queries/QueryState.swift": 1,
+     "file:Sources/Queries/QueryVocabulary.swift": 2,
+     "file:Sources/Queries/Resolution.swift": 0,
+     "file:Sources/Queries/SelectionQueries.swift": 2,
+     "frame:Plugin system:module:Queries": 2
+    },
+    "f:frame:Plugin system:module:Queries": {
+     "extension-point:QueryAskFacts": 0,
+     "extension-point:QueryBoardNames": 0,
+     "extension-point:QueryEngines": 0,
+     "extension-point:QueryNames": 0,
+     "extension-point:QueryPathChecks": 0,
+     "extension-point:QueryTextFormats": 0,
+     "extension-point:QueryWords": 1,
+     "plugin:queries": 0,
+     "plugin:selection-queries": 1
+    }
+   }
+  },
+  {
+   "board": "module:QueryCommands",
+   "levels": {
+    "b:module:QueryCommands": {
+     "file:Sources/QueryCommands/QueryCommands.swift": 0,
+     "file:Sources/QueryCommands/QueryOutput.swift": 0,
+     "file:Sources/QueryCommands/QueryParams.swift": 0,
+     "frame:Plugin system:module:QueryCommands": 0
+    },
+    "f:frame:Plugin system:module:QueryCommands": {
+     "plugin:query-commands": 0
+    }
+   }
+  },
+  {
+   "board": "module:QueryLanguage",
+   "levels": {
+    "b:module:QueryLanguage": {
+     "file:Sources/QueryLanguage/KnownInventions.swift": 0,
+     "file:Sources/QueryLanguage/Lexer.swift": 1,
+     "file:Sources/QueryLanguage/Parser.swift": 0,
+     "file:Sources/QueryLanguage/Printer.swift": 0,
+     "file:Sources/QueryLanguage/QueryError.swift": 1,
+     "file:Sources/QueryLanguage/QueryLanguage.swift": 1,
+     "file:Sources/QueryLanguage/Syntax.swift": 0,
+     "file:Sources/QueryLanguage/Words.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:QueryTranslation",
+   "levels": {
+    "b:module:QueryTranslation": {
+     "file:Sources/QueryTranslation/AskAnswer.swift": 0,
+     "file:Sources/QueryTranslation/AskRequest.swift": 0,
+     "file:Sources/QueryTranslation/InterpretationStatus.swift": 1,
+     "file:Sources/QueryTranslation/InterpretationViews.swift": 1,
+     "file:Sources/QueryTranslation/Interpretations.swift": 1,
+     "file:Sources/QueryTranslation/QueryPreview.swift": 1,
+     "file:Sources/QueryTranslation/QuerySlash.swift": 0,
+     "file:Sources/QueryTranslation/QueryTranslator.swift": 0,
+     "file:Sources/QueryTranslation/StoredBinding.swift": 0,
+     "frame:Plugin system:module:QueryTranslation": 0
+    },
+    "f:frame:Plugin system:module:QueryTranslation": {
+     "plugin:query-slash": 0,
+     "plugin:query-translation": 1
+    }
+   }
+  },
+  {
+   "board": "module:References",
+   "levels": {
+    "b:module:References": {
+     "file:Sources/References/PillColors.swift": 0,
+     "file:Sources/References/ReferenceAnswers.swift": 1,
+     "file:Sources/References/ReferenceButtons.swift": 0,
+     "file:Sources/References/ReferenceCondition.swift": 1,
+     "file:Sources/References/ReferenceDefinition.swift": 0,
+     "file:Sources/References/ReferenceDrawing.swift": 0,
+     "file:Sources/References/ReferenceEditing.swift": 2,
+     "file:Sources/References/ReferenceEdits.swift": 2,
+     "file:Sources/References/ReferenceInterpreting.swift": 1,
+     "file:Sources/References/ReferenceMismatch.swift": 3,
+     "file:Sources/References/ReferencePanel.swift": 1,
+     "file:Sources/References/ReferencePath.swift": 3,
+     "file:Sources/References/ReferencePicker.swift": 2,
+     "file:Sources/References/ReferenceRow.swift": 3,
+     "file:Sources/References/ReferenceState.swift": 1,
+     "file:Sources/References/ReferenceStyle.swift": 0,
+     "file:Sources/References/References.swift": 3,
+     "frame:Plugin system:module:References": 3
+    },
+    "f:frame:Plugin system:module:References": {
+     "kind:reference": 0,
+     "plugin:references": 0
+    }
+   }
+  },
+  {
+   "board": "module:Reordering",
+   "levels": {
+    "b:module:Reordering": {
+     "file:Examples/Reordering/Reordering.swift": 0,
+     "frame:Plugin system:module:Reordering": 0
+    },
+    "f:frame:Plugin system:module:Reordering": {
+     "plugin:reordering": 0
+    }
+   }
+  },
+  {
+   "board": "module:Selection",
+   "levels": {
+    "b:module:Selection": {
+     "file:Sources/Selection/Accessibility.swift": 0,
+     "file:Sources/Selection/Brush.swift": 1,
+     "file:Sources/Selection/Buttons.swift": 1,
+     "file:Sources/Selection/Faces.swift": 2,
+     "file:Sources/Selection/GoingTo.swift": 3,
+     "file:Sources/Selection/Groups.swift": 2,
+     "file:Sources/Selection/Handles.swift": 1,
+     "file:Sources/Selection/Labels.swift": 1,
+     "file:Sources/Selection/Opening.swift": 3,
+     "file:Sources/Selection/Parts.swift": 2,
+     "file:Sources/Selection/Popovers.swift": 2,
+     "file:Sources/Selection/RefusalShake.swift": 1,
+     "file:Sources/Selection/Resizing.swift": 1,
+     "file:Sources/Selection/SelectTool.swift": 1,
+     "file:Sources/Selection/Selection.swift": 2,
+     "file:Sources/Selection/SelectionHistory.swift": 1,
+     "file:Sources/Selection/SelectionState.swift": 1,
+     "file:Sources/Selection/SelectionStyle.swift": 1,
+     "file:Sources/Selection/Stepping.swift": 3,
+     "file:Sources/Selection/Walking.swift": 3,
+     "frame:Plugin system:module:Selection": 2
+    },
+    "f:frame:Plugin system:module:Selection": {
+     "extension-point:CanvasButtons": 0,
+     "extension-point:DecorationHits": 0,
+     "extension-point:DoubleClickPlacement": 0,
+     "extension-point:DragCopies": 0,
+     "extension-point:ReadableZoom": 0,
+     "extension-point:SelectionGroups": 0,
+     "extension-point:SelectionObservers": 0,
+     "extension-point:ShapeFaces": 0,
+     "extension-point:ShapeOpening": 0,
+     "extension-point:ShapeParts": 0,
+     "extension-point:ShapePopovers": 0,
+     "extension-point:ShapeResizing": 0,
+     "extension-point:ShapeSelectability": 0,
+     "plugin:selection": 0
+    }
+   }
+  },
+  {
+   "board": "module:SlashCommands",
+   "levels": {
+    "b:module:SlashCommands": {
+     "file:Sources/SlashCommands/SelectionSlashCommands.swift": 0,
+     "file:Sources/SlashCommands/SlashArguments.swift": 1,
+     "file:Sources/SlashCommands/SlashBar.swift": 0,
+     "file:Sources/SlashCommands/SlashBarTextView.swift": 2,
+     "file:Sources/SlashCommands/SlashChoices.swift": 2,
+     "file:Sources/SlashCommands/SlashCommand.swift": 1,
+     "file:Sources/SlashCommands/SlashCommandLine.swift": 2,
+     "file:Sources/SlashCommands/SlashCommandPicker.swift": 2,
+     "file:Sources/SlashCommands/SlashCommandState.swift": 1,
+     "file:Sources/SlashCommands/SlashCommandTyping.swift": 2,
+     "file:Sources/SlashCommands/SlashCommands.swift": 0,
+     "file:Sources/SlashCommands/SlashTarget.swift": 1,
+     "frame:Plugin system:module:SlashCommands": 0
+    },
+    "f:frame:Plugin system:module:SlashCommands": {
+     "extension-point:SelectionSlashCommands": 0,
+     "extension-point:ShapeSlashCommands": 0,
+     "extension-point:SlashBarFields": 1,
+     "plugin:slash-bar": 1,
+     "plugin:slash-commands": 0
+    }
+   }
+  },
+  {
+   "board": "module:Snapping",
+   "levels": {
+    "b:module:Snapping": {
+     "file:Sources/Snapping/SnapTargets.swift": 0,
+     "file:Sources/Snapping/Snapping.swift": 1,
+     "file:Sources/Snapping/SnappingStyle.swift": 0,
+     "frame:Plugin system:module:Snapping": 1
+    },
+    "f:frame:Plugin system:module:Snapping": {
+     "plugin:snapping": 0
+    }
+   }
+  },
+  {
+   "board": "module:StickyNotes",
+   "levels": {
+    "b:module:StickyNotes": {
+     "file:Sources/StickyNotes/BulkCreate.swift": 0,
+     "file:Sources/StickyNotes/NoteAccessibility.swift": 0,
+     "file:Sources/StickyNotes/NoteHeader.swift": 0,
+     "file:Sources/StickyNotes/NoteHops.swift": 0,
+     "file:Sources/StickyNotes/NoteLayout.swift": 1,
+     "file:Sources/StickyNotes/NoteLinks.swift": 0,
+     "file:Sources/StickyNotes/NotePill.swift": 0,
+     "file:Sources/StickyNotes/NoteRow.swift": 0,
+     "file:Sources/StickyNotes/NoteSkeleton.swift": 1,
+     "file:Sources/StickyNotes/StickyNotes.swift": 0,
+     "frame:Plugin system:module:StickyNotes": 0
+    },
+    "f:frame:Plugin system:module:StickyNotes": {
+     "kind:sticky-note": 0,
+     "plugin:sticky-notes": 0
+    }
+   }
+  },
+  {
+   "board": "module:Subboards",
+   "levels": {
+    "b:module:Subboards": {
+     "file:Sources/Subboards/SubboardDefinition.swift": 0,
+     "file:Sources/Subboards/SubboardLinks.swift": 0,
+     "file:Sources/Subboards/SubboardPanel.swift": 1,
+     "file:Sources/Subboards/SubboardRow.swift": 0,
+     "file:Sources/Subboards/SubboardSkeleton.swift": 1,
+     "file:Sources/Subboards/SubboardStyle.swift": 1,
+     "file:Sources/Subboards/Subboards.swift": 2,
+     "frame:Plugin system:module:Subboards": 2
+    },
+    "f:frame:Plugin system:module:Subboards": {
+     "kind:subboard": 0,
+     "plugin:subboards": 0
+    }
+   }
+  },
+  {
+   "board": "module:TableOfContents",
+   "levels": {
+    "b:module:TableOfContents": {
+     "file:Sources/TableOfContents/ContentsDragging.swift": 0,
+     "file:Sources/TableOfContents/ContentsHeldRows.swift": 1,
+     "file:Sources/TableOfContents/ContentsList.swift": 1,
+     "file:Sources/TableOfContents/ContentsListViews.swift": 1,
+     "file:Sources/TableOfContents/ContentsListing.swift": 1,
+     "file:Sources/TableOfContents/ContentsOutline.swift": 1,
+     "file:Sources/TableOfContents/ContentsPlace.swift": 0,
+     "file:Sources/TableOfContents/ContentsState.swift": 1,
+     "file:Sources/TableOfContents/TableOfContents.swift": 2,
+     "file:Sources/TableOfContents/TableOfContentsView.swift": 1,
+     "frame:Plugin system:module:TableOfContents": 2
+    },
+    "f:frame:Plugin system:module:TableOfContents": {
+     "extension-point:ContentsHeadings": 0,
+     "extension-point:ContentsMarks": 0,
+     "extension-point:ContentsMoves": 0,
+     "extension-point:ContentsRows": 0,
+     "extension-point:ContentsSections": 0,
+     "extension-point:ContentsTitles": 0,
+     "plugin:table-of-contents": 0
+    }
+   }
+  },
+  {
+   "board": "module:TextEditing",
+   "levels": {
+    "b:module:TextEditing": {
+     "file:Sources/TextEditing/CaretList.swift": 0,
+     "file:Sources/TextEditing/CaretListSubstitutions.swift": 1,
+     "file:Sources/TextEditing/CaretListWindow.swift": 0,
+     "file:Sources/TextEditing/EditingTextView.swift": 2,
+     "file:Sources/TextEditing/KeyMeaning.swift": 3,
+     "file:Sources/TextEditing/KeyMeaningSwiftUI.swift": 3,
+     "file:Sources/TextEditing/Spelling.swift": 2,
+     "file:Sources/TextEditing/StringDrawingLayout.swift": 4,
+     "file:Sources/TextEditing/TextEditingStyle.swift": 2,
+     "file:Sources/TextEditing/TextHighlight.swift": 2
+    }
+   }
+  },
+  {
+   "board": "module:Titles",
+   "levels": {
+    "b:module:Titles": {
+     "file:Sources/Titles/TitleCovers.swift": 0,
+     "file:Sources/Titles/TitleFind.swift": 1,
+     "file:Sources/Titles/TitleHeader.swift": 1,
+     "file:Sources/Titles/TitleNames.swift": 1,
+     "file:Sources/Titles/TitleQueries.swift": 1,
+     "file:Sources/Titles/TitleTabStyle.swift": 0,
+     "file:Sources/Titles/Titles.swift": 1,
+     "frame:Plugin system:module:Titles": 1
+    },
+    "f:frame:Plugin system:module:Titles": {
+     "extension-point:ShapeTitles": 0,
+     "extension-point:TitleCoverSurfaces": 0,
+     "extension-point:TitlePillLooks": 0,
+     "extension-point:TitleTabs": 0,
+     "plugin:title-find": 1,
+     "plugin:title-names": 2,
+     "plugin:title-queries": 3,
+     "plugin:titles": 0,
+     "property:title": 0
+    }
+   }
+  },
+  {
+   "board": "module:Topology",
+   "levels": {
+    "b:module:Topology": {
+     "file:Sources/Topology/BoardOrderKey.swift": 0,
+     "file:Sources/Topology/Containment.swift": 0,
+     "file:Sources/Topology/EdgeSources.swift": 1,
+     "file:Sources/Topology/EdgeTables.swift": 2,
+     "file:Sources/Topology/EdgeTypes.swift": 1,
+     "file:Sources/Topology/Following.swift": 2,
+     "file:Sources/Topology/Forwarding.swift": 2,
+     "file:Sources/Topology/Preparing.swift": 2,
+     "file:Sources/Topology/Topology.swift": 1,
+     "file:Sources/Topology/TopologyIndex.swift": 0,
+     "file:Sources/Topology/TopologySnapshot.swift": 0,
+     "frame:Plugin system:module:Topology": 1
+    },
+    "f:frame:Plugin system:module:Topology": {
+     "extension-point:EdgeForwarding": 0,
+     "extension-point:EdgeSources": 0,
+     "extension-point:EdgeTypes": 0,
+     "plugin:topology": 0
+    }
+   }
+  },
+  {
+   "board": "module:Transform",
+   "levels": {
+    "b:module:Transform": {
+     "file:Sources/Transform/ContainerChannel.swift": 0,
+     "file:Sources/Transform/Transform.swift": 0,
+     "file:Sources/Transform/TransformState.swift": 0,
+     "frame:Plugin system:module:Transform": 0
+    },
+    "f:frame:Plugin system:module:Transform": {
+     "extension-point:TransformSources": 0,
+     "extension-point:TransformTargets": 0,
+     "plugin:transform": 0
+    }
+   }
+  },
+  {
+   "board": "module:Types",
+   "levels": {
+    "b:module:Types": {
+     "file:Sources/Types/TypesPlugin.swift": 0,
+     "frame:Plugin system:module:Types": 0,
+     "module:Types/Checks": 1,
+     "module:Types/Engines": 2,
+     "module:Types/Fields": 3,
+     "module:Types/Form": 4,
+     "module:Types/IsA": 5,
+     "module:Types/JSON": 6,
+     "module:Types/Rows": 7,
+     "module:Types/Sync": 8,
+     "module:Types/Type": 9
+    },
+    "f:frame:Plugin system:module:Types": {
+     "plugin:type-details": 0,
+     "plugin:type-validation": 1,
+     "plugin:types": 2
+    }
+   }
+  },
+  {
+   "board": "module:Types/Checks",
+   "levels": {
+    "b:module:Types/Checks": {
+     "file:Sources/Types/Checks/FieldCheck.swift": 0,
+     "file:Sources/Types/Checks/FieldChecker.swift": 0,
+     "file:Sources/Types/Checks/FieldChecks.swift": 0,
+     "file:Sources/Types/Checks/FieldSchemas.swift": 0,
+     "file:Sources/Types/Checks/RelationChecks.swift": 1,
+     "file:Sources/Types/Checks/RelationWords.swift": 1,
+     "file:Sources/Types/Checks/RunTouches.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:Types/Engines",
+   "levels": {
+    "b:module:Types/Engines": {
+     "file:Sources/Types/Engines/FieldFind.swift": 0,
+     "file:Sources/Types/Engines/FieldValuesDraw.swift": 0,
+     "file:Sources/Types/Engines/IssueRowValues.swift": 0,
+     "file:Sources/Types/Engines/RelationshipDraw.swift": 0,
+     "file:Sources/Types/Engines/TypeLights.swift": 0,
+     "file:Sources/Types/Engines/TypeNames.swift": 0,
+     "file:Sources/Types/Engines/TypeQueries.swift": 0,
+     "frame:Plugin system:module:Types/Engines": 0
+    },
+    "f:frame:Plugin system:module:Types/Engines": {
+     "plugin:draw-field-values": 0,
+     "plugin:field-find": 1,
+     "plugin:issue-row-values": 2,
+     "plugin:type-lights": 3,
+     "plugin:type-names": 4,
+     "plugin:type-queries": 5
+    }
+   }
+  },
+  {
+   "board": "module:Types/Fields",
+   "levels": {
+    "b:module:Types/Fields": {
+     "file:Sources/Types/Fields/Chain.swift": 0,
+     "file:Sources/Types/Fields/ChainBook.swift": 0,
+     "file:Sources/Types/Fields/FieldBook.swift": 0,
+     "file:Sources/Types/Fields/FieldDefiner.swift": 1,
+     "file:Sources/Types/Fields/FieldDefinitions.swift": 1,
+     "file:Sources/Types/Fields/FieldKind.swift": 1,
+     "file:Sources/Types/Fields/FieldName.swift": 1,
+     "file:Sources/Types/Fields/FieldPath.swift": 2,
+     "file:Sources/Types/Fields/FieldSummary.swift": 1,
+     "file:Sources/Types/Fields/FieldText.swift": 1,
+     "file:Sources/Types/Fields/FieldTitling.swift": 2,
+     "file:Sources/Types/Fields/FieldValueAccess.swift": 2,
+     "file:Sources/Types/Fields/FieldValues.swift": 2,
+     "file:Sources/Types/Fields/FieldValuesMerge.swift": 2,
+     "file:Sources/Types/Fields/FieldWords.swift": 1,
+     "file:Sources/Types/Fields/FieldWriter.swift": 1,
+     "file:Sources/Types/Fields/FileFields.swift": 0,
+     "file:Sources/Types/Fields/ReadingTypes.swift": 0,
+     "file:Sources/Types/Fields/Relating.swift": 3,
+     "file:Sources/Types/Fields/RelationshipFar.swift": 3,
+     "file:Sources/Types/Fields/RelationshipIndex.swift": 3,
+     "file:Sources/Types/Fields/RelationshipRun.swift": 3,
+     "file:Sources/Types/Fields/RowList.swift": 0,
+     "file:Sources/Types/Fields/TitleSource.swift": 2,
+     "frame:Plugin system:module:Types/Fields": 2
+    },
+    "f:frame:Plugin system:module:Types/Fields": {
+     "property:endRule": 0,
+     "property:fieldValues": 1
+    }
+   }
+  },
+  {
+   "board": "module:Types/Form",
+   "levels": {
+    "b:module:Types/Form": {
+     "file:Sources/Types/Form/ArrowCards.swift": 0,
+     "file:Sources/Types/Form/CardAccessibility.swift": 1,
+     "file:Sources/Types/Form/DefinitionAccessibility.swift": 1,
+     "file:Sources/Types/Form/DefinitionCards.swift": 1,
+     "file:Sources/Types/Form/DefinitionDrawing.swift": 1,
+     "file:Sources/Types/Form/DefinitionKeys.swift": 1,
+     "file:Sources/Types/Form/DefinitionModel.swift": 1,
+     "file:Sources/Types/Form/DefinitionView.swift": 1,
+     "file:Sources/Types/Form/FieldCards.swift": 0,
+     "file:Sources/Types/Form/FieldCellEditor.swift": 2,
+     "file:Sources/Types/Form/FieldForm.swift": 2,
+     "file:Sources/Types/Form/FieldFormAccessibility.swift": 2,
+     "file:Sources/Types/Form/FieldFormJSON.swift": 2,
+     "file:Sources/Types/Form/FieldFormKeys.swift": 2,
+     "file:Sources/Types/Form/FieldFormLayout.swift": 2,
+     "file:Sources/Types/Form/FieldFormNotes.swift": 2,
+     "file:Sources/Types/Form/FieldFormRelations.swift": 2,
+     "file:Sources/Types/Form/FieldFormStyle.swift": 0,
+     "file:Sources/Types/Form/FieldFormView.swift": 2,
+     "file:Sources/Types/Form/FieldFormWords.swift": 2,
+     "file:Sources/Types/Form/FieldFormWrites.swift": 2,
+     "file:Sources/Types/Form/FieldGridView.swift": 2,
+     "file:Sources/Types/Form/FieldJSON.swift": 2,
+     "file:Sources/Types/Form/FieldJSONEditor.swift": 0,
+     "file:Sources/Types/Form/FieldSheet.swift": 2,
+     "file:Sources/Types/Form/FieldsPanel.swift": 0,
+     "file:Sources/Types/Form/NotePicking.swift": 3,
+     "file:Sources/Types/Form/RelationPicker.swift": 3,
+     "frame:Plugin system:module:Types/Form": 1
+    },
+    "f:frame:Plugin system:module:Types/Form": {
+     "extension-point:DefinitionWalks": 0
+    }
+   }
+  },
+  {
+   "board": "module:Types/IsA",
+   "levels": {
+    "b:module:Types/IsA": {
+     "file:Sources/Types/IsA/AutofillPanel.swift": 0,
+     "file:Sources/Types/IsA/EndArrows.swift": 1,
+     "file:Sources/Types/IsA/EndRules.swift": 0,
+     "file:Sources/Types/IsA/EndSelection.swift": 2,
+     "file:Sources/Types/IsA/FarNotes.swift": 1,
+     "file:Sources/Types/IsA/RelateOffer.swift": 1,
+     "file:Sources/Types/IsA/RelationshipDeletes.swift": 3,
+     "file:Sources/Types/IsA/RelationshipMenus.swift": 1,
+     "file:Sources/Types/IsA/RelationshipPill.swift": 1,
+     "file:Sources/Types/IsA/RelationshipRelease.swift": 1,
+     "file:Sources/Types/IsA/RelationshipWrites.swift": 1,
+     "file:Sources/Types/IsA/TypeAccessibility.swift": 4,
+     "file:Sources/Types/IsA/TypeChips.swift": 5,
+     "file:Sources/Types/IsA/TypeChoices.swift": 5,
+     "file:Sources/Types/IsA/TypeCompletions.swift": 0,
+     "file:Sources/Types/IsA/TypeLinks.swift": 5,
+     "file:Sources/Types/IsA/TypeMenus.swift": 5,
+     "file:Sources/Types/IsA/TypePanel.swift": 0
+    }
+   }
+  },
+  {
+   "board": "module:Types/JSON",
+   "levels": {
+    "b:module:Types/JSON": {
+     "file:Sources/Types/JSON/JSONCaret.swift": 0,
+     "file:Sources/Types/JSON/JSONCompleter.swift": 0,
+     "file:Sources/Types/JSON/JSONPointer.swift": 0,
+     "file:Sources/Types/JSON/JSONReader.swift": 0,
+     "file:Sources/Types/JSON/MetaSchema.swift": 0,
+     "file:Sources/Types/JSON/SchemaDirectives.swift": 1,
+     "file:Sources/Types/JSON/SchemaDocument.swift": 1,
+     "file:Sources/Types/JSON/SchemaValue.swift": 2,
+     "file:Sources/Types/JSON/SchemaValueText.swift": 2
+    }
+   }
+  },
+  {
+   "board": "module:Types/Rows",
+   "levels": {
+    "b:module:Types/Rows": {
+     "file:Sources/Types/Rows/DefinitionFace.swift": 0,
+     "file:Sources/Types/Rows/FieldsCommand.swift": 0,
+     "file:Sources/Types/Rows/RowBook.swift": 1,
+     "file:Sources/Types/Rows/RowEditing.swift": 1,
+     "file:Sources/Types/Rows/RowFaces.swift": 1,
+     "file:Sources/Types/Rows/RowField.swift": 1,
+     "file:Sources/Types/Rows/RowGeometry.swift": 1,
+     "file:Sources/Types/Rows/RowShown.swift": 1,
+     "file:Sources/Types/Rows/RowsDrawing.swift": 1,
+     "file:Sources/Types/Rows/RowsValuesDrawing.swift": 1,
+     "file:Sources/Types/Rows/RowsView.swift": 1,
+     "file:Sources/Types/Rows/TypePillEditor.swift": 0,
+     "file:Sources/Types/Rows/TypePills.swift": 0,
+     "file:Sources/Types/Rows/TypeRows.swift": 0,
+     "frame:Plugin system:module:Types/Rows": 0
+    },
+    "f:frame:Plugin system:module:Types/Rows": {
+     "extension-point:TypeRowsPlaces": 0
+    }
+   }
+  },
+  {
+   "board": "module:Types/Sync",
+   "levels": {
+    "b:module:Types/Sync": {
+     "file:Sources/Types/Sync/FieldFill.swift": 0,
+     "file:Sources/Types/Sync/FillPrompts.swift": 0,
+     "file:Sources/Types/Sync/SchemaHighlights.swift": 1,
+     "file:Sources/Types/Sync/SchemaPrompts.swift": 0,
+     "file:Sources/Types/Sync/TypeHighlights.swift": 1,
+     "file:Sources/Types/Sync/TypeSync.swift": 1
+    }
+   }
+  },
+  {
+   "board": "module:Types/Type",
+   "levels": {
+    "b:module:Types/Type": {
+     "file:Sources/Types/Type/ArrowRole.swift": 0,
+     "file:Sources/Types/Type/Autofill.swift": 1,
+     "file:Sources/Types/Type/HeldDirective.swift": 1,
+     "file:Sources/Types/Type/IsA.swift": 0,
+     "file:Sources/Types/Type/JSONCodeColors.swift": 2,
+     "file:Sources/Types/Type/RelationshipGraph.swift": 0,
+     "file:Sources/Types/Type/RelationshipMark.swift": 0,
+     "file:Sources/Types/Type/SchemaReadings.swift": 2,
+     "file:Sources/Types/Type/SchemaReferences.swift": 2,
+     "file:Sources/Types/Type/TypeColorDirective.swift": 2,
+     "file:Sources/Types/Type/TypeColors.swift": 0,
+     "file:Sources/Types/Type/TypeGraph.swift": 0,
+     "file:Sources/Types/Type/TypeIndex.swift": 0,
+     "file:Sources/Types/Type/TypeSchema.swift": 2,
+     "file:Sources/Types/Type/TypeWords.swift": 1,
+     "file:Sources/Types/Type/TypesStyle.swift": 0,
+     "frame:Plugin system:module:Types/Type": 1
+    },
+    "f:frame:Plugin system:module:Types/Type": {
+     "extension-point:TypeDirectives": 0,
+     "extension-point:TypeWords": 1,
+     "plugin:type-colors": 2,
+     "property:autofill": 3,
+     "property:is": 4,
+     "property:relationship": 5,
+     "property:schema": 6
+    }
+   }
+  },
+  {
+   "board": "module:Validation",
+   "levels": {
+    "b:module:Validation": {
+     "file:Sources/Validation/IssueBand.swift": 0,
+     "file:Sources/Validation/IssueLights.swift": 0,
+     "file:Sources/Validation/IssueLinePlaces.swift": 0,
+     "file:Sources/Validation/IssueList.swift": 0,
+     "file:Sources/Validation/IssueMarks.swift": 1,
+     "file:Sources/Validation/IssueRowValues.swift": 1,
+     "file:Sources/Validation/IssueScopes.swift": 0,
+     "file:Sources/Validation/IssueWalk.swift": 0,
+     "file:Sources/Validation/IssueWalkPanel.swift": 0,
+     "file:Sources/Validation/IssueWalkStyle.swift": 0,
+     "file:Sources/Validation/IssuesTab.swift": 1,
+     "file:Sources/Validation/Validation.swift": 1,
+     "file:Sources/Validation/ValidationChecks.swift": 1,
+     "file:Sources/Validation/ValidationQueries.swift": 1,
+     "frame:Plugin system:module:Validation": 1
+    },
+    "f:frame:Plugin system:module:Validation": {
+     "extension-point:IssueRowValues": 0,
+     "extension-point:IssueScopes": 0,
+     "extension-point:ValidationRules": 0,
+     "plugin:issue-walk": 1,
+     "plugin:validation": 0,
+     "plugin:validation-checks": 2,
+     "plugin:validation-contents": 3,
+     "plugin:validation-details": 4,
+     "plugin:validation-queries": 5
+    }
+   }
+  },
+  {
+   "board": "root",
+   "levels": {
+    "b:root": {
+     "band:Core layer": 0,
+     "band:Platform layer": 0,
+     "band:Product layer": 0,
+     "frame:Code types": 1
+    },
+    "f:band:Core layer": {
+     "module:Canvas": 0,
+     "module:CanvasCLI": 1,
+     "module:CanvasQuickLook": 0,
+     "module:CanvasRPC": 1,
+     "module:CanvasUI": 2,
+     "module:Chrome": 2,
+     "module:DrawScript": 3,
+     "module:FuzzyMatching": 3,
+     "module:Geometry": 3,
+     "module:InfiniteCanvas": 0,
+     "module:Palette": 2,
+     "module:QueryLanguage": 4,
+     "module:TextEditing": 2
+    },
+    "f:band:Platform layer": {
+     "group:Engines": 0,
+     "group:For agents": 0,
+     "group:Horizontals: in the window": 0,
+     "group:Horizontals: shape traits": 0,
+     "group:Things you do": 0
+    },
+    "f:band:Product layer": {
+     "module:Arrows": 0,
+     "module:Frames": 1,
+     "module:StickyNotes": 2,
+     "module:Subboards": 3
+    },
+    "f:frame:Code types": {
+     "type:Extension point": 0,
+     "type:File": 1,
+     "type:Kind": 1,
+     "type:Plugin": 0,
+     "type:Property": 1,
+     "type:declared in": 1,
+     "type:declares": 0,
+     "type:fills": 0,
+     "type:holds": 1
+    },
+    "f:group:Engines": {
+     "module:DecisionModels": 0,
+     "module:Draw": 1,
+     "module:LanguageModels": 0,
+     "module:LanguageRules": 0,
+     "module:Neighbors": 1,
+     "module:ProseMaps": 0,
+     "module:Queries": 1,
+     "module:QueryTranslation": 0
+    },
+    "f:group:For agents": {
+     "module:Automation": 0,
+     "module:DecisionCommands": 0,
+     "module:QueryCommands": 0
+    },
+    "f:group:Horizontals: in the window": {
+     "module:Adornments": 0,
+     "module:ContextMenus": 0,
+     "module:DetailPanel": 1,
+     "module:Find": 1,
+     "module:Keyboard": 1,
+     "module:Selection": 0,
+     "module:SlashCommands": 0,
+     "module:TableOfContents": 0
+    },
+    "f:group:Horizontals: shape traits": {
+     "module:Boards": 0,
+     "module:Colors": 1,
+     "module:Connections": 1,
+     "module:Grouping": 2,
+     "module:Locking": 3,
+     "module:Mentions": 0,
+     "module:Publishing": 1,
+     "module:References": 1,
+     "module:Titles": 0,
+     "module:Topology": 1,
+     "module:Transform": 4,
+     "module:Types": 1,
+     "module:Validation": 1
+    },
+    "f:group:Things you do": {
+     "module:Clipboard": 0,
+     "module:JumpTo": 1,
+     "module:Moving": 2,
+     "module:Reordering": 3,
+     "module:Snapping": 4
+    }
+   }
+  }
+ ]
+}
