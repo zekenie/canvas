@@ -8282,12 +8282,20 @@ a command line's are the same key, and one object decides which it is, before th
 
 | Return | Does |
 |---|---|
-| With the list open, on a highlighted command that takes nothing, with only whitespace after its name on the line | Runs it at once: the line goes, the command runs. |
-| With the list open, on any other highlighted command | Completes it, as Tab does, so its argument can be typed. |
+| With the list open, on a highlighted command that takes nothing, with only whitespace after its name on the line, once something is typed after the `/` or where it's the list's only row | Runs it at once: the line goes, the command runs. |
+| With the list open, on any other highlighted command | Completes it, as Tab does, so its argument can be typed, or Return pressed again to run the line. |
 | With the list open, on a highlighted row with what its command takes (`is-a Idea`) | Runs it with that at once: the line goes, the command runs. |
 | With the list open, with nothing highlighted ("No matches") | A new line, which closes the list. |
 | With the list closed, no selection and the caret after the `/`, on a line that is `/name` and what follows, where the shape offers a command of that name now and it accepts what follows | Takes the line out of the text and runs the command. |
 | Anything else: not a command, one the shape doesn't offer, arguments it doesn't accept, a selection, the caret before the `/` | Return as ever: a new line, or what the host does with it (a box's commit). |
+
+With nothing typed after the `/` the list is every command offered, and its highlight is where the
+list starts (or where ↓ or the pointer left it), not a command anyone named, so Return completes it
+rather than run it: in the command bar for every shape, `/` and Return writes `/lock`, and only a
+second Return locks the board. A lone row runs at once (a locked note's `unlock`): there's nothing
+else the list could mean. A held Return acts once: its repeats are taken and do nothing while a list
+is open or the caret is on a command line the target offers, so what a press completed (a line, the
+choices it opened) waits for a press of its own, as a held Return is one press everywhere in the app.
 
 A command line is its text from the `/` to the line's end, not its line break: `/name`, whitespace,
 and what the command takes, trimmed at both ends. The caret may be anywhere after the `/`. The name
@@ -8496,7 +8504,7 @@ registrar.selectionChanged { editor, _, _ in editor.slashBar?.close() }         
   | ↑ ↓, ⌃P ⌃N, Page Up, Page Down | the list's |
   | Tab | completes the highlighted row; with nothing to complete, nothing (modal, as Jump To's palette) |
   | ⇧Tab | closes the list |
-  | Return | runs the highlighted command that takes nothing, completes one that takes something; with the list closed, runs a whole line |
+  | Return | runs the highlighted command that takes nothing once something is typed after the `/` (or the list's only row), completes it with nothing typed and one that takes something; with the list closed, runs a whole line |
   | Escape, ⌘. | closes the list if one is open, else the bar: the canvas has the keyboard, the selection as it was |
   | ⌫ over the `/` | closes the bar |
   | ⌘Z, ⇧⌘Z | the field's own undo, as any field's while it has the keyboard |
@@ -8547,7 +8555,9 @@ registrar.selectionChanged { editor, _, _ in editor.slashBar?.close() }         
 
 SlashCommandsTests' `slashBarTests` hold it over fixtures in an unshown window, MentionsTests'
 `slashBarFieldTests` Mentions' field over Mentions' fixtures, and CompositionTests'
-`slashBarShippedTests` on the shipped list, `/move-to` and `/move-near` on a selection among it.
+`slashBarShippedTests` on the shipped list, `/move-to` and `/move-near` on a selection among it, and
+`/` and Return with nothing typed writing `/lock` for every note and `/turn-into-subboard` on a frame,
+running neither until a second Return.
 
 ### Commands about the selection: `SelectionSlashCommand`
 
@@ -8636,7 +8646,10 @@ following a mention shows it. VoiceOver hears how many, and how many more are on
   (mid-line, before text, nothing offered, read-only, pasted, undone, composed), narrowing and each
   way it closes, the substitutions off while it's open and back after, completing (with and without
   the space, in the middle of a name, a click on a row, and the list's Return on a command that takes
-  a shape), Return from the list and on a whole line,
+  a shape), Return from the list (with nothing typed after the `/` completing the highlighted command,
+  a row reached with ↓ and the caret back at the `/` alike, a second Return running the line, the list's
+  only row running at once, a held Return's repeats running nothing a press completed and picking
+  nothing in the choices it opened) and on a whole line,
   what isn't a command being Return as ever (⇧↩, a selection, the caret before the slash, text
   being composed), the text's own undo bringing the line back while the board's undo undoes the
   command by its name with the typing next, the command's step closing the editing session's, a
@@ -8706,7 +8719,8 @@ following a mention shows it. VoiceOver hears how many, and how many more are on
   followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
   editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line;
   `/create-frame` puts a frame around the note, editing over and the frame selected, and
-  `/create-subboard` takes it onto a new subboard's board, the board shown staying. The
+  `/create-subboard` takes it onto a new subboard's board, the board shown staying. In an arrow's
+  label, `/` and Return with nothing typed writes `/lock` and locks nothing until a second Return. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
   `/title → every shape holding title`, Locking's `/lock /unlock → every shape holding locked`, Publishing's
   `/public /private → every shape holding private`, Subboards' `/turn-into-subboard → every shape that
@@ -10766,7 +10780,7 @@ registrar.createFrameItem()                                        // Create Fra
   refused, so a locked shape in the selection isn't among those it acts on (`1 of 2`). It comes from
   `FrameSlashPlugin`, a plugin value of its own shipped after Moving, so its row follows Moving's in
   every list: a command of `FramesPlugin`'s, which comes among the kinds before Titles, would head them
-  all, where Return on the `/` alone runs a command that takes nothing. Not built: Remove Frame and Fit to Content.
+  all, before `title` and `lock`. Not built: Remove Frame and Fit to Content.
 - **Opt-ins.** Titles keeps its name, shown in a tab on its top edge at every zoom, in its surface and
   border (a colored frame's color's surface and solid, from Colors' book; untitled, a dimmed "Frame" in
   full; no symbol, since its look says what it is), and `TitleHeader` renames it in its panel's header ("Untitled Frame").

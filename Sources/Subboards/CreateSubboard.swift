@@ -27,7 +27,7 @@ extension PluginID {
 /// two of them goes along. It makes `SubboardsPlugin`'s kind and goes with it. A plugin value of its own so
 /// that it comes after the plugins whose every-shape commands a note lists before it (Moving's):
 /// `SubboardsPlugin` is among the kinds, before Titles, and a command of its plugin would head every
-/// shape's list, where Return on the `/` alone runs a command that takes nothing.
+/// shape's list, before `title` and `lock`.
 public struct SubboardSlashPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .subboardSlash }

@@ -64,8 +64,8 @@ extension PluginID {
 /// selection's arrow isn't among them (`2 of 3`): it stays bound to them, and the frame is around them.
 /// It runs `FramesPlugin`'s Create Frame and goes with it. A plugin value of its own so that it comes
 /// after the plugins whose every-shape commands a note lists before it (Moving's): `FramesPlugin` is
-/// among the kinds, before Titles, and a command of its plugin would head every shape's list, where
-/// Return on the `/` alone runs a command that takes nothing.
+/// among the kinds, before Titles, and a command of its plugin would head every shape's list, before
+/// `title` and `lock`.
 public struct FrameSlashPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .frameSlash }

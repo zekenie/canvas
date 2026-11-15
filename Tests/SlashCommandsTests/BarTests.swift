@@ -338,6 +338,31 @@ private let area = CGRect(x: 100, y: 100, width: 100, height: 60)
         expectEqual([rig.width(a), rig.width(b)], [100, 100])
     },
 
+    test("with nothing typed after the /, Return completes the highlighted command and runs it on no shape, every shape on the board included, held or not; a second Return runs the line on them all") {
+        let rig = try BarRig(targets: false)
+        let a = rig.card(), b = rig.card(area.offsetBy(dx: 200, dy: 100))
+        rig.slash()
+        expectEqual(rig.bar?.target, .everything([a, b]))
+        expectEqual(rig.listed, ["grow", "width"])
+        rig.window.pressReturn()
+        expect(rig.isOpen, "the bar stays")
+        expectEqual(rig.field?.string, "/grow", "completed, as Tab does")
+        expect(rig.typing?.picker == nil)
+        expectEqual([rig.width(a), rig.width(b)], [100, 100], "nothing ran")
+        expectEqual(rig.editor.undoHistory.undoName, nil, "no step")
+        rig.window.pressReturn()
+        expect(!rig.isOpen)
+        expectEqual([rig.width(a), rig.width(b)], [110, 110], "the line, run on them all")
+        expectEqual(rig.editor.undoHistory.undoName, "Grow")
+
+        rig.slash()
+        KeyDriver(rig.window).hold(.return, repeats: 3)
+        expectEqual(rig.field?.string, "/grow", "held: the press completes")
+        expectEqual([rig.width(a), rig.width(b)], [110, 110], "and its repeats run nothing")
+        rig.window.pressReturn()
+        expectEqual([rig.width(a), rig.width(b)], [120, 120], "a press of its own runs it")
+    },
+
     test("a whole line runs with Return once its list is closed, a pick runs at once, and a command on fewer than all is announced with how many") {
         let rig = try BarRig(targets: false)
         let a = rig.card(), box = rig.h.add(Box(area.offsetBy(dx: 0, dy: 120)))

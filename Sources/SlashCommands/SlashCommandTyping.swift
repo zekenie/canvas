@@ -18,8 +18,11 @@ import TextEditing
 /// - The keys are every caret list's. Tab, or a click on a row, completes: `/` and the name typed
 ///   become `/` and the command's name, and a space if it takes an argument; one step of the text's
 ///   undo. Return is the list's own: a highlighted command that runs with nothing after it runs at
-///   once, and any other completes, so its argument can be typed; with nothing highlighted it's a
-///   new line, which closes the list.
+///   once where something is typed after the `/` or it's the list's only row (with nothing typed the
+///   highlight names no command: it's where the list starts, or where ↓ or the pointer left it), and
+///   any other completes, so its argument can be typed or Return pressed again; with nothing
+///   highlighted it's a new line, which closes the list. A held Return acts once: its repeats do
+///   nothing while a list is open or the line is a command's.
 /// - What's typed after the `/` finds what the commands take too (`SlashCommandPicker`): a choice of a
 ///   choice command's list, and, where the host finds shapes (`shapes`, a `SlashShapeSearch`), a shape
 ///   a command that takes one admits. Such a row is a whole command: Return, Tab or a click takes the
@@ -237,18 +240,33 @@ public final class SlashCommandTyping {
     // MARK: Keys
 
     /// Whether a key is the list's or a command line's before the view has it: a plain Return
-    /// (Return or Enter with no ⌘, ⇧, ⌥ or ⌃) is, when `takesReturn` says so. The host asks first,
-    /// and gives the key to the view when it isn't taken.
+    /// (Return or Enter with no ⌘, ⇧, ⌥ or ⌃) is, when `takesReturn` says so. A held Return acts once:
+    /// its repeats are taken and do nothing while a list of this object's is open or the caret is on a
+    /// command line the target offers, so what a press completed (a line, the choices it opened) waits
+    /// for a press of its own. The host asks first, and gives the key to the view when it isn't taken.
     public func takesKey(_ event: NSEvent) -> Bool {
         guard event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76,
               event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else { return false }
+        if event.isARepeat { return holdsReturn }
         return takesReturn()
     }
 
+    /// Whether a Return now is this object's: a list of its is open, or the caret is on a line that is a
+    /// command the target offers.
+    private var holdsReturn: Bool {
+        guard !isWriting, let view, let commands, view.isEditable, !view.hasMarkedText(), let storage = view.textStorage else { return false }
+        if picker != nil || choices != nil { return true }
+        guard view.caretListWindow == nil else { return false }
+        let selection = view.selectedRange()
+        guard selection.length == 0, let line = SlashCommandLine(in: storage.string as NSString, caret: selection.location) else { return false }
+        return command(named: line.name, in: commands) != nil
+    }
+
     /// A plain Return: whether it took it. With the list open, the highlighted command runs if it
-    /// runs with nothing after it and nothing else is on the line, else it completes; a highlighted
-    /// command with what it takes runs with it; with nothing highlighted, Return isn't taken. With the
-    /// list closed, a command line runs (see the type).
+    /// runs with nothing after it, nothing else is on the line, and something is typed after the `/`
+    /// or it's the list's only row, else it completes; a highlighted command with what it takes runs
+    /// with it; with nothing highlighted, Return isn't taken. With the list closed, a command line
+    /// runs (see the type).
     public func takesReturn() -> Bool {
         guard !isWriting, let view, let commands, view.isEditable, !view.hasMarkedText(), let storage = view.textStorage else { return false }
         let text = storage.string as NSString
@@ -259,12 +277,15 @@ public final class SlashCommandTyping {
             if let argument = entry.argument { return take(argument, of: entry.command, line: picker.location) }
             let command = entry.command
             let name = picker.nameRange
+            // With nothing typed after the `/` the list is every command, and its highlight names none (it's where
+            // the list starts, or where ↓ or the pointer left it): Return runs it only as the list's one row.
+            let isNamed = !picker.query.isEmpty || picker.entries.count == 1
             close()
             var start = 0, end = 0, contentsEnd = 0
             text.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: picker.location, length: 0))
             let rest = NSRange(location: NSMaxRange(name), length: max(0, contentsEnd - NSMaxRange(name)))
             let isAlone = start == picker.location && NSMaxRange(name) <= text.length && text.substring(with: rest).allSatisfy(\.isWhitespace)
-            if isAlone, command.accepts(SlashArguments([])) {
+            if isNamed, isAlone, command.accepts(SlashArguments([])) {
                 return run(command, with: SlashArguments([]), removing: NSRange(location: start, length: contentsEnd - start))
             }
             return complete(command, replacing: name)

@@ -309,6 +309,78 @@ private let idA = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D
         expectEqual(s.h.editor.undoHistory.undoName, "Grow")
     },
 
+    test("with nothing typed after the slash, Return completes the highlighted command as Tab does and runs nothing, and a second Return runs the line; a row reached with ↓ the same; the list's only row runs at once") {
+        let s = try SlashSession("keep")
+        s.newLine()
+        s.type("/")
+        expectEqual(s.highlighted, "grow", "the first of six")
+        s.returnKey()
+        expectEqual(s.string, "keep\n/grow", "completed")
+        expect(s.list == nil)
+        expectEqual(s.width, 100, "nothing ran")
+        expectEqual(s.h.editor.undoHistory.undoName, "Typing")
+        expectEqual(s.marked, [NSRange(location: 5, length: 5)], "a line Return runs")
+        s.returnKey()
+        expectEqual(s.string, "keep\n", "the line is gone")
+        expectEqual(s.width, 110, "the second Return ran it")
+        expectEqual(s.h.editor.undoHistory.undoName, "Grow")
+
+        let down = try SlashSession("")
+        down.type("/")
+        down.down()
+        down.down()
+        down.down()
+        expectEqual(down.highlighted, "ping")
+        down.returnKey()
+        expectEqual(down.string, "/ping", "a row moved to completes too: the pointer over the list moves the highlight as well")
+        expectEqual(down.log.runs, [])
+        down.returnKey()
+        expectEqual(down.log.runs, ["ping"])
+
+        let back = try SlashSession("")
+        back.type("/pi")
+        back.left()
+        back.left()
+        expectEqual(back.list?.query, "", "the caret back at the slash: the list is every command again")
+        back.returnKey()
+        expectEqual(back.string, "/grow", "the first row completed over the name, as Tab would")
+        expectEqual(back.width, 100)
+        expectEqual(back.log.runs, [])
+
+        let lone = try SlashSession("x", offering: false, plugins: [FilledCommandPlugin()])
+        lone.newLine()
+        lone.type("/")
+        expectEqual(lone.listed, ["filled"])
+        let width = lone.width
+        lone.returnKey()
+        expectEqual(lone.string, "x\n", "the list's only row runs at once, and its line goes")
+        expectEqual(lone.width, width + 5)
+        expectEqual(lone.h.editor.undoHistory.undoName, "Filled")
+    },
+
+    test("a held Return acts once: its repeats run nothing a press completed and pick nothing in the choices it opened, and a press of its own runs the line") {
+        let s = try SlashSession("keep")
+        s.newLine()
+        s.type("/")
+        KeyDriver(s.window).hold(.return, repeats: 3)
+        expectEqual(s.string, "keep\n/grow", "the press completed it, and the repeats typed no line")
+        expectEqual(s.width, 100, "and ran nothing")
+        s.returnKey()
+        expectEqual(s.string, "keep\n")
+        expectEqual(s.width, 110, "a press of its own runs the line")
+
+        let log = CommandLog()
+        let choice = try SlashSession("", offering: false, plugins: [ChoicePlugin(log: log)], log: log)
+        choice.type("/")
+        expectEqual(choice.highlighted, "pick")
+        KeyDriver(choice.window).hold(.return, repeats: 3)
+        expectEqual(choice.string, "/pick ", "completed, its choices open")
+        expectEqual(choice.highlightedChoice, "beta")
+        expectEqual(log.runs, [], "the repeats picked nothing")
+        choice.returnKey()
+        expectEqual(log.runs, ["pick beta"], "a press of its own picks the highlighted row")
+    },
+
     test("Return in the list on a command that takes an argument completes it, so the argument can be typed; Return then runs it") {
         let s = try SlashSession()
         s.type("/wi")

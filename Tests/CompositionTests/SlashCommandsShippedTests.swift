@@ -152,6 +152,32 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         expectEqual(editor.undoHistory.undoName, "Typing")
     },
 
+    test("with nothing typed after the / on a new line of an arrow's label, Return writes /lock and locks nothing, editing going on; a second Return locks the arrow") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 500, y: 300)), text: "keep"))
+        editor.selection = arrow
+        expect(editor.beginEditing(arrow))
+        let editing = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the label's editor has the keyboard")
+        editing.setSelectedRange(NSRange(location: 4, length: 0))
+        window.pressReturn()
+        window.type("/")
+        expectEqual(editing.slashCommands?.picker?.highlightedCommand?.name, "lock", "the first of what an arrow offers")
+        window.settle()
+        window.pressReturn()
+        window.settle()
+        expectEqual(editing.string, "keep\n/lock", "completed, as Tab does")
+        expect(!editor.isLocked(arrow), "nothing ran")
+        expectEqual(editor.editingShapeID, arrow, "editing goes on")
+        window.pressReturn()
+        window.settle()
+        expect(editor.isLocked(arrow), "the second Return runs the line")
+        expectEqual(editor.editingShapeID, nil, "and editing has ended")
+        expectEqual(editor.undoHistory.undoName, "Lock")
+    },
+
     test("/title Groceries typed on a new line of a note and entered names it: editing goes on, the line is gone from its text, Undo is Undo Title, and the step before is the typing; /title alone is a new line") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

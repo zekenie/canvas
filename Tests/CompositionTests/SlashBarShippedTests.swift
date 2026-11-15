@@ -191,6 +191,36 @@ import Types
         expectEqual(s.editor.undoHistory.undoName, "Unlock")
     },
 
+    test("with nothing typed after the /, Return writes the first row and runs nothing: with nothing selected /lock, every note left unlocked, and on a frame /turn-into-subboard, still a frame; a second Return runs the line") {
+        let s = ShippedBar()
+        let notes = [s.note(100, 100, "one"), s.note(400, 100, "two")]
+        s.slash()
+        expectEqual(s.bar?.label, "All shapes")
+        expectEqual(s.listed.first, "lock")
+        s.window.pressReturn()
+        expect(s.bar?.isOpen == true, "the bar stays")
+        expectEqual(s.field?.string, "/lock", "completed, as Tab does")
+        expect(!notes.contains { s.editor.isLocked($0) }, "no note locked")
+        expectEqual(s.editor.undoHistory.undoName, nil, "no step")
+        s.window.pressReturn()
+        expect(s.bar?.isOpen != true)
+        expect(notes.allSatisfy { s.editor.isLocked($0) }, "the line, run on every note")
+        expectEqual(s.editor.undoHistory.undoName, "Lock")
+        s.editor.undo()
+
+        let frame = s.editor.add(Frame(frame: CGRect(x: 100, y: 500, width: 600, height: 400)), title: "Sprint")
+        s.editor.selection = frame
+        s.slash()
+        expectEqual(s.listed.first, "turn-into-subboard")
+        s.window.pressReturn()
+        expectEqual(s.field?.string, "/turn-into-subboard")
+        expectEqual(s.editor.document[frame]?.kind, Frame.kind, "still a frame")
+        s.window.pressReturn()
+        expect(s.bar?.isOpen != true)
+        expectEqual(s.editor.document[frame]?.kind, Subboard.kind)
+        expectEqual(s.editor.undoHistory.undoName, "Turn into Subboard")
+    },
+
     test("three notes selected: /move-to @ lists the titled frames and subboards that take all three, nearest first, not a frame too small for them; Return picks Groceries, a second moves the three into it as one block, 40 in, one step, and Undo Move takes it back") {
         let s = ShippedBar()
         let notes = [s.note(100, 100, "one"), s.note(320, 100, "two"), s.note(100, 320, "three")]
