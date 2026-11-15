@@ -69,8 +69,8 @@ import TestKit
         expectEqual(h.editor.currentToolID, .hand)
         expect(h.editor.isToolLocked)
     },
-    test("it's every way a shape is put down: a placement at a point, or in a rect (the Frame tool's), and a container around shapes") {
-        let h = try EditorHarness(plugins: [CorralsPlugin(), discTools()])
+    test("it's every way a shape is put down: a placement at a point, or in a rect (the Frame tool's), a container around shapes, and a shape that owns a board taking them onto it") {
+        let h = try EditorHarness(plugins: [CorralsPlugin(), PocketsPlugin(), discTools()])
         let disc = ToolID(placing: Disc.kind)
         let placement = try require(h.editor.registry.placement(for: Disc.kind))
         h.editor.isToolLocked = true
@@ -82,11 +82,17 @@ import TestKit
         let around = h.editor.document.shapes.map(\.id)
         expect(h.editor.place(ShapeRecord(Corral()), around: around, padding: 20) != nil)
         expectEqual(h.editor.currentToolID, disc, "Create Frame's too")
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160)))
+        expect(h.editor.place(pocket, taking: [try require(h.editor.document.shapes.first?.id)]) != nil)
+        expectEqual(h.editor.currentToolID, disc, "Create Subboard's too")
         h.editor.isToolLocked = false
         h.editor.place(placement, at: CGPoint(x: 700, y: 100))
         expectEqual(h.editor.currentToolID, .hand)
         h.editor.setTool(disc)
         expect(h.editor.place(ShapeRecord(Corral()), around: [try require(h.editor.document.shapes.last?.id)]) != nil)
+        expectEqual(h.editor.currentToolID, .hand)
+        h.editor.setTool(disc)
+        expect(h.editor.place(ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160))), taking: [try require(h.editor.document.shapes.last?.id)]) != nil)
         expectEqual(h.editor.currentToolID, .hand)
     },
     test("it's observed, so the toolbar shows it as it's turned on and off; and nothing but the lock's own setting changes it: not a tool, a board, or a placement") {

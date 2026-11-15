@@ -1412,17 +1412,54 @@ public final class CanvasEditor {
     /// `place(_:around:padding:minimumSize:)`, over any record (a copy, say), whatever container it names.
     @discardableResult
     public func place(_ shape: AnyShapeRecord, around ids: [ShapeID], padding: CGFloat = 0, minimumSize: CGSize = .zero) -> ShapeID? {
-        // Nothing to hold, or a refusal, gives it all up: nothing is put down, no step is left, and the refused shake.
+        placeNew(shape, for: ids) { $0.enclose(ids, in: shape, padding: padding, minimumSize: minimumSize) }
+    }
+
+    /// A new shape put down for shapes (`place(_:around:)`, `place(_:taking:)`): `put` in one step named as a
+    /// placement's, all or nothing (`put` gives back what settling nudged, nil for nothing put down or a
+    /// refusal, which gives it all up: no step is left, and the refused shake); then one of `ids` being
+    /// edited is put down, its text kept, since the new shape is what's selected now (as Insert ends editing
+    /// as it places: only a slash command typed in that shape's text runs one mid-edit), the default tool
+    /// comes back (unless the tool is locked), services are told (`didPlace`: the selection selects it), and
+    /// what was nudged glides. The new shape's id; nil when nothing was put down.
+    private func placeNew(_ shape: AnyShapeRecord, for ids: [ShapeID], _ put: (inout Transaction) -> [ShapeID: CGPoint]?) -> ShapeID? {
         let placed = transactWhole("Add \(registry.label(of: shape.kind).name)") { transaction -> [ShapeID: CGPoint] in
-            guard let nudges = transaction.enclose(ids, in: shape, padding: padding, minimumSize: minimumSize)
-            else { throw Transaction.Refused() }
+            guard let nudges = put(&transaction) else { throw Transaction.Refused() }
             return nudges
         }
         guard let nudges = placed else { return nil }
+        if let editing = editingShapeID, ids.contains(editing) { endEditing(discarding: false) }
         if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace([shape.id], in: self) }
         glide(nudges)
         return shape.id
+    }
+
+    /// Puts a new shape of a kind that owns boards down where shapes on the board shown are, taking them
+    /// onto its board (Subboards' Create Subboard), as `place(_:around:)` puts a container down around
+    /// them: `shape`, a box shape of a `BoardOwning` kind, its id new to the file, at its box's size, its
+    /// top-left corner at the top-left corner of the frames those of `ids` with a box are laid out in, in
+    /// the innermost container they're all in (the gap inside its edge, where it fits), where the lowest
+    /// of them was in the stack; and they (but what's in another of them, which goes with that one) go onto
+    /// its board under their ids, where they are, with what they hold and what's bound to them alone (an
+    /// arrow between two of them: `Transaction.move(_:to:)`), a binding across the edge let go of where
+    /// it's drawn. Then it's settled as a placement is, gliding there. One step, named as a placement's
+    /// ("Add Subboard", unless a group it's in names it), both boards put back whole by its undo; the
+    /// default tool comes back (unless the tool is locked), and services hear `didPlace` (the selection
+    /// selects it). All or nothing: if one that would move is read-only (locked, in a locked container,
+    /// on a read-only board, or a locked arrow between two of them, which the move would leave behind), or
+    /// a read-only container would take the shape, nothing changes, no step is left, and services hear
+    /// which were refused (they shake). Returns the new shape's id; nil when it put nothing down (none of
+    /// `ids` has a box, one was refused, or `shape` owns no board).
+    @discardableResult
+    public func place<P: ShapeProps>(_ shape: ShapeRecord<P>, taking ids: [ShapeID]) -> ShapeID? {
+        place(AnyShapeRecord(shape), taking: ids)
+    }
+
+    /// `place(_:taking:)`, over any record.
+    @discardableResult
+    public func place(_ shape: AnyShapeRecord, taking ids: [ShapeID]) -> ShapeID? {
+        placeNew(shape, for: ids) { $0.gather(ids, onto: shape) }
     }
 
     /// Shows shapes about to be placed together (`PendingPlacement`), on the core's own tool for them

@@ -1047,7 +1047,7 @@ The details:
   the Hand. Claiming a tool nobody registers is `RegistryError.invalid`.
 - **The tool lock** (`editor.isToolLocked`, tldraw's `toggle-tool-lock`; Keyboard's Q) is a flag
   that outlasts every tool: while it's on, putting a shape down (`place(_:at:)`, `place(_:in:)`,
-  `place(_:around:)`) keeps the tool instead of returning to the default tool, so the next press
+  `place(_:around:)`, `place(_:taking:)`) keeps the tool instead of returning to the default tool, so the next press
   puts another down. Escape still leaves the tool, and the lock stays on for the next one; only
   the key turns it off. It's observed, and the toolbar shows it on the selected tool's segment, a
   small lock on its symbol and ", locked" in its tooltip.
@@ -7991,7 +7991,7 @@ text view that reads the line says so. And `/` on the canvas, with shapes select
 [command bar](#the-command-bar) under them, where a command is typed for them all and run on them
 with Return: `/color blue` on two notes colors both, and frames, subboards and references, which have
 no text to type in, take commands too; with nothing selected it opens for every shape on the board, as
-if Select All had selected them. Titles' `/title`, Locking's `/lock` and `/unlock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), [Moving](#moving)'s `/move-to` and `/move-near`, and [Reordering](#many-kinds-reordering)'s `/bring-to-front`, `/send-to-back`, `/bring-in-front-of @Milk` and `/send-behind @Milk` are the commands that ship, and in the bar QueryTranslation's `/query`, a [command about the selection](#commands-about-the-selection-selectionslashcommand) that selects what a question in English finds.
+if Select All had selected them. Titles' `/title`, Locking's `/lock` and `/unlock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), [Moving](#moving)'s `/move-to` and `/move-near`, [Frames](#frames)' `/create-frame` and [Subboards](#subboards)' `/create-subboard` (a frame around the shapes, or a subboard holding them on its board), and [Reordering](#many-kinds-reordering)'s `/bring-to-front`, `/send-to-back`, `/bring-in-front-of @Milk` and `/send-behind @Milk` are the commands that ship, and in the bar QueryTranslation's `/query`, a [command about the selection](#commands-about-the-selection-selectionslashcommand) that selects what a question in English finds.
 
 ```swift
 // In LockingPlugin.register, in its one scope:
@@ -8702,13 +8702,16 @@ following a mention shows it. VoiceOver hears how many, and how many more are on
   of two (`reach: .one`), run for one.
 - **CompositionTests' `slashCommandsShippedTests`** type `/lock`, `/title`, `/public` and
   `/private` into a note's editor in the app's canvas view: a slash mid-line is a slash, on a new
-  line it lists `title`, `lock`, `private`, `is-a`, `color`, `move-to`, `move-near` and Reordering's four, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
+  line it lists `title`, `lock`, `private`, `is-a`, `color`, `move-to`, `move-near`, `create-frame`, `create-subboard` and Reordering's four, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
   followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
-  editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
+  editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line;
+  `/create-frame` puts a frame around the note, editing over and the frame selected, and
+  `/create-subboard` takes it onto a new subboard's board, the board shown staying. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
   `/title → every shape holding title`, Locking's `/lock /unlock → every shape holding locked`, Publishing's
   `/public /private → every shape holding private`, Subboards' `/turn-into-subboard → every shape that
-  can turn into subboard`, Moving's `/move-to /move-near → every shape with a box` and Reordering's
+  can turn into subboard`, Moving's `/move-to /move-near → every shape with a box`, `frame-slash
+  /create-frame → every shape with a box`, `subboard-slash /create-subboard → every shape with a box` and Reordering's
   `/bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order`.
 
 ## Find
@@ -10544,6 +10547,18 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   which brings Turn into Subboard to the menu of a shape that holds shapes, and `/turn-into-subboard`. The
   subboard keeps the frame's id and title, sits at its corner at 240 × 160, and holds on its board what the
   frame held.
+- **Making one for shapes** is `/create-subboard` ([CreateSubboard.swift](../Sources/Subboards/CreateSubboard.swift)):
+  for the shapes it's typed for (in the command bar the shapes selected, or every shape on the board
+  with none; on a line of a shape's text, that shape), an untitled subboard at 240 × 160, its top-left
+  corner at theirs as a turn puts one at a frame's, in the frame they're all in, where the lowest of
+  them was in the stack, holding them on its board where they were, with what they hold and the
+  arrows between them (an arrow to a shape left out lets go of that end), through the core's
+  `editor.place(_:taking:)` ([Boards in a file](#boards-in-a-file)). It's selected and the board
+  shown stays, as Create Frame selects its frame; one step, "Create Subboard", which Undo takes back
+  on both boards; a locked arrow between two of them leaves it all as it was, and shakes. On every
+  kind with a box, together; a locked shape, or an arrow, in the selection isn't among those it acts
+  on (`2 of 3`). It comes from `SubboardSlashPlugin`, shipped after Moving, for the reason
+  `FrameSlashPlugin` is ([Frames](#frames)).
 
 It ships after the sticky note (the toolbar's Subboard, B), with Boards after Titles, and its props
 have a fixture for each version (`Fixtures/kinds/subboard.v0.json`, `subboard.v1.json`) as every
@@ -10743,7 +10758,15 @@ registrar.createFrameItem()                                        // Create Fra
   shape under them (a zone `canvas draw` drew); and a locked shape among them refuses the whole, as Turn
   into does, where tldraw frames the rest around it. Its key is ⇧⌘F, not tldraw's ⌥⌘G, which is Group's
   here (Keynote's and Freeform's); the step is named "Create Frame" for the key as for the item, and no menu bar
-  item runs it, so the Shape menu carries it. Not built: Remove Frame and Fit to Content.
+  item runs it, so the Shape menu carries it. `/create-frame` runs it for the shapes it's typed for
+  ([Slash commands](#slash-commands)): in the command bar the shapes selected, or every shape on the
+  board with none, on a line of a shape's text that shape (put down after, the frame selected), on
+  every kind with a box (`forShapes(adopting: .box)`), together; it's run as the command, not typed as
+  it, since the command's rule takes a locked shape and the bar would list a row that could only be
+  refused, so a locked shape in the selection isn't among those it acts on (`1 of 2`). It comes from
+  `FrameSlashPlugin`, a plugin value of its own shipped after Moving, so its row follows Moving's in
+  every list: a command of `FramesPlugin`'s, which comes among the kinds before Titles, would head them
+  all, where Return on the `/` alone runs a command that takes nothing. Not built: Remove Frame and Fit to Content.
 - **Opt-ins.** Titles keeps its name, shown in a tab on its top edge at every zoom, in its surface and
   border (a colored frame's color's surface and solid, from Colors' book; untitled, a dimmed "Frame" in
   full; no symbol, since its look says what it is), and `TitleHeader` renames it in its panel's header ("Untitled Frame").
@@ -11129,8 +11152,8 @@ registrar.forShapes(adopting: .box) { boxes in
   one-shape form on each shape would not do ([Slash commands](#slash-commands)); typed for a selection,
   a shape with no box (a link, an arrow) or that is read-only is not among them (`1 of 2`); the report's line is
   `moving /move-to /move-near → every shape with a box · CanvasContextMenu → every shape with a box · ContentsMoves`. It's right before
-  Reordering in the shipped list, after every plugin with a command for many kinds, so a note's `/`
-  list ends `title, lock, private, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
+  `/create-frame`'s and `/create-subboard`'s plugins and Reordering in the shipped list, after every plugin with a command for many kinds, so a note's `/`
+  list has `title, lock, private, is-a, color, move-to, move-near`, then `create-frame`, `create-subboard` and Reordering's four. Both steps are "Move", a drag's name ("Undo
   Move To" would read badly). It also puts Move To ▸ in the selection's menu (the Shape
   menu's too) on the same kinds: the frames, subboards and enclosing boards the selection can go to as
   the table of contents' drop would take it, nearest first, at most twenty; two places called alike say
@@ -15013,6 +15036,18 @@ things reach past it, all in the one commit:
   shape on this board owns, false for an owner that isn't here or owns no board, so a plugin that
   turns it first moves only once `turn` took: with `turn` it's a frame turned into a subboard that
   holds what the frame held, in one step.
+- **A new owner can be put down for shapes**, `editor.place(record, taking: ids)` (Subboards' Create
+  Subboard, `/create-subboard`), as `place(_:around:)` puts a container down around them
+  ([Containers](#containers)), for the same shapes (those with a box, less what's in another of them):
+  the record, of a kind that owns boards and new to the file, at its box's size, its top-left corner at
+  the top-left corner of the frames they're laid out in, in the innermost container they're all in (the
+  gap inside its edge where it fits, `Settlement.kept(_:inside:)`, as a turned shape is kept in its container),
+  where the lowest of them was in the stack, so it covers nothing
+  beside them that was above them all; they go onto its board where they are (`move(_:to:)`, a read-only
+  shape bound to them alone named among them, `transaction.readOnlyShapes(boundOnlyTo:)`, so it refuses
+  the move rather than being left behind unbound); then it's settled as a placement is. One step ("Add" and its kind's label, unless a group
+  names it), both boards put back by its undo, `didPlace` selecting it, the default tool back unless
+  locked; all or nothing for read-only shapes, which shake.
 - **And off any board**, `transaction.move(ids, from: source, to: board)`: as `move(_:to:)`, from a
   board that isn't the transaction's, as the transaction leaves it (a transaction over that board,
   reading every other board as this one leaves it), onto any other, the board shown too, where they
@@ -15369,6 +15404,10 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   nudged glides. All or nothing: a read-only one among them (locked, in a read-only container, or on
   a read-only board) leaves it all as it was, with no step, and is heard refused. It returns the new
   shape's id, nil when it put nothing down (nothing with a box, a refusal, a kind that holds nothing).
+  A shape among them being edited (a slash command typed in its text) is put down after the commit,
+  its text kept, the container being what's selected. Its sibling for a kind that owns boards,
+  `editor.place(_:taking:)` (Subboards' Create Subboard), is for the same shapes, and takes them onto
+  the new shape's board ([Boards in a file](#boards-in-a-file)).
 - **The glide** (`editor.glide(_:)`, Glide.swift) eases shapes that just moved from where they were
   drawn to where they are, over 250 ms, going a little past and back (`Style.glideDuration`,
   `glideOvershoot`), through their [drawing offsets](#the-cores-part-drawing-offsets) on
@@ -15948,6 +15987,8 @@ mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover S
 type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
+frame-slash          /create-frame → every shape with a box
+subboard-slash       /create-subboard → every shape with a box
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 stickers             kit stickers · shape emoji-sticker · label Sticker → emoji-sticker · tool emoji-sticker · command insert:emoji-sticker in KitShapes<StickersKit> · tool emoji-sticker-heart · command insert:emoji-sticker-heart in KitShapes<StickersKit> · tool emoji-sticker-star · command insert:emoji-sticker-star in KitShapes<StickersKit> · tool emoji-sticker-party · command insert:emoji-sticker-party in KitShapes<StickersKit> · ShapeResizing → emoji-sticker · parts resize handles → emoji-sticker · accessibility → emoji-sticker · /sticker → emoji-sticker · ShapeContextMenus in ShapeMenuGroup first → emoji-sticker · paste reader emoji
 ```
@@ -16012,7 +16053,9 @@ lines (`/title → every shape holding title`, `/lock /unlock → every shape ho
 every shape holding private`, `/turn-into-subboard → every shape that can turn into subboard`: each call
 of the sugar is one entry, its commands as `/name`, then the kind or the scope they're for:
 [Registering commands](#registering-commands)), and Moving's, its line's one entry
-(`moving /move-to /move-near → every shape with a box · CanvasContextMenu → every shape with a box`, [Moving](#moving)).
+(`moving /move-to /move-near → every shape with a box · CanvasContextMenu → every shape with a box`, [Moving](#moving)),
+then Frames' and Subboards' plugins for `/create-frame` and `/create-subboard`, one entry each
+(`frame-slash /create-frame → every shape with a box`, `subboard-slash /create-subboard → every shape with a box`).
 `transform` is the service that says what a shape can turn into (`TransformState`, which hears no
 commit) and contributes nothing else: what offers and takes a channel is on their lines, last but
 its Create Frame item on Frames' (`offers channel container → frame`) and on Subboards'

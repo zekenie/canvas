@@ -1334,6 +1334,24 @@ public struct Transaction {
         return move(ids, to: BoardID(owner: owner))
     }
 
+    /// What a move of `moving` (shapes on this board and what they hold, at any depth) would leave behind,
+    /// let go of both ends: the read-only shapes bound to some of them and to nothing else (a locked arrow
+    /// between two of them), which `move(_:to:)` doesn't take along. A caller that must leave nothing
+    /// read-only behind names them among what it moves, so the move refuses them (Transform's container
+    /// channel, `place(_:taking:)`). O(the board).
+    public func readOnlyShapes(boundOnlyTo moving: Set<ShapeID>) -> [ShapeID] {
+        let referencing = registry.referencingKinds
+        guard !referencing.isEmpty, !moving.isEmpty else { return [] }
+        let context = shapes
+        var found: [ShapeID] = []
+        document.shapes.forEach { record in
+            guard referencing.contains(record.kind), !moving.contains(record.id), holds(record),
+                  record.isBound(onlyTo: moving, in: context) else { return }
+            found.append(record.id)
+        }
+        return found
+    }
+
     /// Moves shapes on this board onto another board of the file, under their ids: on top of what that
     /// board holds as this transaction leaves it (`contents(of:)`), in their order, each with its props,
     /// added values and metadata, and with what it owns (a board goes with its owner wherever that is).

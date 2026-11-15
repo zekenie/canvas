@@ -10,8 +10,8 @@ import TestKit
 // from an edge, `Style.containerGap`); all or nothing for read-only shapes. The camera is at the origin
 // at 100%.
 
-/// What services heard put down (`EditorService.didPlace`), in order.
-@MainActor private final class PlacedLog {
+/// What services heard put down (`EditorService.didPlace`), in order: GatheringTests' too.
+@MainActor final class PlacedLog {
     var placed: [ShapeID] = []
 }
 
@@ -294,6 +294,22 @@ extension EditorHarness {
         expectEqual(h.box(pen), CGRect(x: 80, y: 80, width: 300, height: 220), "around the boxes and the sling between them")
         expectEqual(h.editor.holder(of: between), nil, "in no container: it follows what it's bound to")
         expectEqual(h.editor.holder(of: c), nil)
+    },
+
+    test("around the shape being edited, it puts that shape down, its text kept: the corral is what's selected now") {
+        let h = try enclosingHarness(RefusalLog(), [CardsPlugin()])
+        let note = h.add(Card(CGRect(x: 100, y: 100, width: 120, height: 80), text: "keep"))
+        let other = h.add(Card(CGRect(x: 600, y: 100, width: 120, height: 80), text: "on"))
+        expect(h.editor.beginEditing(note))
+        let pen = try require(h.corral(around: [note]))
+        expectEqual(h.editor.editingShapeID, nil, "put down")
+        expectEqual(h.editor.holder(of: note), pen)
+        expectEqual(h.editor.document[note]?.typed(as: Card.self)?.props.text, "keep")
+        expectEqual(h.placed, [pen])
+        expect(h.editor.beginEditing(other))
+        expect(h.corral(around: [note]) != nil)
+        expectEqual(h.editor.editingShapeID, other, "a shape it isn't for goes on being edited")
+        h.editor.endEditing()
     },
 
     test("nothing it can hold, no shape at all, or a kind that holds nothing: nothing is put down, and no step") {

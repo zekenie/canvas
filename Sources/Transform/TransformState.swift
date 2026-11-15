@@ -78,7 +78,7 @@ public final class TransformState {
     }
 
     /// Shifts each turned shape that hangs over the container it's in back inside it, `Settlement.gap`
-    /// in, if it fits there, with what it holds: how far each moved, for the glide.
+    /// in, if it fits there (`Settlement.kept(_:inside:)`), with what it holds: how far each moved, for the glide.
     private static func keepInContainers(_ ids: [ShapeID], in transaction: inout Transaction) -> [ShapeID: CGPoint] {
         let kinds = transaction.shapes.registry.containingKinds
         var shifts: [ShapeID: CGPoint] = [:]
@@ -86,10 +86,8 @@ public final class TransformState {
             let document = transaction.document
             guard let record = document[id], let box = transaction.shapes.frame(of: record), let container = document.container(of: record, containingKinds: kinds),
                   let edge = document[container]?.box else { continue }
-            let room = edge.insetBy(dx: Settlement.gap, dy: Settlement.gap)
-            guard box.width <= room.width, box.height <= room.height else { continue }
-            let shift = CGPoint(x: min(max(box.minX, room.minX), room.maxX - box.width) - box.minX,
-                                y: min(max(box.minY, room.minY), room.maxY - box.height) - box.minY)
+            let kept = Settlement.kept(box, inside: edge)
+            let shift = CGPoint(x: kept.minX - box.minX, y: kept.minY - box.minY)
             guard shift != .zero else { continue }
             transaction.translate([id], by: shift)
             for moved in [id] + document.descendants(of: id, containingKinds: kinds) { shifts[moved] = shift }

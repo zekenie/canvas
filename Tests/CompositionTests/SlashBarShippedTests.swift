@@ -72,7 +72,7 @@ import Types
         s.slash()
         expect(s.bar?.isOpen == true, "nothing selected: every note")
         expectEqual(s.bar?.label, "All shapes")
-        expectEqual(s.listed, ["lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind", "bulk-create", "query"],
+        expectEqual(s.listed, ["lock", "private", "is-a", "color", "move-to", "move-near", "create-frame", "create-subboard", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind", "bulk-create", "query"],
                     "what three notes offer, then the commands about every shape: /bulk-create, /query")
         model.queue(#":contains("buy")"#)
         s.window.type("query the shopping")
@@ -100,7 +100,7 @@ import Types
         s.editor.selection = note
         s.slash()
         expect(s.bar?.isOpen == true)
-        expectEqual(s.listed, ["title", "lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "Moving's two, then Reordering's four")
+        expectEqual(s.listed, ["title", "lock", "private", "is-a", "color", "move-to", "move-near", "create-frame", "create-subboard", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "Moving's two, then Create Frame's and Create Subboard's, then Reordering's four")
         s.window.type("col")
         s.window.pressReturn()
         expectEqual(s.field?.string, "/color ")
@@ -276,6 +276,56 @@ import Types
         expectEqual(after.origin, CGPoint(x: before.minX + delta.x, y: before.minY + delta.y), "the arrow went with its ends")
         expectEqual(after.size, before.size)
         expectEqual(s.editor.undoHistory.undoName, "Move")
+    },
+
+    test("three notes selected: /frame lists create-frame, and Return puts an untitled frame around the three, holding them, selected, in one step, Create Frame, the bar gone first; Undo takes it back") {
+        let s = ShippedBar()
+        let notes = [s.note(100, 100, "one"), s.note(320, 100, "two"), s.note(100, 320, "three")]
+        s.editor.selectedShapeIDs = notes
+        s.slash()
+        s.window.type("frame")
+        expectEqual(s.listed.first, "create-frame", "found by what it makes")
+        s.window.pressReturn()
+        expect(s.bar?.isOpen != true, "the bar closed before it ran")
+        let frame = try require(s.editor.selection, "the frame selected")
+        expectEqual(s.editor.document[frame]?.kind, Frame.kind)
+        expectEqual(s.box(frame), CGRect(x: 68, y: 68, width: 484, height: 484), "32 past the three")
+        expectEqual(notes.map(s.container(of:)), [frame, frame, frame])
+        expectEqual(notes.map { s.box($0)?.origin }, [CGPoint(x: 100, y: 100), CGPoint(x: 320, y: 100), CGPoint(x: 100, y: 320)], "where they were")
+        expect(s.window.firstResponder === s.canvas)
+        expectEqual(s.editor.undoHistory.undoName, "Create Frame")
+        s.editor.undo()
+        expectEqual(notes.map(s.container(of:)), [nil, nil, nil])
+        expectEqual(s.editor.selectedShapeIDs, notes)
+    },
+
+    test("two notes and the arrow between them selected: create-subboard acts on the notes, 2 of 3; Return puts an untitled subboard at their top-left corner holding them and the arrow on its board, selected, the board shown staying, one step, Create Subboard") {
+        let s = ShippedBar()
+        let one = s.note(100, 100, "one"), two = s.note(500, 100, "two")
+        let other = s.note(900, 100, "other")
+        func bound(_ id: ShapeID) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+        }
+        let arrow = s.editor.add(Arrow(start: bound(one), end: bound(two)))
+        s.editor.selectedShapeIDs = [one, two, arrow]
+        s.slash()
+        expectEqual(s.rows.first { $0.hasPrefix("create-subboard") }, "create-subboard (2 of 3)", "an arrow has no box to take")
+        s.window.type("create-sub")
+        s.window.pressReturn()
+        expect(s.bar?.isOpen != true, "the bar closed before it ran")
+        let sub = try require(s.editor.selection, "the subboard selected")
+        expectEqual(s.editor.document[sub]?.kind, Subboard.kind)
+        expectEqual(s.editor.document[sub]?[TitleProperty.self], nil, "untitled")
+        expectEqual(s.box(sub), CGRect(x: 100, y: 100, width: 240, height: 160), "at their top-left corner")
+        expectEqual(s.editor.document.shapes.map(\.id), [sub, other], "the notes and the arrow are gone from the board shown")
+        expectEqual(Set(s.editor.file[BoardID(owner: sub)].shapes.map(\.id)), [one, two, arrow], "onto its board")
+        expectEqual(s.box(one)?.origin, CGPoint(x: 100, y: 100), "where it was")
+        expectEqual(s.editor.board, .root)
+        expect(s.window.firstResponder === s.canvas)
+        expectEqual(s.editor.undoHistory.undoName, "Create Subboard")
+        s.editor.undo()
+        expectEqual(Set(s.editor.document.shapes.map(\.id)), [one, two, other, arrow], "Undo brings all three back")
+        expectEqual(s.editor.document[sub], nil)
     },
 
     test("a note being edited keeps its own /: on a new line it lists in the note, and no bar opens") {

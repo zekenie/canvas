@@ -63,7 +63,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: how a board holds its shapes (`ShapeStack`, in chunks, with its tables in shards: a commit costs what it changes, never the board), layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, cards, commands and zoom, keys, the hand, shapes placed later (drawn faint on the pointer until a click), Insert (each placing tool's item, its shape put down beside the selection or in the view, where the one insertion spot says), the translation adjuster, service hooks and the order services hear a change in, edge scrolling.
 - [editing](.claude/rules/editing.md): editing in place (`Editable`, the editing view, `EditContext`), and an editor's text held to its shape's render.
 - [undo](.claude/rules/undo.md): steps, groups and coalescing, `DocumentDelta`, one history across boards.
-- [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, and showing a board.
+- [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, a new owner put down for shapes and taking them onto its board (`place(_:taking:)`), and showing a board.
 - [containers](.claude/rules/containers.md): shapes holding shapes on a board, settling what's put down, and putting a container down around shapes.
 - [boards on disk](.claude/rules/boards-on-disk.md): `BoardDocument` and `BoardCodec`: formats, migrations and fixtures, what's kept aside, the view memory, autosave.
 - [drawing](.claude/rules/drawing.md): what a frame may cost, the dot grid, skeletons, board previews, the minimap, the pointer over the views the canvas hosts.
@@ -128,6 +128,6 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 
 **Product** (the verticals, the kinds)
 - [arrows](.claude/rules/arrows.md): tldraw's arc arrows, their labels and binding rules, and the proof-of-concept parity tests.
-- [subboards](.claude/rules/subboards.md): a card that owns a board, and its description (mention text, in its panel's Description tab).
+- [subboards](.claude/rules/subboards.md): a card that owns a board, its description (mention text, in its panel's Description tab), and Create Subboard (`/create-subboard`: a subboard holding the shapes on its board).
 - [frames](.claude/rules/frames.md): a region that holds shapes, the Frame tool, and Create Frame.
 - Sticky notes have no file of their own: [editing](.claude/rules/editing.md) holds a note's editor against its render, and the files of what notes opt into hold the rest.

@@ -3,6 +3,7 @@ import ContextMenus
 import CoreGraphics
 import Keyboard
 import Selection
+import SlashCommands
 import Transform
 
 /// Create Frame's group in a context menu: right after a transform's, before Cut, Copy and Paste.
@@ -49,6 +50,35 @@ extension PluginRegistrar {
                 }) { $0.editor.createFrame(around: $0.shapes) }
         contextMenuForCanvas {
             MenuItem(command: .createFrame, in: FramesMenuGroup.self)
+        }
+    }
+}
+
+extension PluginID {
+    public static let frameSlash: PluginID = "frame-slash"
+}
+
+/// `/create-frame`: Create Frame for the shapes it's typed for, one frame around them all, in the
+/// command bar (the shapes selected, or every shape on the board with none) or on a line of a shape's
+/// text (that shape), on the kinds a frame holds (those with a box, `forShapes(adopting: .box)`), so a
+/// selection's arrow isn't among them (`2 of 3`): it stays bound to them, and the frame is around them.
+/// It runs `FramesPlugin`'s Create Frame and goes with it. A plugin value of its own so that it comes
+/// after the plugins whose every-shape commands a note lists before it (Moving's): `FramesPlugin` is
+/// among the kinds, before Titles, and a command of its plugin would head every shape's list, where
+/// Return on the `/` alone runs a command that takes nothing.
+public struct FrameSlashPlugin: ListedPlugin {
+    public init() {}
+    public var id: PluginID { .frameSlash }
+
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.forShapes(adopting: .box) { boxes in
+            boxes.slashCommands {
+                // Run as the command, not typed as it (`SlashCommand(_:command:)`): its rule takes a locked
+                // shape (the menu's item shakes it), so the bar would list a row that can only be refused
+                // there. Offered as any command is, never on a read-only shape.
+                // Typed in the text of the shape it frames, the core puts that shape down as it places the frame.
+                SlashCommand.together("create-frame") { ids, _, editor in editor.perform(.createFrame, on: ids) }
+            }
         }
     }
 }

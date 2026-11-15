@@ -20,6 +20,17 @@ public enum Settlement: Equatable, Sendable {
     /// what's nudged out, in world units: the edge stays clear to grab. A resize keeps a shape in a
     /// container this far inside its edge too (Selection's).
     public static var gap: CGFloat { Style.containerGap }
+
+    /// `frame` moved the least way to lie `gap` inside `edge` (a container's box), where it fits there,
+    /// else as it is: how a shape that takes the place of others keeps the container it's in, where the
+    /// in-or-out rule, which judges by area, would put one mostly outside out. Transform's turned shapes
+    /// and `place(_:taking:)`'s new owner go by it.
+    public static func kept(_ frame: CGRect, inside edge: CGRect) -> CGRect {
+        let room = edge.insetBy(dx: gap, dy: gap)
+        guard !room.isNull, frame.width <= room.width, frame.height <= room.height else { return frame }
+        return CGRect(x: min(max(frame.minX, room.minX), room.maxX - frame.width),
+                      y: min(max(frame.minY, room.minY), room.maxY - frame.height), width: frame.width, height: frame.height)
+    }
 }
 
 // The in-or-out rule: nothing sits across a container's edge. A shape put down (dropped, placed,

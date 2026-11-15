@@ -231,6 +231,9 @@ let ships = [
     // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
     // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
     "Moving.MovingPlugin",
+    // `/create-frame` and `/create-subboard`: a frame around the shapes, or a subboard holding them on its board, after
+    // Moving's commands, which a note lists before them; each with the plugin of its kind, which comes too early.
+    "Frames.FrameSlashPlugin", "Subboards.SubboardSlashPlugin",
     // The example (Examples/): one line here; delete it to leave it out.
     "Reordering.ReorderingPlugin",
     // The example kit (Examples/), off in a file until File ▸ Kits ▸ Stickers turns it on: the first kit, kept until
@@ -361,8 +364,8 @@ let package = Package(
         // Arrows: tldraw's arc arrows, a kind like any other, and the connector that makes them what ports draw.
         .target(name: "Arrows", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Colors", "Connections", "ContextMenus", "Geometry", "LanguageRules", "Mentions", "Neighbors", "Palette", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology", "Types"]), // layer: product
         .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "LanguageRules", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
-        .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
-        .target(name: "Frames", dependencies: ["Canvas", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
+        .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "SlashCommands", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
+        .target(name: "Frames", dependencies: ["Canvas", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
         .target(name: "Stickers", dependencies: ["Canvas", "CanvasRPC", "Clipboard", "ContextMenus", "Publishing", "Selection", "SlashCommands"], path: "Examples/Stickers"), // layer: product
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport

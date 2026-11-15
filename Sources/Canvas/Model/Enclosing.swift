@@ -26,24 +26,13 @@ extension Transaction {
     /// `editor.transactWhole` to give it all up, as a refusal settling meets on the way is).
     mutating func enclose(_ ids: [ShapeID], in container: AnyShapeRecord, padding: CGFloat, minimumSize: CGSize) -> [ShapeID: CGPoint]? {
         let kinds = registry.containingKinds
-        guard registry.isContainer(container) else { return nil }
-        let asked = ids.compactMap { document[$0] }
-        let boxed = Set(asked.lazy.filter { $0.box != nil }.map(\.id))
-        let held = boxed.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }.filter { record in
-            !(record.namesContainer && document.containers(of: record.id, containingKinds: kinds).contains(where: boxed.contains))
-        }
-        guard let lowest = held.first else { return nil }
+        guard registry.isContainer(container), let found = putDown(for: ids), let lowest = found.held.first else { return nil }
+        let (asked, held, parent) = found
         let stuck = held.filter { holds($0) }
         guard stuck.isEmpty else {
             refused.formUnion(stuck.map(\.id))
             return nil
         }
-        var shared = document.containers(of: lowest.id, containingKinds: kinds)
-        for record in held.dropFirst() where !shared.isEmpty {
-            let chain = Set(document.containers(of: record.id, containingKinds: kinds))
-            shared.removeAll { !chain.contains($0) }
-        }
-        let parent = shared.first
         var record = container
         record.box = frame(around: held, with: asked, padding: padding, minimumSize: minimumSize, in: parent)
         record.container = parent
@@ -66,6 +55,26 @@ extension Transaction {
             nudges.merge(settle(back[from] ?? []).nudges) { $0 + $1 }
         }
         return nudges
+    }
+
+    /// What a shape put down for shapes on this board is for (`enclose` holds them, `gather` takes them
+    /// onto its board): `asked`, those of `ids` here; `held`, those of them with a box, back to front, but
+    /// what's in another of them (it goes with that one); and `parent`, the innermost container they're
+    /// all in, nil for the board. Nil when none of them has a box.
+    func putDown(for ids: [ShapeID]) -> (asked: [AnyShapeRecord], held: [AnyShapeRecord], parent: ShapeID?)? {
+        let kinds = registry.containingKinds
+        let asked = ids.compactMap { document[$0] }
+        let boxed = Set(asked.lazy.filter { $0.box != nil }.map(\.id))
+        let held = boxed.compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }.filter { record in
+            !(record.namesContainer && document.containers(of: record.id, containingKinds: kinds).contains(where: boxed.contains))
+        }
+        guard let lowest = held.first else { return nil }
+        var shared = document.containers(of: lowest.id, containingKinds: kinds)
+        for record in held.dropFirst() where !shared.isEmpty {
+            let chain = Set(document.containers(of: record.id, containingKinds: kinds))
+            shared.removeAll { !chain.contains($0) }
+        }
+        return (asked, held, shared.first)
     }
 
     /// The frame a container put down around `held` gets (`enclose`): around them and what's bound to

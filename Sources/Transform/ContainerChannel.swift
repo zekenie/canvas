@@ -28,19 +28,14 @@ extension ContainerChannel: TransformChannel {
     /// among them that turned before it (they turn innermost first) took onto its own board. An arrow bound
     /// to some of those and to nothing else goes with them when they move (`Transaction.move(_:to:)`); one
     /// bound to anything that stays, the container included, or to nothing, stays. But a read-only one bound
-    /// only to those is named among them: a move leaves it behind, let go of both ends, and a turn leaves
-    /// nothing read-only behind that way, so it is refused, and the shape shakes.
+    /// only to those is named among them (the core's `readOnlyShapes(boundOnlyTo:)`): a move leaves it
+    /// behind, let go of both ends, and a turn leaves nothing read-only behind that way, so it is refused, and
+    /// the shape shakes.
     public static func source(of id: ShapeID, in transaction: Transaction) -> TurningContainer? {
-        let context = transaction.shapes, registry = context.registry, document = transaction.document
+        let registry = transaction.shapes.registry, document = transaction.document
         guard let record = document[id], registry.isContainer(record), let frame = record.box else { return nil }
         var inside = Set(document.descendants(of: id, containingKinds: registry.containingKinds))
-        if !inside.isEmpty {
-            let held = inside
-            for shape in document.shapes where registry.referencingKinds.contains(shape.kind) && shape.id != id
-                && transaction.isReadOnly(shape) && shape.isBound(onlyTo: held, in: context) {
-                inside.insert(shape.id)
-            }
-        }
+        inside.formUnion(transaction.readOnlyShapes(boundOnlyTo: inside))
         return TurningContainer(id: id, frame: frame, inside: inside)
     }
 }

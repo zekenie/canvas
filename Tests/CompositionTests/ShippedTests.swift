@@ -274,6 +274,8 @@ import Validation
         type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
         neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
         moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
+        frame-slash          /create-frame → every shape with a box
+        subboard-slash       /create-subboard → every shape with a box
         reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
         stickers             kit stickers · shape emoji-sticker · label Sticker → emoji-sticker · tool emoji-sticker · command insert:emoji-sticker in KitShapes<StickersKit> · tool emoji-sticker-heart · command insert:emoji-sticker-heart in KitShapes<StickersKit> · tool emoji-sticker-star · command insert:emoji-sticker-star in KitShapes<StickersKit> · tool emoji-sticker-party · command insert:emoji-sticker-party in KitShapes<StickersKit> · ShapeResizing → emoji-sticker · parts resize handles → emoji-sticker · accessibility → emoji-sticker · /sticker → emoji-sticker · ShapeContextMenus in ShapeMenuGroup first → emoji-sticker · paste reader emoji
         """)
