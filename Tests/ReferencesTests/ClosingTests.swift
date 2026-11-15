@@ -61,4 +61,58 @@ import TestKit
         spin(engine == nil)
         expect(engine == nil, "the batch ended and let go of the engine")
     },
+    test("closing the editor while a batch's answers are worked out for Topology takes the references' state with it: nothing is left to fire, and nothing lands") {
+        var h: EditorHarness? = try referenceHarness()
+        let scheduler = try require(h?.scheduler)
+        weak var closing = h?.editor
+        weak var state = h?.editor.references
+        weak var engine = h?.editor.queries
+        let gate = Gate()
+        state?.preparingGate = { await gate.passed() }
+        h?.addBox("Alpha", at: CGRect(x: 100, y: 100, width: 100, height: 60))
+        _ = try require(h?.addReference(query: "box", all: true))
+        h?.wait(0)                                                                       // the hop: asked
+        spin(gate.isReached)                                                             // answered: what Topology takes waits at the gate
+        expectEqual(state?.batchesLanded, 0, "the batch is out, past the engine")
+        h?.addBox("Beta", at: CGRect(x: 250, y: 100, width: 100, height: 60))           // a commit: the wait for quiet, beside it
+        h = nil
+        expect(closing == nil, "the editor went as its file closed")
+        expect(state == nil, "and the references' state with it, though their batch is out")
+        expectEqual(scheduler.pendingCount, 0, "nothing left to fire")
+        // Held by the batch, the state outlived its editor, and its landing read the editor gone: the gate stays shut then,
+        // so the batch never lands.
+        guard state == nil else { return }
+        gate.open()
+        spin(engine == nil)
+        expect(engine == nil, "the batch ended, landing nothing, and let go of the engine")
+    },
 ])
+
+/// Shut until opened: what a batch's working out waits at (`preparingGate`), and whether it has come to it.
+private final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var opened = false, reached = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    var isReached: Bool { lock.withLock { reached } }
+
+    func passed() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let through = lock.withLock {
+                reached = true
+                if !opened { waiting.append(continuation) }
+                return opened
+            }
+            if through { continuation.resume() }
+        }
+    }
+
+    func open() {
+        let held = lock.withLock {
+            opened = true
+            defer { waiting = [] }
+            return waiting
+        }
+        for continuation in held { continuation.resume() }
+    }
+}

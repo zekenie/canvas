@@ -106,6 +106,9 @@ public final class ReferenceState {
     /// How many batches have been asked, and how many have landed (debug builds).
     public internal(set) var batchesAsked = 0
     public internal(set) var batchesLanded = 0
+    /// What a batch the engine has answered waits for before it works out what Topology takes of its
+    /// answers, when set (debug builds): for a test that closes the file with a batch held there.
+    public var preparingGate: (@Sendable () async -> Void)?
     /// How many references answers are kept for (at most `ReferenceStyle.memosKept`), and whether
     /// any are for `id` (debug builds).
     public var memoCount: Int { memo.count }

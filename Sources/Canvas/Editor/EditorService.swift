@@ -15,6 +15,11 @@ import Geometry
 /// window happens there, or once all have settled (`editor.onceSettled`, for what a service is told
 /// while they take the change in). Each hears each change once, in the order they came, and nothing may
 /// change the file in either round (a transaction then is a precondition failure).
+///
+/// A service is the editor's, which holds it, and may hold the editor `unowned` (most do), so nothing
+/// else may keep it past the editor: a task it starts holds it weakly and across no `await` (checked
+/// between them, never bound across one), and waits for work it handed off in no method of its own (a
+/// call holds its `self`). Kept past its editor, a service reads the editor gone.
 @MainActor
 public protocol EditorService: AnyObject {
     /// Called on every tool switch, including in the middle of a drag.

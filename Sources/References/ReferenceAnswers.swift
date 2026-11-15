@@ -359,14 +359,19 @@ extension ReferenceState {
             isSlow = true
             for (id, finding) in dynamic where finding.asked != nil && finding.outcome == nil { answered.bump(id) }
         }
+        // The batch holds the state across neither wait, checking it between them: the state is its
+        // editor's service, holding the editor unowned, and goes with it while a batch is out (its
+        // deinit stopping the batch and the waits). Held across the second wait, it outlived the editor,
+        // and its landing and its wait for quiet then read the editor gone.
         batch = Task { [weak self, queries] in
             let results = await queries.matches(requests)
-            guard !Task.isCancelled, let self else { return }
             let landed = zip(asked, results).map { ($0.id, $0.key, Landed($1)) }
             // What Topology takes of them worked out off the main actor too, so landing takes in what
-            // came and went, however many shapes a query found.
-            let prepared = await prepare(providing(landed, revision: revision))
-            guard !Task.isCancelled else { return }
+            // came and went, however many shapes a query found: set going with the state held for that
+            // call alone (no state, no batch; nil, nothing to hand over), and waited for holding none.
+            guard !Task.isCancelled, let working = self.map({ $0.prepare(providing: landed, revision: revision) }) else { return }
+            let prepared = await Self.prepared(by: working)
+            guard !Task.isCancelled, let self else { return }
             batch = nil
             land(landed, revision: revision, prepared: prepared)
             #if DEBUG
@@ -411,13 +416,30 @@ extension ReferenceState {
         return answers
     }
 
-    /// `answers` worked out off the main actor as Topology would take them, against the index as it is
-    /// as this asks (`TopologyIndex.preparer()`): what each will stand for and what came and went, for
-    /// `land` to hand over with them. Nil without Topology or with nothing to hand over.
-    private func prepare(_ answers: [ShapeID: ProvidedForwarding]) async -> PreparedForwarding? {
+    /// What `land` would hand Topology of what a batch answered (`providing`), set to be worked out off
+    /// the main actor as Topology would take it, against the index as it is as this asks
+    /// (`TopologyIndex.preparer()`): what each will stand for and what came and went, for `land` to hand
+    /// over with them. Nil without Topology or with nothing to hand over. The batch waits for it with
+    /// `prepared(by:)`, holding nothing of the state.
+    private func prepare(providing results: [(id: ShapeID, key: ForwardingKey, landed: Landed)], revision: Int) -> Task<PreparedForwarding, Never>? {
+        let answers = providing(results, revision: revision)
         guard !answers.isEmpty, let preparer = editor.topology?.preparer() else { return nil }
-        let working = Task.detached(priority: Task.currentPriority) { preparer.prepare(answers) }
-        // A batch let go of (`ask()` cancels it) stops its preparing too.
+        #if DEBUG
+        let gate = preparingGate
+        #endif
+        return Task.detached(priority: Task.currentPriority) {
+            #if DEBUG
+            await gate?()
+            #endif
+            return preparer.prepare(answers)
+        }
+    }
+
+    /// What `prepare` set to be worked out, once it is; nil for nothing. Static, so a batch waits for it
+    /// holding nothing of the state. A batch let go of (`ask()` cancels it, and so does the state going)
+    /// stops its preparing too.
+    private static func prepared(by working: Task<PreparedForwarding, Never>?) async -> PreparedForwarding? {
+        guard let working else { return nil }
         return await withTaskCancellationHandler { await working.value } onCancel: { working.cancel() }
     }
 
