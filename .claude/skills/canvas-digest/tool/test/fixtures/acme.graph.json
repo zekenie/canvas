@@ -1,8 +1,5 @@
 {
  "drawing": "acme",
- "layout": {
-  "mess": 0.1
- },
  "nodes": [
   {
    "key": "Engineering",

@@ -57,10 +57,10 @@ It needs `canvas`, the canvas skill's command, and the app running. Its Python i
 7. **Read the run before the user looks.** What `ingest` printed:
    - `scan:` lines, what the index left out: source files no project takes in, and packages it couldn't connect (fix the settings, and draw again);
    - `lens:` lines, what the lens warned of (a handler not found, a folder left out of a group);
-   - what `digest all` printed: `check`'s warnings (a frame over 15 shapes, a board over 150), the plan's boards, shapes and pills and what was promoted and fanned out (a board `laid out once and not searched` is too crowded to read: split it in the lens), and what `apply` did: created, updated, unchanged and deleted shapes, what it overrode, and the app's own warnings (a Needed row still empty, by design) ([canvas-digest](../canvas-digest/SKILL.md)).
+   - what `digest all` printed: `check`'s warnings (a frame over 15 shapes, a board over 150), the groups (`clusters:` says how many pairs of linked notes lie between two groups and are cut before anything is placed, or that the groups are by the links alone and why), the plan's boards, shapes and pills, how many links it cut into pills (`cut:`, with how many of the links between groups came back as arrows) and how many boards are clean (a board `laid out once and cut no further` is too crowded to read: split it in the lens), and what `apply` did: created, updated, unchanged and deleted shapes, what it overrode, and the app's own warnings (a Needed row still empty, by design) ([canvas-digest](../canvas-digest/SKILL.md)).
 
    For more, the run's folder: `"$SKILL/ingest" --where` prints the cache, and the newest folder in its `runs/` has `graph.json` (what the lens made) and `out/` (the measure, the plan, the apply document and what the app answered). Fix the obvious in the lens (split a crowded frame, add a missed kind) and draw again: it updates its own last drawing in place.
-8. **Show it.** Tell the user what is on the root and on each board, the counts, what was promoted and fanned out, and the types, with queries they can ask (`:is-a("Workflow")`, `:start-of(arrow:is-a("writes"):ends-at("orders"))`, `:is-a("File")[fieldValues.lines>500]`). Say what the lens left out. Then ask what to change.
+8. **Show it.** Tell the user what is on the root and on each board, the counts, how many links became pills, and the types, with queries they can ask (`:is-a("Workflow")`, `:start-of(arrow:is-a("writes"):ends-at("orders"))`, `:is-a("File")[fieldValues.lines>500]`). Say what the lens left out. Then ask what to change.
 
 ## Later rounds: art direction
 
@@ -73,13 +73,15 @@ It needs `canvas`, the canvas skill's command, and the app running. Its Python i
    EOF
    ```
 
-   Each row has the shape's `title`, `kind`, `board` and what it is `inside`. Find the node of that title in the run's `graph.json`: its key says what it was made from (`file:<path>`, `workflow:<path>#<name>`). Several nodes can have one title (an `index.ts` in each of two folders): the row's `inside` (the shape's containers) says which.
+   Each row has the shape's `title`, `kind`, `board` and what it is `inside`. Find the node of that title in the run's `graph.json`: its key says what it was made from (`file:<path>`, `workflow:<path>#<name>`). Several nodes can have one title (an `index.ts` in each of two folders): the row's `inside` (the shape's containers) says which. The boards hold the lens's frames and no others, so a path or an `inside` is as the lens drew it: find a drawn shape by its title and its `inside`, and ask about it by its path or the `#id` the row gives.
 3. **Write the request as a named rule in the lens**: a name for what it does, the reason in the user's words, and the round. Read the rules already there first. If the request goes against one, name that rule and its reason, and ask which wins; then change that rule, and never add one that undoes it. Make it general: a user pointing at one shape is showing a case.
 4. **Draw again**: `"$SKILL/ingest" --board ID`, the same file. The lens and the settings are read from the working tree, so a round needs no commit: edit `.canvas/lens.py` and run again. A round runs only the lens and the drawing; the scan is kept for the commit's code, and a commit that changes only `.canvas/` has the same code. The drawing is updated by key: a shape the lens still has stays the shape it was (a user's note beside it stays), one it dropped is deleted, and one the user moved or edited is drawn as the lens says again, which the run says (`overrode`): tell the user, and for a round they want to compare, draw it as a second drawing (`--drawing NAME`).
 
 When the user is happy with the picture, offer to commit `.canvas/ingest.json` and `.canvas/lens.py` so the team has them; commit only if they say yes.
 
-How tidy a board is, as a whole, is the `mess` setting (0 tidy to 1 loose), and which way the root's bands run is `ranks`: settings, not rules.
+**What the app sends.** To group a board's notes the drawing measures how alike each link's two notes are, with an embedding model: with an OpenAI key saved in Settings, the app sends each note's title and text (for a repository, its code's names, paths and docs, as the lens made the notes) to OpenAI, and keeps the vectors it gets, so only a text it has not seen is sent. Nothing asks first: the saved key is the opt-in. With none, or an app too old to measure it, `digest` says so and the groups are by the links alone. Tell the user when a repository's text will be sent. To group a board that is already drawn again, once the key is saved, draw it into a new file (`canvas new ~/Boards/shop2.canvasboard`, then `--board`): a redraw keeps what is drawn, and finds the groups again only to weigh the links.
+
+Which way the root's bands run is the `ranks` setting, not a rule. How many links become pills is no setting: the drawing cuts the fewest that let each board draw with no arrow crossing another (canvas-digest's SKILL.md, Clean boards).
 
 ## Any commit, and proposals
 

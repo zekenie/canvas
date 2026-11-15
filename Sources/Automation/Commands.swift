@@ -173,31 +173,51 @@ public struct AutomationPlugin: ListedPlugin {
                 holds. With a board (the one in front, or --board), an is: finds a type of that board's file as draw \
                 does, and the shape is measured with its rows; with none open, only a type the script draws. A name \
                 it can't find (an is:, a mention) is a warning, and the shape is measured without it, or with the \
-                text as written.
+                text as written. A document's pill is measured as wide as the app draws it, by the names of the \
+                containers on its path, an untitled one called as the app calls it (a frame is "Frame"). With \
+                --tightness a document also says, for each pair of notes a link joins on one board, how alike they are \
+                (tightness: the cosine of their words' vectors, each centred on the board's mean), by the app's \
+                embedding model (OpenAI's, with the key saved in Settings; it is sent each note's title and words, the \
+                vectors are kept so a second measure asks nothing); with no model or key it says why instead, and \
+                the sizes are answered all the same.
                 """,
             scope: .board, boardOptional: true, params: MeasureParams.self, positionals: ["script"],
             examples: [
                 CommandExample("\(canvas) measure - < plan.txt", "Read the script from standard input, and say how big each shape would be."),
-            ]
-        ) { params, context throws(AutomationError) -> MeasureAnswer in
-            // A document is JSON, an object; a script never starts with one.
-            if params.script.drop(while: \.isWhitespace).first == "{" {
-                do throws(DocumentError) {
-                    return .document(try measure(document: params.script, on: params.on, program: canvas, in: context.registry, namesBeyond: context.editor))
+                CommandExample("\(canvas) measure - --tightness < graph.json", "A document's sizes, and how alike its linked notes are."),
+            ],
+            runAsync: { (params: MeasureParams, context: AutomationContext) async throws(AutomationError) -> MeasureAnswer in
+                // A document is JSON, an object; a script never starts with one.
+                if params.script.drop(while: \.isWhitespace).first == "{" {
+                    var answer: DocumentMeasure
+                    let links: DocumentLinks?
+                    do throws(DocumentError) {
+                        answer = try measure(document: params.script, on: params.on, program: canvas, in: context.registry, namesBeyond: context.editor)
+                        links = params.tightness ? try DocumentLinks(document: params.script, registry: context.registry) : nil
+                    } catch {
+                        throw AutomationError(error)
+                    }
+                    if let links {
+                        answer.tightness = await documentTightness(links, registry: context.registry)
+                        // The server has answered `cancelled` already, and drops what comes after.
+                        if Task.isCancelled { throw AutomationError("The measure was cancelled before it finished.", reason: "cancelled") }
+                    }
+                    return .document(answer)
+                }
+                if params.on != nil {
+                    throw AutomationError("--on is for a document: a script says where each shape goes itself", reason: "invalid_params",
+                                          hint: "leave --on out, or measure the document apply will draw")
+                }
+                if params.tightness {
+                    throw AutomationError("--tightness is for a document: a script's notes have no links to measure", reason: "invalid_params",
+                                          hint: "leave --tightness out, or measure the document apply will draw")
+                }
+                do throws(DrawError) {
+                    return .script(try measure(script: params.script, program: canvas, in: context.registry, namesBeyond: context.editor))
                 } catch {
                     throw AutomationError(error)
                 }
-            }
-            if params.on != nil {
-                throw AutomationError("--on is for a document: a script says where each shape goes itself", reason: "invalid_params",
-                                      hint: "leave --on out, or measure the document apply will draw")
-            }
-            do throws(DrawError) {
-                return .script(try measure(script: params.script, program: canvas, in: context.registry, namesBeyond: context.editor))
-            } catch {
-                throw AutomationError(error)
-            }
-        }
+            })
         // The app's command server runs them all, every plugin's: what the command line shows of
         // each, and each by name.
         registrar.hostCommands(specs: { $0.automationCommands }) { registry, name, params, editor async throws(RPCError) in
@@ -207,7 +227,7 @@ public struct AutomationPlugin: ListedPlugin {
 }
 
 /// What `measure` answers: a script's sizes by line, or a document's by key.
-enum MeasureAnswer: Encodable {
+enum MeasureAnswer: Encodable, Sendable {
     case script(MeasureResult)
     case document(DocumentMeasure)
 

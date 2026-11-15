@@ -12,10 +12,10 @@ function pillRoles(layout) {
   return roles;
 }
 
-/** Every board's shapes and pills as the layout has them, in the board's own coordinates, and the moves the loop made: the plan the tests read. */
+/** Every board's shapes and pills as the layout has them, in the board's own coordinates, and where each board's cut stopped: the plan the tests read. */
 export function buildBoards(model, results, opts) {
   const shown = Object.assign({}, opts); delete shown.kinds; delete shown.current; delete shown.progress;
-  const plan = { drawing: model.drawing, options: shown, boards: [], promotions: [], stop: {}, cost: {} };
+  const plan = { drawing: model.drawing, options: shown, boards: [], stop: {} };
   for (const board of model.boards) {
     const { layout } = results.get(board);
     const shapes = [];
@@ -34,10 +34,7 @@ export function buildBoards(model, results, opts) {
     for (const e of layout.plan.direct) edges.push({ from: e.from, to: e.to, via: null });
     edges.sort((a, b) => byTitle(a.from, b.from) || byTitle(a.to, b.to));
     plan.boards.push({ board, shapes, pills, edges });
-    const r = results.get(board).report;
-    for (const p of r.promotions) plan.promotions.push(p);
-    plan.stop[board] = r.stop;
-    plan.cost[board] = { start: r.start, end: r.end };
+    plan.stop[board] = results.get(board).report.stop;
   }
   return plan;
 }
@@ -93,15 +90,17 @@ export function buildDrawing(model, graph, results) {
 export function buildReport(model, results, timings) {
   const boards = {};
   for (const [b, r] of results) boards[b] = r.report;
-  const flat = [];
-  for (const r of results.values()) for (const p of r.report.promotions) flat.push(p);
-  const total = { pills: 0, arrows: 0, sharedArrows: 0 };
-  for (const r of results.values()) { total.pills += r.report.end.pills; total.arrows += r.report.end.arrows; total.sharedArrows += r.report.end.sharedArrows; }
-  // a board too crowded to search (promote.mjs's CROWD) is said, with the way out: the plan holds, and the board reads as a crowd
+  const total = { pills: 0, arrows: 0, sharedPills: 0, sharedLines: 0, links: 0, cut: 0, precut: 0, cutFurther: 0, restored: 0, restoredCut: 0, unshared: 0, unsharedFurther: 0 };
+  for (const r of results.values()) {
+    total.pills += r.report.end.pills; total.arrows += r.report.end.arrows; total.sharedPills += r.report.end.sharedPills; total.sharedLines += r.report.end.sharedLines;
+    total.links += r.report.links; total.cut += r.report.cut; total.precut += r.report.precut || 0; total.cutFurther += r.report.cutFurther; total.restored += r.report.restored; total.restoredCut += r.report.restoredCut || 0;
+    total.unshared += r.report.unshared; total.unsharedFurther += r.report.unsharedFurther;
+  }
+  // a board too crowded to lay out again and again (cut.mjs's crowd) is said, with the way out: the plan holds, and the board reads as a crowd
   const crowded = [...results].filter(([, r]) => r.report.crowded).map(([b, r]) => {
     const c = r.report.crowded;
     const what = c.shapes > c.mostShapes ? `it holds ${c.shapes} shapes, past ${c.mostShapes}` : `${c.container ? `its frame "${c.container}"` : 'it'} holds ${c.children} shapes side by side, past ${c.most}`;
-    return `board "${b}" was laid out once and not searched: ${what}, and searching a board that crowded takes hours. Its arrows are drawn as arrows (those to other boards as pills), and it reads as a crowd: split it into subboards`;
+    return `board "${b}" was laid out once and cut no further than its links' planar cut: ${what}. Its arrows may cross and run over shapes, and it reads as a crowd: split it into subboards`;
   });
-  return { drawing: model.drawing, promotions: flat, boards, totals: total, timings, warnings: model.warnings.concat(crowded) };
+  return { drawing: model.drawing, boards, totals: total, timings, warnings: model.warnings.concat(crowded) };
 }

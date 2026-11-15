@@ -4,7 +4,7 @@
 import { TOOL_DIR } from '../lib/util.mjs';
 
 // jsc cannot list a folder: the modules are named here, and run.js (under node) fails if lib/ has one that isn't
-export const LIB_MODULES = ['check', 'cli', 'cost', 'dial', 'elk', 'emit', 'geom', 'layout', 'model', 'moves', 'noise', 'plan', 'promote', 'sizes', 'stress', 'util'];
+export const LIB_MODULES = ['check', 'cli', 'cluster', 'cost', 'cut', 'elk', 'emit', 'geom', 'health', 'layout', 'model', 'plan', 'planarity', 'restore', 'scene', 'share', 'sizes', 'stars', 'strips', 'util'];
 
 /** The names of the app a kinds answer holds, each with what it is: kinds, attributes (and what a pill needs of its shape), channels. */
 export function namesIn(kinds) {

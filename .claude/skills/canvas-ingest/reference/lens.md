@@ -91,7 +91,7 @@ return g.finish()
 
 | member | what it does |
 |---|---|
-| `Graph(drawing=None, **layout)` | an empty document. `drawing` is the drawing's name (the app keeps a record by it); leave it out and the runner gives it: `--drawing`, the settings' `drawing`, else the repository's folder name. `layout` (and `g.layout`) are the render layer's options for the whole: `mess`, `ranks` (the settings give these too, and win) |
+| `Graph(drawing=None, **layout)` | an empty document. `drawing` is the drawing's name (the app keeps a record by it); leave it out and the runner gives it: `--drawing`, the settings' `drawing`, else the repository's folder name. `layout` (and `g.layout`) are the render layer's options for the whole: `ranks`, and `placement` (the settings give `ranks` too, and win) |
 | `g.node(key, kind, props=None, *, in_=None, layout=None, **more)` | a node. `key`: a non-empty string no other node has. `kind`: any kind `canvas kinds` lists, as a string. `in_`: the node (or key) of the frame or subboard that holds it. `props`: a dict of the app's attributes for the kind, with `more` (keywords) added to it. `layout`: hints for the layout. Returns the node, a plain dict you may still change (`node["props"]["text"] = ...`) before `finish()` |
 | `g.edge(source, target, props=None, *, key=None, layout=None, **more)` | an edge from one node to another (each the node or its key). `props`: the arrow's attributes (`text`, `is`, `fieldValues`, `endRule`, ...). `key`: optional, an edge is told apart by its ends and its `is`. `layout`: `weight`, `direct` |
 | `g.get(key)` | the node with that key, or None |
@@ -288,7 +288,7 @@ RUNS_DIRECT = True
 - **The code names the rule's constant**, so a reader goes from the rule to the code and back. Keep the rules together at the top of the lens, in the order they apply.
 - **Make it general.** A user who points at one shape is showing a case of something: write the rule for the case ("activities with no workflow go last"), never for the shape.
 - **Read the rules before changing the lens.** A request that goes against a rule: name the rule and its reason to the user, and ask which wins. Then change that rule's text and code, and its round. Never add a rule that undoes another.
-- **Art direction is often a field.** Order is `rank` on frames or nodes; a part to open is a `subboard`, a group to see at a glance a `frame`; a line that must stay a line is `layout={"direct": True}`; a hub that must be a pill target is `layout={"pill": True}`, one kept off pills `False`. Tidiness as a whole is the `mess` setting, and which way the root's bands run the `ranks` setting, not rules.
+- **Art direction is often a field.** Order is `rank` on frames or nodes; a part to open is a `subboard`, a group to see at a glance a `frame`; a line that must stay a line is `layout={"direct": True}`; a hub that must be a pill target is `layout={"pill": True}`, one kept off pills `False`. Which way the root's bands run is the `ranks` setting, not a rule, and how many links become pills is nothing a lens sets: the drawing cuts the fewest that let each board draw clean.
 
 ## What a lens's conventions miss
 

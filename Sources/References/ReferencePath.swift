@@ -56,19 +56,23 @@ extension ReferenceState {
         case .file(let container, let board):
             guard let state = context.service(ReferenceState.self) else { return nil }
             steps = state.placeSteps(of: target, seatedIn: container, on: board)
-        case .written(let shape, let seat, let opening, let root):
+        case .written(let shape, let seat, let opening, let root, let shared):
             guard let state = context.service(ReferenceState.self) else { return nil }
-            var names = Array(pathBeyond(seat, shape))
+            var names = Array(shape.dropFirst(shared ?? zip(shape, seat).prefix { $0 == $1 }.count))
             var boards = opening
             // As in the file, a shape on another board than the pill, with no step that opens one, is led by its board: the
             // card that owns it (the last of its containers that opens a board), else the top board, by the file's name.
             if !names.contains(where: opening.contains) {
-                /// The containers up to the one that owns the board a shape is on: none for the top board.
-                func board(_ names: [String]) -> [String] { names.lastIndex(where: opening.contains).map { Array(names[...$0]) } ?? [] }
-                let there = board(shape)
-                if there != board(seat) {
+                /// The index of the container that owns the board a shape is on: none for the top board.
+                func owner(_ names: [String]) -> Int? { names.lastIndex(where: opening.contains) }
+                let there = owner(shape), here = owner(seat)
+                // The same board is the same owner, which (once the writer says which are the same containers) is one the two
+                // share, else one called alike.
+                let sameBoard = shared.map { shared in there == here && there.map { $0 < shared } ?? true }
+                    ?? ((there.map { Array(shape[...$0]) } ?? []) == (here.map { Array(seat[...$0]) } ?? []))
+                if !sameBoard {
                     // The top board by the open file's name, as the pill drawn there says it; "Board" as Boards says it with none.
-                    let lead = there.last ?? (root.isEmpty ? state.editor.name(of: .root) : root)
+                    let lead = there.map { shape[$0] } ?? (root.isEmpty ? state.editor.name(of: .root) : root)
                     names.insert(lead, at: 0)
                     boards.insert(lead)
                 }

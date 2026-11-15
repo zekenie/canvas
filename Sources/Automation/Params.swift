@@ -46,9 +46,16 @@ struct MeasureParams: SchemaDefined {
             .description("A draw script, as `draw` takes it, or a document (JSON, its nodes and edges by key): what to measure. Where shapes go is ignored.")
         Property("on", \.on).keywords(["x-value-name": "name"])
             .description("A document's: the board it will be drawn on, as apply's --on names it (a subboard's title, a path or #id): a pill says where its shape is from there. Left out, where the drawing was drawn, else the root.")
+        Property("tightness", \.tightness).keywords(["x-timeout": .number(MeasureParams.tightnessWait)])
+            .description("A document's: with how alike each link's two notes are, by an embedding of their words.")
     }
     var script = ""
     var on: String?
+    var tightness = false
+
+    /// How long `canvas` waits for a measure with `--tightness`, seconds: the embedding model is asked for the texts it hasn't
+    /// answered before (OpenAI's, four requests of up to a minute for a thousand), unless the caller's `--timeout` says.
+    static let tightnessWait: Double = 120
 }
 
 struct ListKinds: SchemaDefined {

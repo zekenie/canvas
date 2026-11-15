@@ -1,14 +1,14 @@
 #!/usr/bin/python3
 """Runs a repository's lens twice, isolated, and keeps the graph document only when both runs agree.
 
-    run.py REPO SCAN GRAPH [--lens FILE] [--commit SHA] [--drawing NAME] [--drawing-default NAME] [--mess N] [--ranks WAY]
+    run.py REPO SCAN GRAPH [--lens FILE] [--commit SHA] [--drawing NAME] [--drawing-default NAME] [--ranks WAY]
 
 REPO is the git repository's top folder, SCAN the scan, GRAPH the file to write. The lens is FILE (the checkout's
 `.canvas/lens.py`: never read from the commit), else the default lens (lenskit/default.py). It is a function
 `digest(scan, repo)` returning the graph document as a dict. `repo` reads COMMIT (default HEAD, resolved once) through git.
 
 The drawing's name is --drawing (the settings', or the option's), else the one the lens wrote, else --drawing-default (the
-repository's). --mess and --ranks are written into the document's top-level `layout`, over what the lens wrote there. These are
+repository's). --ranks is written into the document's top-level `layout`, over what the lens wrote there. These are
 added after the two runs are compared, so they are the runner's, never the lens's.
 
 A run is `env -i` with only PATH=/usr/bin:/bin, HOME (a fresh empty folder), TZ=UTC, LC_ALL=C, PYTHONHASHSEED (1, then 2) and
@@ -34,7 +34,7 @@ def main(argv):
     options, rest = {}, []
     it = iter(argv)
     for a in it:
-        if a in ('--lens', '--commit', '--drawing', '--drawing-default', '--mess', '--ranks'):
+        if a in ('--lens', '--commit', '--drawing', '--drawing-default', '--ranks'):
             options[a] = next(it, None)
             if options[a] is None:
                 sys.exit(__doc__)
@@ -103,8 +103,6 @@ def main(argv):
     if not name or not name.strip():
         die("the drawing has no name: the settings' \"drawing\", the lens's, or the repository's")
     layout = dict(result.get('layout') or {})
-    if options.get('--mess') is not None:
-        layout['mess'] = float(options['--mess'])
     if options.get('--ranks') is not None:
         layout['ranks'] = options['--ranks']
     made = {'drawing': name}

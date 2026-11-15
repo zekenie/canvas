@@ -786,4 +786,9 @@ extension PluginRegistrar {
 extension Registry {
     var queryNaming: QueryNaming? { contributions(to: QueryNames.self).first?.value }
     var queryBoardNaming: QueryBoardNaming? { contributions(to: QueryBoardNames.self).first?.value }
+
+    /// What a container that owns a board is called while it has no title, by Boards' placeholder ("Untitled Subboard"); nil for a
+    /// kind that owns none or when no plugin names them. Whatever words a path as the app draws it, off the app's own registry
+    /// (Draw's measure of a document), asks it here, which is the one way an engine reads Boards' name without importing it.
+    public func queryBoardPlaceholder(of kind: ShapeKind) -> String? { queryBoardNaming?.placeholder(kind, self) }
 }

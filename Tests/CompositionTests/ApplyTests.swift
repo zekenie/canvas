@@ -499,6 +499,56 @@ private func noteNode(_ key: String, _ title: String, at: [Double], in container
         expectEqual(again["nodes"]?.arrayValue?.map { $0["did"]?.stringValue }, ["unchanged", "unchanged", "unchanged"], again.compactText)
         expectEqual(editor.file, file, "nothing written")
     },
+    test("a measure says which edges are one line through a relationship type, and apply draws each such pair on that arc") {
+        let editor = emptyEditor()
+        let object: JSON = ["type": "object"]
+        let doc: JSON = ["drawing": "L", "nodes": [
+            noteNode("type:Person", "Person", at: [0, 0], more: ["schema": object, "text": "A person"]),
+            noteNode("type:Company", "Company", at: [900, 0], more: ["schema": object, "text": "A company"]),
+            // one end on each side, its pill well off the line between its two types: one arc through it
+            noteNode("rel:Job", "Job", at: [420, 600], more: ["relationship": true, "schema": object]),
+            // two ends on its from side: arrows of their own
+            noteNode("rel:Owns", "Owns", at: [420, -500], more: ["relationship": true, "schema": object]),
+            // a type related to itself: arrows of their own
+            noteNode("rel:Knows", "Knows", at: [-500, 300], more: ["relationship": true, "schema": object]),
+        ], "edges": [
+            ["from": "type:Person", "to": "rel:Job"], ["from": "rel:Job", "to": "type:Company"],
+            ["from": "type:Person", "to": "rel:Owns"], ["from": "type:Company", "to": "rel:Owns"], ["from": "rel:Owns", "to": "type:Company"],
+            ["from": "type:Person", "to": "rel:Knows"], ["from": "rel:Knows", "to": "type:Person"],
+        ]]
+        let measured = try JSON(encoding: try measure(document: document(doc), program: "canvas", in: editor.registry, namesBeyond: editor))
+        expectEqual(measured["lines"], [["through": "rel:Job", "edges": [0, 1]]], measured.compactText)
+        _ = try applied(doc, on: editor)
+        let context = editor.shapeContext
+        @MainActor func middle(_ key: String) throws -> CGPoint {
+            let frame = try require(recorded(key, in: "L", of: editor).flatMap { context.frame(of: $0) })
+            return CGPoint(x: frame.midX, y: frame.midY)
+        }
+        // an arrow's kept outline: where its body starts, its middle and where it ends
+        @MainActor func body(_ edge: String) throws -> [CGPoint] { try require(recorded("edge \(edge)", in: "L", of: editor).flatMap { context.geometry(of: $0)?.outline }) }
+        // the circle through Person's middle, Job's pill's and Company's, which both halves lie on
+        let (a, m, b) = (try middle("type:Person"), try middle("rel:Job"), try middle("type:Company"))
+        let d = 2 * (a.x * (m.y - b.y) + m.x * (b.y - a.y) + b.x * (a.y - m.y))
+        func s(_ p: CGPoint) -> CGFloat { p.x * p.x + p.y * p.y }
+        let centre = CGPoint(x: (s(a) * (m.y - b.y) + s(m) * (b.y - a.y) + s(b) * (a.y - m.y)) / d,
+                             y: (s(a) * (b.x - m.x) + s(m) * (a.x - b.x) + s(b) * (m.x - a.x)) / d)
+        let radius = hypot(a.x - centre.x, a.y - centre.y)
+        func offChord(_ points: [CGPoint]) -> CGFloat {
+            let first = points[0], last = points[points.count - 1], length = hypot(last.x - first.x, last.y - first.y)
+            return points.map { abs((last.x - first.x) * ($0.y - first.y) - (last.y - first.y) * ($0.x - first.x)) / length }.max() ?? 0
+        }
+        for edge in ["type:Person -> rel:Job", "rel:Job -> type:Company"] {
+            let points = try body(edge)
+            let off = points.map { abs(hypot($0.x - centre.x, $0.y - centre.y) - radius) }.max() ?? .infinity
+            expect(off < 1, "\(edge) on the circle through the three middles: \(off) off it, \(points)")
+            expect(offChord(points) > 20, "\(edge) bent: \(points)")
+        }
+        // an end of Owns, and the first end of Knows, the only arrows between their two shapes: straight
+        for edge in ["type:Person -> rel:Owns", "type:Company -> rel:Owns", "type:Person -> rel:Knows"] {
+            let points = try body(edge)
+            expect(offChord(points) < 1, "\(edge) straight: \(points)")
+        }
+    },
     test("a measure reads a node's type chips as the document's own types, and says a pill's width from the board it lands on") {
         let editor = emptyEditor()
         // a board whose name is longer than the pill's, so where the pill says its shape is decides its width

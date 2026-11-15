@@ -91,7 +91,7 @@ import Titles
         expectEqual(editor.file.shapeCount, shapes, "drawn again in its place, once")
         expectEqual(drawn(board, "project"), ids, "every shape the same shape")
 
-        // --ranks says which way the root's bands run, through the dial in the document to the layout: rows, then columns, each drawn in the last one's place
+        // --ranks says which way the root's bands run, through the document's layout to the plan: rows, then columns, each drawn in the last one's place
         for way in ["rows", "columns"] {
             let ranked = try runIngest(["--ranks", way])
             expectEqual(ranked.status, 0, ranked.output + ranked.error)

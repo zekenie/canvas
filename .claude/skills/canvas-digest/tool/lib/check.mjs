@@ -13,6 +13,6 @@ export function checkGraph(graph, opts = {}) {
   const read = readGraph(graph, kinds);
   if (read.errors.length) return { errors: read.errors, warnings: [] };
   let model;
-  try { model = buildModel(graph, null, kinds); } catch (e) { return { errors: [e.message], warnings: [] }; }
+  try { model = buildModel(graph, kinds); } catch (e) { return { errors: [e.message], warnings: [] }; }
   return { errors: [], warnings: model.warnings.slice() };
 }

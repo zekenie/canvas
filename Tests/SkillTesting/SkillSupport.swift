@@ -117,7 +117,7 @@ public func runFolders(in cacheFolder: URL) -> [URL] {
 @MainActor public func lastRun(in cacheFolder: URL) throws -> URL { try require(runFolders(in: cacheFolder).last, "no run was kept in \(cacheFolder.path)") }
 
 /// The lens runner as `ingest` runs it (`runner/run.py`): the repository's lens, else the default lens, run twice in isolation, the graph
-/// document written to `graph`. The drawing is named `repo` unless the lens or `extra` (`--drawing NAME`, `--mess`, ...) names it.
+/// document written to `graph`. The drawing is named `repo` unless the lens or `extra` (`--drawing NAME`, `--ranks`, ...) names it.
 @MainActor public func lensRunner(_ repo: URL, scan: URL, graph: URL, lens: URL? = nil, extra: [String] = [], timeout: TimeInterval = 280) throws -> ProcessOutput {
     try run(URL(fileURLWithPath: python), [ingestSkill("runner/run.py").path, repo.path, scan.path, graph.path, "--drawing-default", "repo"] + (lens.map { ["--lens", $0.path] } ?? []) + extra, timeout: timeout)
 }

@@ -4,17 +4,19 @@ import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Foundation
+import Queries
 import Topology
 
 // `canvas measure` of a document: how big each node would be drawn, how wide a pill for each node an edge reaches would be
 // where it would sit, and which edges the app would refuse, by key, for a render layer that lays a document out before it
 // applies it. Each node is a shape statement named by an id picked for it, written with every property the document gives
 // it (so a type's schema, a note's `is` by key and its values, and the ends between them size it as a draw does), measured
-// by `measure`'s own drawing on a board of its own; nothing is placed and no board is touched.
+// by `measure`'s own drawing on a board of its own; nothing is placed and no board is touched. It also says which edges the app
+// draws as the halves of one line through a node (a relationship type's two ends: `DrawLines`), so a layout sees that arc.
 
 /// What a document's measure answers.
-public struct DocumentMeasure: Encodable {
-    struct Node: Encodable {
+public struct DocumentMeasure: Encodable, Sendable {
+    struct Node: Encodable, Sendable {
         /// Width and height, world units: the room it takes once drawn.
         let size: [CGFloat]
         /// How far its title's pill and chips reach above it, at 100% (0 for none).
@@ -23,7 +25,7 @@ public struct DocumentMeasure: Encodable {
         let titleWidth: CGFloat
     }
 
-    struct Pill: Encodable {
+    struct Pill: Encodable, Sendable {
         /// The key of the node it stands for.
         let target: String
         /// The key of the node holding the shape it would sit beside (a frame, or a node that holds a board); nil for the top
@@ -37,18 +39,33 @@ public struct DocumentMeasure: Encodable {
         }
     }
 
-    struct RefusedEdge: Encodable {
+    struct RefusedEdge: Encodable, Sendable {
         let edge: Int
         let from: String
         let to: String
         let refused: DocumentError.Refusal
     }
 
+    /// Two edges the app draws as one line through a node, one arc from the far end of the first through the node's middle to the
+    /// far end of the second, where both are drawn as arrows into the node itself (an edge through a pill that stands for the node
+    /// is no half of it).
+    struct Line: Encodable, Sendable {
+        /// The key of the node the line runs through.
+        let through: String
+        /// The two edges, by place in the document's list: the one into the node, then the one out of it.
+        let edges: [Int]
+    }
+
     let nodes: [String: Node]
     let pills: [Pill]
     let edges: [RefusedEdge]
+    /// The lines through a node, in the order the document's edges first reach each node; nil for none.
+    let lines: [Line]?
     let constants: MeasureResult.Constants
     let warnings: [String]?
+    /// How alike the two notes of each link are, when asked for (`canvas measure --tightness`, `DocumentTightness`); nil: not asked.
+    /// Set by the command, which asks the embedding model: Draw knows no model.
+    public var tightness: DocumentTightness?
 }
 
 /// Measures `text`, a graph document, over `registry`'s kinds; `editor`, the open file, if any, whose types and names a
@@ -164,14 +181,6 @@ public func measure(document text: String, on target: String? = nil, program: St
         }
         return keys
     }
-    func board(_ key: String) -> String? {
-        var at = document.node(key)?.container
-        while let current = at, let node = document.node(current) {
-            if registry.boardOwningKinds.contains(node.kind) { return current }
-            at = node.container
-        }
-        return nil
-    }
 
     // A pill for each end of an edge that a pill can stand for, sized where it would sit: in the container of the other end.
     let standIns = registry.standIns
@@ -196,13 +205,20 @@ public func measure(document text: String, on target: String? = nil, program: St
             guard seen.insert(far + "\u{0}" + (from ?? "")).inserted else { continue }
             let label = title(far) ?? far
             guard var record = standIns.make(kind, standingFor: ShapeID(), label: label), record.box != nil else { continue }
-            // Each container by the name the chains give it (its title, else its key), so an untitled one that owns a board keeps
-            // its weight; both from the board the drawing goes on.
-            let name = { (key: String) -> String in title(key) ?? key }
+            // Each container by the name a path calls it in the drawn pill (its title, else what its kind is called: an untitled
+            // frame is "Frame" and an untitled subboard "Untitled Subboard", as the app says them, not their keys), from the board the
+            // drawing goes on. Two containers called alike are still two:
+            // `shared` says how many of the first the pill and the shape it stands for have in common, by key.
+            let name = { (key: String) -> String in
+                title(key) ?? document.node(key).map { registry.queryBoardPlaceholder(of: $0.kind) ?? registry.label(of: $0.kind).name } ?? key
+            }
             let owning = { (key: String) -> Bool in document.node(key).map { registry.boardOwningKinds.contains($0.kind) } ?? false }
-            let shape = prefix + chain(node.container).map(name), seat = prefix + chain(from).map(name)
-            let opening = prefixOpening.union(chain(node.container).filter(owning).map(name)).union(chain(from).filter(owning).map(name))
-            standIns.seat(&record, at: .written(shape: shape, seat: seat, opening: opening, root: editor?.rootName ?? ""), in: scratch.shapeContext)
+            let shapeChain = chain(node.container), seatChain = chain(from)
+            let shape = prefix + shapeChain.map(name), seat = prefix + seatChain.map(name)
+            let opening = prefixOpening.union(shapeChain.filter(owning).map(name)).union(seatChain.filter(owning).map(name))
+            let shared = prefix.count + zip(shapeChain, seatChain).prefix { $0 == $1 }.count
+            standIns.seat(&record, at: .written(shape: shape, seat: seat, opening: opening, root: editor?.rootName ?? "", shared: shared),
+                          in: scratch.shapeContext)
             let size = record.box!.size
             pills.append(DocumentMeasure.Pill(target: far, from: from, size: [size.width, size.height]))
         }
@@ -217,7 +233,7 @@ public func measure(document text: String, on target: String? = nil, program: St
             guard item.statement.line >= 1, item.statement.line <= document.nodes.count, case .node(let key) = about[item.statement.line - 1] else { return nil }
             return (key, item.record)
         })
-        for edge in document.edges where board(edge.from) == board(edge.to) {
+        for edge in document.edges where document.board(edge.from, in: registry) == document.board(edge.to, in: registry) {
             guard let from = records[edge.from], let to = records[edge.to] else { continue }
             let alone = CanvasDocument(shapes: from.id == to.id ? [from] : [from, to])
             var attributes: [String: String] = [:]
@@ -233,6 +249,24 @@ public func measure(document text: String, on target: String? = nil, program: St
             }
         }
     }
+    // The edges the app draws as the halves of one line through a node, as the plugin that says so has it (`DrawLines`), over the
+    // arrows the measure laid out with the nodes: by place in the document's list, the node by its key.
+    var through: [DocumentMeasure.Line] = []
+    if let lining = registry.drawLining {
+        var edgeOf: [ShapeID: Int] = [:], connections: [DrawnConnection] = []
+        for item in drawing.edges {
+            guard let record = item.provisional, item.statement.line >= 1, item.statement.line <= about.count,
+                  case .edge(let index) = about[item.statement.line - 1] else { continue }
+            edgeOf[record.id] = index
+            connections.append(DrawnConnection(record: record, from: item.from, to: item.to))
+        }
+        let shapes = Dictionary(drawing.items.map { ($0.record.id, $0.record) }, uniquingKeysWith: { first, _ in first })
+        let keyOf = Dictionary(ids.map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        for line in lining.lines(connections, shapes, registry) {
+            guard let first = edgeOf[line.first], let second = edgeOf[line.second], let node = keyOf[line.through] else { continue }
+            through.append(DocumentMeasure.Line(through: node, edges: [first, second]))
+        }
+    }
     let warnings = (result.warnings ?? []).map { warning -> String in
         let subject = warning.line >= 1 && warning.line <= about.count ? about[warning.line - 1] : nil
         let what: String = switch subject {
@@ -242,7 +276,8 @@ public func measure(document text: String, on target: String? = nil, program: St
         }
         return what + said(warning.message, ids)
     }
-    return DocumentMeasure(nodes: nodes, pills: pills, edges: refused, constants: result.constants, warnings: warnings.isEmpty ? nil : warnings)
+    return DocumentMeasure(nodes: nodes, pills: pills, edges: refused, lines: through.isEmpty ? nil : through, constants: result.constants,
+                           warnings: warnings.isEmpty ? nil : warnings, tightness: nil)
 }
 
 /// A message with each node's id said as its key.

@@ -6,7 +6,7 @@
 # commit, lens, app and macOS draw the same boards. The app keeps the drawing's record by its name, so drawing again with the same
 # name updates the drawing in place, shape by shape, and takes off what the code no longer has.
 #
-#   ingest [REPO] [--commit REF] [--board ID] [--on NAME] [--drawing NAME] [--scip INDEX] [--mess 0..1] [--ranks rows|columns]
+#   ingest [REPO] [--commit REF] [--board ID] [--on NAME] [--drawing NAME] [--scip INDEX] [--ranks rows|columns]
 #                 [--window WxH] [--scan FILE | --rescan]
 #   ingest [REPO] --where
 #
@@ -24,7 +24,6 @@
 #   --drawing NAME  the drawing's name (the settings' "drawing", else the lens's, else the repository's). A second name is a second
 #                 drawing in the same file, as a proposal beside the code's own
 #   --scip INDEX  scan a SCIP index made by hand instead of running the repository's scanner
-#   --mess N      the dial, 0 tidy to 1 loose (default 0.1)
 #   --ranks WAY   the root's bands as rows (the top layer on top) or as columns (it at the left); left out, whichever the window
 #                 shows larger: every board is laid out for the window it is drawn in, as large as that is when the run starts
 #   --window WxH  the room every board is laid out for, in place of the window's size
@@ -34,8 +33,8 @@
 #
 # The settings: scanner ("swift" or "scip"; a repository with a Package.swift is swift's without them), scip (the command that writes
 # the index, run at the checkout's root, {index} standing for the path to write, written bare: it is replaced by a shell-quoted
-# path), prepare (a command run in the checkout when a lockfile, or the command, has changed), window ([width, height]), mess,
-# ranks, drawing. An option given here wins over the settings (reference/scan.md).
+# path), prepare (a command run in the checkout when a lockfile, or the command, has changed), window ([width, height]), ranks,
+# drawing. An option given here wins over the settings (reference/scan.md).
 #
 # The lens is REPO/.canvas/lens.py in the folder you run in (never the commit's): a function digest(scan, repo) that returns the
 # graph document as a dict, run twice in isolation (runner/run.py), and refused if the two documents differ. Without one, the
@@ -62,12 +61,12 @@ now() { date +%s; }
 T0=$(now)
 step() { echo "ingest: $1 ($(($(now) - T0)) s)"; }
 
-REPO=; SCIP=; COMMIT=; SCANFILE=; RESCAN=0; BOARD=; ON=; DRAWING=; MESS=; RANKS=; WINDOW=; WHERE=0
+REPO=; SCIP=; COMMIT=; SCANFILE=; RESCAN=0; BOARD=; ON=; DRAWING=; RANKS=; WINDOW=; WHERE=0
 while [ $# -gt 0 ]; do
   case $1 in
     --rescan) RESCAN=1; shift; continue ;;
     --where) WHERE=1; shift; continue ;;
-    --board|--on|--drawing|--scip|--mess|--ranks|--window|--commit|--scan) [ $# -ge 2 ] || usage ;;
+    --board|--on|--drawing|--scip|--ranks|--window|--commit|--scan) [ $# -ge 2 ] || usage ;;
     -h|--help) usage ;;
     -*) echo "ingest: unknown option $1" >&2; usage ;;
     *) [ -z "$REPO" ] || usage; REPO=$1; shift; continue ;;
@@ -77,7 +76,6 @@ while [ $# -gt 0 ]; do
     --on) ON=$2 ;;
     --drawing) DRAWING=$2 ;;
     --scip) SCIP=$2 ;;
-    --mess) MESS=$2 ;;
     --ranks) RANKS=$2 ;;
     --window) WINDOW=$2 ;;
     --commit) COMMIT=$2 ;;
@@ -117,7 +115,6 @@ CACHE=$(cd "$CACHE" && pwd)
 _settings=$("$PY" "$HERE/settings.py" "$REPO" "$CACHE/index/index.scip") || exit 1
 eval "$_settings"
 # an option given here wins over the settings
-[ -n "$MESS" ] || MESS=$S_MESS
 [ -n "$RANKS" ] || RANKS=$S_RANKS
 [ -n "$WINDOW" ] || WINDOW=$S_WINDOW
 [ -n "$DRAWING" ] || DRAWING=$S_DRAWING
@@ -399,7 +396,6 @@ step "making the graph"
 # the drawing's name is the settings' (or --drawing's), else the lens's, else the repository's (NAME: the folder that holds its git directory)
 set --
 [ -z "$DRAWING" ] || set -- "$@" --drawing "$DRAWING"
-[ -z "$MESS" ] || set -- "$@" --mess "$MESS"
 [ -z "$RANKS" ] || set -- "$@" --ranks "$RANKS"
 run "$PY" "$HERE/runner/run.py" "$REPO" "$SCAN" "$RUN/graph.json" --commit "$SHA" --drawing-default "$NAME" ${LENS:+--lens "$LENS"} "$@" || die "no graph was made, so nothing was drawn (the run's folder: $RUN)"
 

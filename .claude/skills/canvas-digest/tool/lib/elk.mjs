@@ -1,5 +1,6 @@
 // elkjs, unmodified (vendor/elk.bundled.js), run as a global script: it needs `window` and a console.
 import { median } from './util.mjs';
+import { len } from './geom.mjs';
 
 let elkPromise = null;
 
@@ -16,17 +17,18 @@ export function loadElk(io, base) {
 }
 
 const SPACING = 64;   // between boxes: 64 below another keeps the row above clear for a title pill, and is over the 40 draw keeps beside
+// a container's parts that no arrow joins are laid out apart and packed side by side, by ELK 20 apart unless told: as far as any two boxes
+const COMPONENTS = String(SPACING);
 
 // rectpacking packs plain rows (SIMPLE), not ELK's default COMPACTION: in elkjs 0.12.0 COMPACTION never returns on some boxes at some
 // aspect ratios (this repository's References board, 17 boxes, at 1.48, 1.5 and 1.6, but not 1.45 or 2), and `pack` takes the air out after
 export const ALGORITHMS = {
   rectpacking: { 'elk.algorithm': 'rectpacking', 'elk.rectpacking.packing.strategy': 'SIMPLE', 'elk.aspectRatio': '1.5','elk.spacing.nodeNode': String(SPACING), 'elk.padding': '[top=0,left=0,bottom=0,right=0]' },
-  mrtree: { 'elk.algorithm': 'mrtree', 'elk.direction': 'DOWN', 'elk.spacing.nodeNode': String(SPACING), 'elk.padding': '[top=0,left=0,bottom=0,right=0]' },
+  mrtree: { 'elk.algorithm': 'mrtree', 'elk.direction': 'DOWN', 'elk.spacing.nodeNode': String(SPACING), 'elk.spacing.componentComponent': COMPONENTS, 'elk.padding': '[top=0,left=0,bottom=0,right=0]' },
   layered: {
-    'elk.algorithm': 'layered', 'elk.direction': 'DOWN', 'elk.edgeRouting': 'POLYLINE', 'elk.spacing.nodeNode': String(SPACING),
+    'elk.algorithm': 'layered', 'elk.direction': 'DOWN', 'elk.edgeRouting': 'POLYLINE', 'elk.spacing.nodeNode': String(SPACING), 'elk.spacing.componentComponent': COMPONENTS,
     'elk.layered.spacing.nodeNodeBetweenLayers': '96', 'elk.layered.nodePlacement.strategy': 'LINEAR_SEGMENTS', 'elk.layered.crossingMinimization.greedySwitch.type': 'OFF', 'elk.padding': '[top=0,left=0,bottom=0,right=0]',
   },
-  stress: { 'elk.algorithm': 'stress', 'elk.stress.desiredEdgeLength': '460', 'elk.padding': '[top=0,left=0,bottom=0,right=0]' },
 };
 
 /** A view no one has measured: wider than tall, as a window is (the room a 1568 x 1088 view leaves a board it fits). */
@@ -70,8 +72,7 @@ function optionsFor(algo, shape) {
 
 /**
  * Lays out boxes with one of the algorithms. items: [{w, h}], edges: [{a, b, w}] (indexes), shape: {dir, aspect} (optionsFor). Returns
- * positions (top-lefts, rounded, the least corner at 0,0) and the size of the whole; a stress layout's `raw` is where it has the boxes before
- * they are pushed apart (what `stretched` stretches).
+ * positions (top-lefts, rounded, the least corner at 0,0) and the size of the whole.
  */
 export async function layoutFlat(elk, algo, items, edges, seed, shape) {
   let pos;
@@ -85,44 +86,8 @@ export async function layoutFlat(elk, algo, items, edges, seed, shape) {
     };
     const r = await elk.layout(graph);
     pos = items.map((_, i) => { const c = r.children[i]; return { x: c.x, y: c.y }; });
-    if (algo === 'stress') { const raw = pos; pos = removeOverlaps(items, pos); return Object.assign(normalize(items, pos), { raw, k: 1 }); }
   }
   return normalize(items, pos);
-}
-
-/** Boxes' top-lefts with their centers moved apart across by sqrt(k) and together down by as much, about the middle of them all: k times as wide for its height. */
-export function stretch(items, pos, k) {
-  if (k === 1) return pos.map((p) => ({ x: p.x, y: p.y }));
-  const sx = Math.sqrt(k), sy = 1 / sx, n = items.length;
-  let mx = 0, my = 0;
-  pos.forEach((p, i) => { mx += p.x + items[i].w / 2; my += p.y + items[i].h / 2; });
-  mx /= n; my /= n;
-  return pos.map((p, i) => ({ x: mx + (p.x + items[i].w / 2 - mx) * sx - items[i].w / 2, y: my + (p.y + items[i].h / 2 - my) * sy - items[i].h / 2 }));
-}
-
-export const MAX_STRETCH = 16;
-
-/**
- * A stress layout stretched toward a shape. Stress puts boxes as far apart as their arrows are long, the same in every direction, so its
- * layouts come out as round as their boxes allow; moving the centers apart one way and together the other keeps which arrows cross and gives
- * the shape wanted. The stretch is found in a few tries (the boxes pushed apart again change the shape a little). Returns {raw, pos, k}: the
- * stretched centers' top-lefts (what a warm layout starts from), the same with overlaps removed, and the stretch (1: none). `shape` is
- * {aspect}: the shape to be (with the view's size, offShapeOf's).
- */
-export function stretched(items, raw0, shape) {
-  const aspect = shape.aspect;
-  let best = null, k = 1;
-  for (let t = 0; t < 4; t++) {
-    const raw = stretch(items, raw0, k), pos = removeOverlaps(items, raw);
-    const b = normalize(items, pos);
-    const r = b.h > 0 ? b.w / b.h : 1, off = offShapeOf(b.w, b.h, shape);
-    if (!best || off < best.off - 1e-9) best = { raw, pos, k, off };
-    if (off < 1.08) break;
-    const next = Math.min(MAX_STRETCH, Math.max(1 / MAX_STRETCH, k * aspect / r));
-    if (Math.abs(next - k) < 1e-9) break;
-    k = next;
-  }
-  return best;
 }
 
 export function normalize(items, pos) {
@@ -132,7 +97,7 @@ export function normalize(items, pos) {
   return { pos: out, w: Math.round(x1 - x0), h: Math.round(y1 - y0) };
 }
 
-/** Pushes boxes apart (stress ignores sizes) until 64 clear, then snaps to a 16 grid. Deterministic. */
+/** Pushes boxes apart until they are gx across and gy down clear of each other, takes the air out, then snaps to a 16 grid. Deterministic. */
 export function removeOverlaps(items, start, gx = 40, gy = 64) {
   return compact(items, pushApart(items, start, gx, gy), gx, gy).map((p) => ({ x: Math.round(p.x / 16) * 16, y: Math.round(p.y / 16) * 16 }));
 }
@@ -164,8 +129,8 @@ export function pushApart(items, start, gx = 40, gy = 64, active = null) {
 }
 
 /**
- * Slides every box toward the top-left as far as it goes (keeping gx / gy clear of the others), a few passes, left then up. A
- * stress layout comes out airy, because it ignores the boxes' sizes; this keeps its order and takes the air out.
+ * Slides every box toward the top-left as far as it goes (keeping gx / gy clear of the others), a few passes, left then up: boxes pushed
+ * apart come out airy, and this keeps their order and takes the air out.
  */
 export function compact(items, start, gx, gy) {
   const pos = start.map((p) => ({ x: p.x, y: p.y }));
@@ -203,7 +168,7 @@ export function compact(items, start, gx, gy) {
  * frame mates. Nothing moves apart, boxes never overlap (given they started clear), and the result is the same on every run.
  * items: [{w, h}], start: [{x, y}] top-lefts, edges: [{a, b, n}] (indexes). Returns {pos, w, h} (the least corner at 0, 0).
  */
-export function pack(items, start, edges, gx, gy, squeeze = true) {
+export function pack(items, start, edges, gx, gy) {
   const n = items.length;
   if (n < 2) return normalize(items, start);
   const pos = start.map((p) => ({ x: p.x, y: p.y }));
@@ -218,12 +183,11 @@ export function pack(items, start, edges, gx, gy, squeeze = true) {
     return false;
   };
   const STEP = 8;
-  for (let round = 0; round < 3; round++) {
   for (let pass = 0; pass < 60; pass++) {
     let mx = 0, my = 0;
     for (let i = 0; i < n; i++) { mx += cx(i); my += cy(i); }
     mx /= n; my /= n;
-    const order = [...Array(n).keys()].sort((p, q) => Math.hypot(cx(q) - mx, cy(q) - my) - Math.hypot(cx(p) - mx, cy(p) - my) || p - q);
+    const order = [...Array(n).keys()].sort((p, q) => len(cx(q) - mx, cy(q) - my) - len(cx(p) - mx, cy(p) - my) || p - q);
     let moved = false;
     for (const i of order) {
       let tx = mx, ty = my;
@@ -233,7 +197,7 @@ export function pack(items, start, edges, gx, gy, squeeze = true) {
         tx = 0.5 * mx + 0.5 * sx / sw; ty = 0.5 * my + 0.5 * sy / sw;
       }
       for (let k = 0; k < 400; k++) {
-        const dx = tx - cx(i), dy = ty - cy(i), d = Math.hypot(dx, dy);
+        const dx = tx - cx(i), dy = ty - cy(i), d = len(dx, dy);
         if (d < STEP) break;
         const sx = dx / d * STEP, sy = dy / d * STEP;
         const x = pos[i].x + sx, y = pos[i].y + sy;
@@ -250,11 +214,6 @@ export function pack(items, start, edges, gx, gy, squeeze = true) {
       }
     }
     if (!moved) break;
-  }
-  if (!squeeze) break;
-  const sq = compact(items, pos, gx, gy);   // the air the slides left, taken out along the axes; then slide again
-  let any = false; sq.forEach((p, i) => { if (Math.abs(p.x - pos[i].x) + Math.abs(p.y - pos[i].y) > 1e-9) any = true; pos[i] = p; });
-  if (!any) break;
   }
   return normalize(items, pos);
 }

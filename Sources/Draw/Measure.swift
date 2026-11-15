@@ -18,7 +18,7 @@ import Topology
 // board, the script is laid out over that board's own editor (read, never written).
 
 /// What `measure` answers.
-public struct MeasureResult: Encodable {
+public struct MeasureResult: Encodable, Sendable {
     /// A name measuring couldn't find: its line, and what it did.
     struct Warning: Encodable {
         let line: Int
@@ -49,7 +49,7 @@ public struct MeasureResult: Encodable {
     }
 
     /// What placement is done with, read from the source it is done by.
-    struct Constants: Encodable {
+    struct Constants: Encodable, Sendable {
         /// Every named gap (`gap: tight`), world units.
         let gaps: [String: CGFloat]
         /// How far apart a placement holds two boxes when nothing says.

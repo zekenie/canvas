@@ -80,6 +80,11 @@ hide = true
 depends = ["guard"]
 run = '"${JSC:-/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc}" "$PWD/.claude/skills/canvas-digest/tool/test/run.js"'
 
+[tasks."test:digest-corpus"]
+description = "The canvas-digest tool's corpus check: the spike's data clustered and planned, the groups byte for byte and the counts exactly (JSC=1: under jsc)"
+depends = ["guard"]
+run = "sh .claude/skills/canvas-digest/tool/test/corpus.sh"
+
 [tasks."test:digest:node"]
 description = "The canvas-digest tool's own tests under node"
 hide = true

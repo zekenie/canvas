@@ -9,6 +9,8 @@ import Clipboard
 import CoreGraphics
 import DecisionModels
 import DetailPanel
+import Draw
+import EmbeddingModels
 import Geometry
 import LanguageModels
 import Mentions
@@ -32,31 +34,41 @@ import Validation
         expectEqual(names.first, "Keyboard.KeyboardPlugin")
         expectEqual(Set(names).count, names.count, "each once")
         let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: ScriptedLanguageModel()),
-                                                          DecisionModelsPlugin(model: ScriptedDecisionModel())])
+                                                          DecisionModelsPlugin(model: ScriptedDecisionModel()),
+                                                          EmbeddingModelsPlugin(model: ScriptedEmbeddingModel.hashing())])
         expectEqual(plugins.map { String(reflecting: type(of: $0)) }, names, "every line a plugin of that type, in the list's order")
         expectEqual(ShippedPlugins.plugins(model: ScriptedLanguageModel()).map(\.id), plugins.map(\.id), "which is what every test here is given")
         _ = try Registry(plugins: plugins)
     },
-    test("nothing but the app is made of the plugins that reach outside the process: the list won't load without a pasteboard's and two models' of the caller's own") {
-        let outward = ["Clipboard.ClipboardPlugin", "LanguageModels.LanguageModelsPlugin", "DecisionModels.DecisionModelsPlugin"]
+    test("nothing but the app is made of the plugins that reach outside the process: the list won't load without a pasteboard's and three models' of the caller's own") {
+        let outward = ["Clipboard.ClipboardPlugin", "LanguageModels.LanguageModelsPlugin", "DecisionModels.DecisionModelsPlugin",
+                       "EmbeddingModels.EmbeddingModelsPlugin"]
         let clipboard = ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard)
         expectThrows(ShippedListError.notSupplied(outward)) { _ = try ShippedList.plugins(supplying: []) }
         expectThrows(ShippedListError.notSupplied(Array(outward[1...]))) { _ = try ShippedList.plugins(supplying: [clipboard]) }
-        expectThrows(ShippedListError.notSupplied([outward[0], outward[2]])) { _ = try ShippedList.plugins(supplying: [LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
-        expectThrows(ShippedListError.notSupplied([outward[2]])) { _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
+        expectThrows(ShippedListError.notSupplied([outward[0], outward[2], outward[3]])) { _ = try ShippedList.plugins(supplying: [LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
+        expectThrows(ShippedListError.notSupplied(Array(outward[2...]))) { _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
+        expectThrows(ShippedListError.notSupplied([outward[3]])) {
+            _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: ScriptedLanguageModel()), DecisionModelsPlugin(model: ScriptedDecisionModel())])
+        }
         // The models handed over are the ones the editor asks: never the app's.
         let model = ScriptedLanguageModel()
         let decisions = ScriptedDecisionModel()
-        let plugins = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions)])
+        let embeddings = ScriptedEmbeddingModel.hashing()
+        let plugins = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions),
+                                                          EmbeddingModelsPlugin(model: embeddings)])
         let editor = CanvasEditor(registry: try Registry(plugins: plugins), document: CanvasDocument(), scheduler: ManualScheduler())
         expect(editor.languageModel as? ScriptedLanguageModel === model)
         expect(editor.decisionModel as? ScriptedDecisionModel === decisions)
+        expect(editor.embeddingModel as? ScriptedEmbeddingModel === embeddings)
         // Any other listed plugin can be handed over too, and takes its place; one the list hasn't is refused.
         let asked = QueryTranslationPlugin(prompt: "Ask.", referenceRule: "")
-        let swapped = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions), asked])
+        let swapped = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions),
+                                                        EmbeddingModelsPlugin(model: embeddings), asked])
         expectEqual(swapped.map(\.id), plugins.map(\.id))
         expectThrows(ShippedListError.notInList(["CanvasTesting.Contributor"])) {
-            _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions), Contributor(id: "more") { _ in }])
+            _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions),
+                                                    EmbeddingModelsPlugin(model: embeddings), Contributor(id: "more") { _ in }])
         }
     },
     test("a test that names no pasteboard copies to one of its own, never the user's: its editors share it, and it goes as the test ends") {
@@ -101,11 +113,33 @@ import Validation
         expectEqual(registry.windowSubtitle(for: editor), "Plans", "Boards' name for the board shown")
         expectEqual(registry.settingsPanes.count, 0, "scripted models sign in to nothing")
         // The app's models bring their panes, the sign-in's first (made only when Settings opens: nothing reads a key or runs claude here).
-        expectEqual(try Registry(plugins: [LanguageModelsPlugin(), DecisionModelsPlugin()]).settingsPanes.map(\.title), ["Claude", "TypeSafe"])
+        expectEqual(try Registry(plugins: [LanguageModelsPlugin(), DecisionModelsPlugin(), EmbeddingModelsPlugin()]).settingsPanes.map(\.title), ["Claude", "TypeSafe", "OpenAI"])
     },
     test("and what the app takes besides is the plugins' too: every plugin's command for its server") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "apply", "rehearse", "show", "capture", "kinds", "measure", "query", "query-vocabulary", "decide"])
+        // measure takes a document's tightness, and waits as long as the embedding model may: its flag waits 120 s.
+        let measure = try require(registry.hostCommands.specs.first { $0.name == "measure" })
+        expectEqual(measure.params["properties"]?["tightness"]?["type"], "boolean")
+        expectEqual(measure.params["properties"]?["tightness"]?["x-timeout"], 120)
+        expect(measure.params["properties"]?["on"] != nil, "and its other options")
+    },
+    test("the words a kind's shapes say are read from its schema, not named: a note's text, a subboard's description, and a frame says none") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let document = #"""
+            {"nodes": [
+              {"key": "n", "kind": "sticky-note", "props": {"title": "Note", "text": "What a note says"}},
+              {"key": "s", "kind": "subboard", "props": {"title": "Board", "description": "What a subboard says"}},
+              {"key": "f", "kind": "frame", "props": {"title": "Region"}},
+              {"key": "m", "kind": "sticky-note", "in": "f", "props": {"title": "Empty"}}],
+             "edges": [{"from": "n", "to": "s"}, {"from": "m", "to": "n"}, {"from": "f", "to": "n"}]}
+            """#
+        let links = try DocumentLinks(document: document, registry: registry)
+        // A frame is no end of a pair, and the note in it is on the board it is on.
+        expectEqual(links.pairs.map { "\($0.a) \($0.b)" }, ["m n", "n s"])
+        expectEqual(links.nodes.map(\.key), ["m", "n", "s"])
+        expectEqual(links.nodes.map(\.words), ["", "What a note says", "What a subboard says"])
+        expectEqual(links.nodes.map(\.title), ["Empty", "Note", "Board"])
     },
     test("a plugin that can't ask for want of a sign-in asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -132,6 +166,22 @@ import Validation
         let shipped = try require(app.decisionModel as? JevModel)
         expectEqual(shipped.model, JevModel.latest)
         expectEqual(shipped.keys, .standard)
+    },
+    test("the registry's embedding model is the one passed, a hashing scripted one unless a test says: the app's is OpenAI's text-embedding-3-large with the key from Settings") {
+        let embeddings = ScriptedEmbeddingModel.hashing()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel(), embeddingModel: embeddings)
+        expect(editor.embeddingModel as? ScriptedEmbeddingModel === embeddings)
+        expect(editor.embeddings?.memory.url == nil, "kept in memory only")
+        let plain = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        let scripted = try require(plain.embeddingModel as? ScriptedEmbeddingModel)
+        expectEqual(scripted.textsPerRequest, .max)
+        expect(scripted.fallback != nil, "hashing: it answers any text")
+        // Made from nothing, as the app's list makes it (never asked here: nothing reads the key or reaches the network).
+        let app = CanvasEditor(registry: try Registry(plugins: [EmbeddingModelsPlugin()]), document: CanvasDocument(), scheduler: ManualScheduler())
+        let shipped = try require(app.embeddingModel as? OpenAIEmbeddingModel)
+        expectEqual(shipped.model, OpenAIEmbeddingModel.latest)
+        expectEqual(shipped.keys, .standard)
+        expectEqual(app.embeddings?.memory.url, EmbeddingMemory.standard().url)
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """
@@ -188,6 +238,7 @@ import Validation
         arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
         language-models      service LanguageModelState
         decision-models      service Decisions
+        embedding-models     embeddings
         language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
         rule-validation      ValidationRules → every shape holding ignoredRules · IssueScopes · ValidationRules → every shape holding schema
         rule-details         service RuleLights · outlines · ShapeDetails in Rules after Schema → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
@@ -199,7 +250,7 @@ import Validation
         validation-checks    draw checks
         mention-texts        draw labels · draw text text/x-canvas-mentions
         type-names           draw text text/x-canvas-type · draw edge identity is · draw value schema
-        draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
+        draw-field-values    draw value fieldValues · draw value endRule · draw lines · draw reports members is, endOf, fits, relates
         color-names          draw text text/x-canvas-color
         group-draw           draw groups
         drawings             file property drawings · draw records

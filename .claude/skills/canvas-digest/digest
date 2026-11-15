@@ -3,11 +3,12 @@
 # The only file here that runs `canvas`; tool/ (JavaScript, run by the system jsc, else node) reads and writes files and never runs it.
 #
 #   digest check   GRAPH                      the graph document against its structure and the app's kinds (canvas kinds)
-#   digest measure GRAPH                      how big the app makes each shape and pill (canvas measure) -> OUT/measure.json
-#   digest plan    GRAPH [PLAN FLAGS]         lay out every board and decide the pills -> OUT/drawing.json, OUT/report.json; draws nothing
+#   digest measure GRAPH                      how big the app makes each shape and pill, and how alike each link's two notes are (canvas measure --tightness) -> OUT/measure.json
+#   digest plan    GRAPH [PLAN FLAGS]         group each container's shapes by how tightly their links hold them (measure's tightness) and cut the links between groups, decide the pills and lay out every board -> OUT/drawing.json, OUT/report.json; draws nothing; from where the drawing's
+#                                             shapes are now when --current says (a redraw keeps what is there and what a person moved, --changed)
 #                                             (measures first when there is no measurement, or the graph is newer than it)
 #   digest apply   [--dry-run]                canvas apply of OUT/drawing.json: the whole drawing in one step -> OUT/results/apply.json
-#   digest all     GRAPH                      check, measure, plan (from where the drawing is now, when the file holds it), apply --dry-run, apply
+#   digest all     GRAPH                      check, measure, cluster, plan (from where the drawing is now, and what a person changed of it, when the file holds it), apply --dry-run, apply
 #   digest ready   [--on NAME]                whether a draw could start: canvas found, the app answering with a board open, canvas apply known
 #
 #   GRAPH       the graph document (canvas-digest's reference/graph.md): nodes by key, edges, props the app reads, layout hints
@@ -16,11 +17,12 @@
 #               already holds is updated where it is
 #   --board ID  draw on an open board by its id (canvas boards)
 #   --dry-run   apply: answer what would be done, changing nothing
-#   PLAN FLAGS  --mess 0..1  --promote off  --prefer N  --cap 0..1  --margin PILLS  --popular ARROWS
-#               --view WxH        the room the window has for a board fit to it, which every board is laid out for (with no view, one of
+#   PLAN FLAGS  --view WxH        the room the window has for a board fit to it, which every board is laid out for (with no view, one of
 #                                 1440x960 is assumed, and the plan says so)
 #               --ranks rows|columns   which way a document's ranked shapes run (left out: its layout.ranks, else whichever the view shows larger)
 #               --current FILE    plan from where the drawing's shapes are now (canvas query ':drawn-by("NAME")' --brief); all asks for it
+#               --changed FILE    what a person changed of those shapes (canvas query ':changed("NAME")' --brief), which a redraw holds where they put it; all asks
+#                                 for it too (an app that doesn't know :changed is said, and the plan goes on without it)
 #   --timeout S seconds canvas may take to answer one command (default 120)
 #
 # canvas is $CANVAS_CLI, else the one beside this driver (the app's, when it is in the app's Contents/Resources/agents; build/canvas, when it is in a
@@ -139,7 +141,7 @@ case $CMD in check|measure|plan|all) [ $# -ge 1 ] || usage ;; apply|ready) ;; *)
 case ${1:-} in --*|'') ;; *) GRAPH=$1; shift ;; esac
 case $CMD in check|measure|plan|all) [ -n "$GRAPH" ] || usage; [ -f "$GRAPH" ] || die "no graph document at $GRAPH" ;; esac
 [ -z "$GRAPH" ] || GRAPH=$(abspath "$GRAPH")   # every path handed to the tool is absolute (apply and ready take the graph only to name the folder)
-ON=; BOARD=; OUT=; DRYRUN=0; TIMEOUT=120; CURRENT=; PLANFLAGS=
+ON=; BOARD=; OUT=; DRYRUN=0; TIMEOUT=120; CURRENT=; CHANGED=; PLANFLAGS=
 while [ $# -gt 0 ]; do
   if [ "$1" = --dry-run ]; then DRYRUN=1; shift; continue; fi
   [ $# -ge 2 ] || { echo "digest: $1 takes a value" >&2; usage; }
@@ -149,7 +151,8 @@ while [ $# -gt 0 ]; do
     --board) BOARD=$2 ;;
     --timeout) TIMEOUT=$2 ;;
     --current) CURRENT=$(abspath "$2") ;;
-    --mess|--promote|--prefer|--cap|--margin|--popular|--view|--ranks) PLANFLAGS="$PLANFLAGS $1 $2" ;;
+    --changed) CHANGED=$(abspath "$2") ;;
+    --view|--ranks) PLANFLAGS="$PLANFLAGS $1 $2" ;;
     *) echo "digest: unknown option $1" >&2; usage ;;
   esac
   shift 2
@@ -185,16 +188,50 @@ step_check() {
 # app would refuse. A document it can't read is refused there, by key.
 step_measure() {
   need_kinds
-  # measured from the board apply will draw on (--on), so a pill says where its shape is from there, as drawn
-  canvas_to "$OUT/measure.json" measure - ${BOARD:+--board "$BOARD"} ${ON:+--on "$ON"} < "$GRAPH"
+  # measured from the board apply will draw on (--on), so a pill says where its shape is from there, as drawn. With --tightness, which asks the app's embedding model
+  # how alike each link's two notes are (with a key saved in Settings, the app sends every note's title and text to OpenAI; vectors it has are kept, so only new
+  # texts are sent): the clusters are by it. An app that lacks the flag, or that takes longer than --timeout, is said, and measures without it: clusters by the links alone.
+  if ! canvas_try "$OUT/measure.json" measure - --tightness ${BOARD:+--board "$BOARD"} ${ON:+--on "$ON"} < "$GRAPH"; then
+    if grep -q '"reason" *: *"timed_out"' "$OUT/measure.json.err" 2>/dev/null; then
+      echo "digest: measuring tightness took longer than --timeout, so the clusters are by the links alone. The vectors that landed are kept: run it again before anything is drawn to use them. Once the file holds the drawing, a redraw keeps what is drawn (it finds the groups again only to weigh the links), so to group it again from the tightness, draw it into a new file (a drawing is found by its name anywhere in the file)" >&2
+    elif grep -q 'has no option --tightness' "$OUT/measure.json.err" 2>/dev/null; then
+      echo "digest: this app's canvas measure doesn't measure tightness (an older one), so the clusters are by the links alone" >&2
+    else
+      echo "digest: canvas measure failed:" >&2
+      say_refusal "$OUT/measure.json"
+      exit 1
+    fi
+    canvas_to "$OUT/measure.json" measure - ${BOARD:+--board "$BOARD"} ${ON:+--on "$ON"} < "$GRAPH"
+  fi
   echo "measure: $(tool count nodes "$OUT/measure.json") nodes measured by canvas measure"
+  tool tightness "$OUT/measure.json" || exit 1
 }
 
 step_plan() {
   need_kinds
   if [ ! -s "$OUT/measure.json" ] || [ "$GRAPH" -nt "$OUT/measure.json" ]; then step_measure; fi
-  rm -f "$OUT/drawing.json" "$OUT/report.json"
-  set -- plan "$GRAPH" "$OUT/measure.json" "$OUT" --kinds "$OUT/kinds.json"
+  rm -f "$OUT/drawing.json" "$OUT/report.json" "$OUT/carried.json" "$OUT/measure.carried.json"
+  # each container's shapes in groups, by the tightness measure answered; the links between groups are cut before anything is placed, and come back as
+  # arrows where their line is clear. The groups add no shape (drawn again: a shape a person carried into another container is grouped where it is now)
+  set -- cluster "$GRAPH" "$OUT/measure.json" "$OUT" --kinds "$OUT/kinds.json"
+  if [ -n "$CURRENT" ]; then
+    set -- "$@" --current "$CURRENT"
+    if [ -n "$CHANGED" ]; then set -- "$@" --changed "$CHANGED"; fi
+  fi
+  _res=$(tool "$@") || exit 1
+  echo "$_res"
+  # a note a person carried into another container is in it for the groups, and a pill's width is measured from its note's container: measured again
+  # over the carried document (cluster wrote it), as the first was; the plan carries the shapes itself and plans with that measurement
+  _measure=$OUT/measure.json
+  if [ -s "$OUT/carried.json" ]; then
+    if ! canvas_try "$OUT/measure.carried.json" measure - ${BOARD:+--board "$BOARD"} ${ON:+--on "$ON"} < "$OUT/carried.json"; then
+      echo "digest: canvas measure failed on the shapes a person carried into another container:" >&2
+      say_refusal "$OUT/measure.carried.json"
+      exit 1
+    fi
+    _measure=$OUT/measure.carried.json
+  fi
+  set -- plan "$OUT/clustered.json" "$_measure" "$OUT" --kinds "$OUT/kinds.json"
   # shellcheck disable=SC2086
   set -- "$@" $PLANFLAGS
   # Laid out for the window it will be seen in: the room its board's window has (canvas boards' view), unless --view says, and no window, none.
@@ -202,17 +239,23 @@ step_plan() {
     *" --view "*) ;;
     *) if canvas_try "$OUT/boards.json" boards; then _view=$(tool view "$OUT/boards.json" $BOARD) && [ -n "$_view" ] && set -- "$@" --view "$_view"; fi ;;
   esac
-  if [ -n "$CURRENT" ]; then set -- "$@" --current "$CURRENT"; fi
+  if [ -n "$CURRENT" ]; then
+    set -- "$@" --current "$CURRENT"
+    if [ -n "$CHANGED" ]; then set -- "$@" --changed "$CHANGED"; fi
+  fi
   _res=$(tool "$@") || exit 1
   echo "$_res"
 }
 
 # Where the drawing's shapes are now, when the file holds the drawing: written to $OUT/current.json (the rows with their boxes and the containers
-# they are in), and CURRENT set to it. A file without the drawing has none, and the plan starts afresh.
+# they are in, and a row for each pill and each edge the drawing made), and CURRENT set to it; and what a person changed of them, which a redraw
+# holds where they put it: $OUT/changed.json, CHANGED set to it (an app that doesn't know :changed is said, and the plan goes on without it).
+# A file without the drawing has none, and the plan starts afresh.
 step_current() {
   _q=$(tool drawn-by "$GRAPH") || exit 1
   CURRENT=
-  rm -f "$OUT/current.json"
+  CHANGED=
+  rm -f "$OUT/current.json" "$OUT/changed.json"
   # a file without the drawing answers no rows; any other failure (too slow, timed out) is not that, and drawing from scratch would move a person's shapes back
   if ! canvas_try "$OUT/current.json" query "$_q" --brief --limit 100000 ${BOARD:+--board "$BOARD"}; then
     echo "digest: canvas query could not say where the drawing's shapes are, so the layout would not start from where they are; nothing is drawn. What canvas said:" >&2
@@ -223,8 +266,27 @@ step_current() {
   if [ "$(tool count rows "$OUT/current.json")" != 0 ]; then
     CURRENT=$OUT/current.json
     echo "current: $(tool count rows "$CURRENT") shapes of the drawing are in the file; the layout starts from where they are"
+    step_changed
   else
     rm -f "$OUT/current.json"
+  fi
+}
+
+# What a person changed of the drawing's shapes (canvas query ':changed("NAME")' --brief) -> $OUT/changed.json, CHANGED set to it. Any failure but the
+# app not knowing the word stops, as step_current's does: drawing on without it would move what a person put somewhere back.
+step_changed() {
+  _cq=$(tool changed-by "$GRAPH") || exit 1
+  if canvas_try "$OUT/changed.json" query "$_cq" --brief --limit 100000 ${BOARD:+--board "$BOARD"}; then
+    CHANGED=$OUT/changed.json
+    echo "changed: a person changed $(tool count rows "$CHANGED") of the drawing's shapes; those they moved, resized or put elsewhere are held where they put them"
+  elif grep -q 'unknown_pseudo_class\|isn.t a pseudo-class' "$OUT/changed.json.err" 2>/dev/null; then
+    echo "digest: this app doesn't know :changed (an older one), so what a person moved is not known and the layout goes on without it" >&2
+    rm -f "$OUT/changed.json"
+  else
+    echo "digest: canvas query could not say what a person changed, so a person's shapes could be moved back; nothing is drawn. What canvas said:" >&2
+    say_refusal "$OUT/changed.json"
+    rm -f "$OUT/changed.json"
+    exit 1
   fi
 }
 

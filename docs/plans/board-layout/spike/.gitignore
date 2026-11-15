@@ -1,0 +1,8 @@
+# unpacked from data.tar.gz, built from tools/, or written by the scripts
+/data/
+/strategy/
+/run/
+/judge/
+/proto/svg2png
+/compose
+/grid

@@ -84,10 +84,10 @@ import TestKit
         expectEqual(seeds[0].output, seeds[1].output, "the same document under another hash seed")
         let out = try JSON(text: seeds[0].output)
         func strings(_ key: String) -> [String] { (out[key]?.arrayValue ?? []).compactMap(\.stringValue) }
-        // a document, as written: the drawing's name and the dial, then nodes keyed, held by key, with props and layout as given
+        // a document, as written: the drawing's name and its layout, then nodes keyed, held by key, with props and layout as given
         let doc = try require(out["document"])
         expectEqual(doc["drawing"], "shop")
-        expectEqual(doc["layout"], ["mess": 0.1])
+        expectEqual(doc["layout"], ["ranks": "rows"])
         expectEqual(doc["warnings"], ["a thing it could not do"], "the warnings the lens gathered, for ingest to say and take off")
         let nodes = doc["nodes"]?.arrayValue ?? []
         expectEqual(nodes.compactMap { $0["key"]?.stringValue }, ["band:Core", "module:Core", "file:src/index.ts", "file:lib/index.ts"], "in the order made")
@@ -280,30 +280,30 @@ import TestKit
             return (process, calls.last ?? "")
         }
 
-        // the keys: the window is the driver's --view; the dial and the drawing's name are written into the graph document, which the driver
-        // draws from (`all <run>/graph.json --out <run>/out`), the drawing's name being in it
+        // the keys: the window is the driver's --view; the ranks and the drawing's name are written into the graph document, which the driver
+        // draws from (`all <run>/graph.json --out <run>/out`), the drawing's name being in it; the dial that was is a key no more
         try write(#"{"scanner": "swift", "mess": 0.5, "ranks": "columns", "window": [1000, 700], "drawing": "mine", "colour": "red"}"#, to: settings)
         let read = try ingestLine()
         expect(read.line.hasPrefix("all ") && read.line.contains("\(kept.path)/runs/") && read.line.contains("/graph.json --out ") && read.line.contains("/out"), "a run's own folder holds its graph and its out: \(read.line)")
         expect(read.line.contains("--view 1000x700") && !read.line.contains("--on"), "the window is the driver's option: \(read.line)")
         for gone in ["--board", "--new-file", "--replace", "--records", "--mess", "--ranks"] { expect(!read.line.contains(gone), "\(gone) is not the driver's to be told: \(read.line)") }
-        expect(read.process.error.contains("unknown key \"colour\""), "an unknown key is said: \(read.process.error)")
+        expect(read.process.error.contains("unknown key \"colour\"") && read.process.error.contains("unknown key \"mess\""), "an unknown key is said: \(read.process.error)")
         var graph = try json(try lastRun(in: kept).appendingPathComponent("graph.json"))
         expectEqual(graph["drawing"], "mine", "the settings name the drawing, in the document")
-        expectEqual(graph["layout"], ["mess": 0.5, "ranks": "columns"], "and the dial is its layout")
+        expectEqual(graph["layout"], ["ranks": "columns"], "and the ranks are its layout")
 
         // an option given beats the setting it is for, and only that one
-        let beaten = try ingestLine(["--mess", "0.9", "--ranks", "rows", "--window", "900x600", "--drawing", "other", "--on", "Notes", "--board", "7"])
+        let beaten = try ingestLine(["--ranks", "rows", "--window", "900x600", "--drawing", "other", "--on", "Notes", "--board", "7"])
         expect(beaten.line.contains("--view 900x600") && beaten.line.contains("--on Notes") && beaten.line.contains("--board 7"), beaten.line)
         expect(!beaten.line.contains("1000x700"), "and the setting is not passed as well: \(beaten.line)")
         graph = try json(try lastRun(in: kept).appendingPathComponent("graph.json"))
         expectEqual(graph["drawing"], "other")
-        expectEqual(graph["layout"], ["mess": 0.9, "ranks": "rows"])
-        let partly = try ingestLine(["--ranks", "rows"])
+        expectEqual(graph["layout"], ["ranks": "rows"])
+        let partly = try ingestLine(["--drawing", "other"])
         expect(partly.line.contains("--view 1000x700") && !partly.line.contains("--on") && !partly.line.contains("--board"), partly.line)
         graph = try json(try lastRun(in: kept).appendingPathComponent("graph.json"))
-        expectEqual(graph["drawing"], "mine")
-        expectEqual(graph["layout"], ["mess": 0.5, "ranks": "rows"], "only the option's one beats its setting")
+        expectEqual(graph["drawing"], "other")
+        expectEqual(graph["layout"], ["ranks": "columns"], "only the option's one beats its setting")
 
         // no window: the driver is not told one, and asks the app's
         try write(#"{"scanner": "swift"}"#, to: settings)
@@ -311,7 +311,7 @@ import TestKit
         expect(!bare.line.contains("--view") && !bare.line.contains("--on"), "no setting, no option: \(bare.line)")
         graph = try json(try lastRun(in: kept).appendingPathComponent("graph.json"))
         expectEqual(graph["drawing"], "repo", "no name given: the repository's folder name")
-        expect(graph["layout"] == nil, "and no dial")
+        expect(graph["layout"] == nil, "and no layout")
         try FileManager.default.removeItem(at: settings)
         let none = try ingestLine()
         expect(!none.line.contains("--view"), "with no settings file at all: \(none.line)")
@@ -320,9 +320,9 @@ import TestKit
         let calls = driverCalls(log).count
         let bad: [(key: String, settings: String)] = [
             ("scanner", #"{"scanner": "ruby"}"#), ("window", #"{"window": [1440]}"#), ("window", #"{"window": [0, 700]}"#), ("window", #"{"window": "big"}"#),
-            ("mess", #"{"mess": 2}"#), ("mess", #"{"mess": true}"#), ("ranks", #"{"ranks": "diagonal"}"#), ("scip", #"{"scip": "make an index"}"#),
+            ("ranks", #"{"ranks": "diagonal"}"#), ("scip", #"{"scip": "make an index"}"#),
             ("prepare", #"{"prepare": 3}"#), ("drawing", #"{"drawing": 3}"#), ("drawing", #"{"drawing": "  "}"#), ("window", #"{"window": [1e400, 5]}"#), ("window", #"{"window": [5, 99999999999]}"#),
-            ("window", #"{"window": [NaN, 5]}"#), ("mess", #"{"mess": 1e400}"#),
+            ("window", #"{"window": [NaN, 5]}"#),
         ]
         for (key, text) in bad {
             try write(text, to: settings)
@@ -642,7 +642,6 @@ import TestKit
             expectEqual(refused.status, 1, refused.output)
             expect(refused.error.contains(says), "\(text) is refused saying \(says): \(refused.error)")
         }
-        expect(!driverCalls(log).contains { $0.hasPrefix("all ") && $0.contains("--mess") && false }, "")
     },
     test("a lens that raises stops the run with its traceback, before anything is drawn") {
         let folder = try scratchFolder("raises")

@@ -1,7 +1,7 @@
 """A graph document, built: nodes and edges keyed by the code, every attribute passed through as given, warnings gathered.
 
     g = Graph()                                                          # the drawing's name is the runner's to give (settings, else the repository's)
-    g.layout["mess"] = 0.1                                               # the render layer's options for the whole
+    g.layout["ranks"] = "rows"                                           # the render layer's options for the whole
     band = g.node("band:Core layer", "frame", {"title": "Core layer"}, layout={"rank": 0})
     core = g.node("module:Core", "subboard", {"title": "Core", "description": "Takes the money."}, in_=band)
     note = g.node("file:src/charge.py", "sticky-note", {"title": "charge.py", "is": ["type:File"]}, in_=core)

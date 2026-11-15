@@ -56,6 +56,19 @@ struct DrawDocument {
     let byKey: [String: Int]
 
     func node(_ key: String) -> Node? { byKey[key].map { nodes[$0] } }
+
+    /// The board a node is on, named by the key of the node that owns it (a subboard's card), the nearest of its containers
+    /// that owns one; nil for the drawing's own board. A subboard's card is on its container's board, and a node in a frame
+    /// in a subboard is on the subboard's.
+    @MainActor
+    func board(_ key: String, in registry: Registry) -> String? {
+        var at = node(key)?.container
+        while let current = at, let holder = node(current) {
+            if registry.boardOwningKinds.contains(holder.kind) { return current }
+            at = holder.container
+        }
+        return nil
+    }
 }
 
 // MARK: Errors and answers

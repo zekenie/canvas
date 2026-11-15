@@ -491,4 +491,112 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         expectEqual(via["references"]?.arrayValue?.count, 1)
         expect(board.editor.file == before && board.editor.revision == revision, "nothing changed")
     },
+    test("a pill whose path runs through an untitled frame is measured as the pill drawn there: the frame is called as the app calls it, and two untitled frames are two") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        // The document's own board: two frames with no title, a note in each, and one linked to the other.
+        func document(sameFrame: Bool) -> String {
+            let nodes: [JSON] = [
+                ["key": "f:one", "kind": "frame", "props": [:]], ["key": "f:two", "kind": "frame", "props": [:]],
+                ["key": "q", "kind": "sticky-note", "in": "f:one", "props": ["title": "Q"]],
+                ["key": "s", "kind": "sticky-note", "in": .string(sameFrame ? "f:one" : "f:two"), "props": ["title": "S"]],
+            ]
+            return (["nodes": .array(nodes), "edges": [["from": "s", "to": "q"]]] as JSON).compactText
+        }
+        @MainActor func pill(_ text: String) throws -> [Double]? {
+            let measured = try canvas(server, ["measure", "-"], input: text)
+            expectEqual(measured.status, 0, measured.error)
+            let answered = try JSON(text: measured.output)
+            return size(try require(answered["pills"]?.arrayValue?.first { $0["for"] == "q" })["size"])
+        }
+        let across = try pill(document(sameFrame: false)), within = try pill(document(sameFrame: true))
+        // The same on a board of its own: the frames drawn untitled, then the notes in them, then the pill an edge makes.
+        let first = try canvas(server, ["draw", "frame"])
+        expectEqual(first.status, 0, first.error)
+        let one = try require(try JSON(text: first.output)["changes"]?.arrayValue?.first?["id"]?.stringValue)
+        let second = try canvas(server, ["draw", "frame right of #\(one)"])
+        expectEqual(second.status, 0, second.error)
+        let two = try require(try JSON(text: second.output)["changes"]?.arrayValue?.first?["id"]?.stringValue)
+        let ids = [one, two]
+        let notes = try canvas(server, ["draw", "-"], input: "sticky-note \"Q\" in #\(ids[0])\nsticky-note \"S\" in #\(ids[1])\n")
+        expectEqual(notes.status, 0, notes.error)
+        let drew = try canvas(server, ["draw", #"edge "S" -> "Q" via: reference"#])
+        expectEqual(drew.status, 0, drew.error)
+        let drawn = try require(try JSON(text: drew.output)["changes"]?.arrayValue?.first { $0["kind"] == "reference" })
+        expectEqual(across, drawnSize(drawn), "measured as drawn: it says Frame, the frame Q is in, over its name")
+        expect(try require(across?.first) > (try require(within?.first)), "a note in the same frame says no place; one in another untitled frame, though called alike, does")
+    },
+    test("a pill whose path runs through an untitled subboard is measured as the pill drawn there: the subboard is called Untitled Subboard, not Subboard") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let nodes: [JSON] = [
+            ["key": "box", "kind": "subboard", "props": [:]],
+            ["key": "q", "kind": "sticky-note", "in": "box", "props": ["title": "Q"]],
+            ["key": "s", "kind": "sticky-note", "props": ["title": "S"]],
+        ]
+        let text = (["nodes": .array(nodes), "edges": [["from": "s", "to": "q"]]] as JSON).compactText
+        let measured = try canvas(server, ["measure", "-"], input: text)
+        expectEqual(measured.status, 0, measured.error)
+        let answered = try JSON(text: measured.output)
+        let measuredSize = size(try require(answered["pills"]?.arrayValue?.first { $0["for"] == "q" })["size"])
+        let sub = try canvas(server, ["draw", "subboard"])
+        expectEqual(sub.status, 0, sub.error)
+        let owner = try require(try JSON(text: sub.output)["changes"]?.arrayValue?.first?["id"]?.stringValue)
+        let notes = try canvas(server, ["draw", "-"], input: "sticky-note \"Q\" in #\(owner)\n")
+        expectEqual(notes.status, 0, notes.error)
+        let other = try canvas(server, ["draw", "-"], input: "sticky-note \"S\" right of #\(owner)\n")
+        expectEqual(other.status, 0, other.error)
+        let drew = try canvas(server, ["draw", #"edge "S" -> "Q" via: reference"#])
+        expectEqual(drew.status, 0, drew.error)
+        let drawn = try require(try JSON(text: drew.output)["changes"]?.arrayValue?.first { $0["kind"] == "reference" })
+        expectEqual(measuredSize, drawnSize(drawn), "measured as drawn: it says Untitled Subboard, the card Q's board is on")
+    },
+    test("canvas measure --tightness through the built canvas, against the shipped list: the links between notes, asked once and then answered from memory") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let nodes: [JSON] = [
+            ["key": "a", "kind": "sticky-note", "props": ["title": "Alpha", "text": "The first note"]],
+            ["key": "b", "kind": "sticky-note", "props": ["title": "Beta", "text": "The second note"]],
+            ["key": "c", "kind": "sticky-note", "props": ["title": "Gamma.swift", "text": "The third note"]],
+            ["key": "boards", "kind": "subboard", "props": ["title": "Inside", "description": "A subboard"]],
+            ["key": "d", "kind": "sticky-note", "in": "boards", "props": ["title": "Delta"]],
+            ["key": "e", "kind": "sticky-note", "in": "boards", "props": ["title": "Epsilon"]],
+        ]
+        let document = (["nodes": .array(nodes), "edges": [["from": "a", "to": "b"], ["from": "c", "to": "a"], ["from": "d", "to": "e"], ["from": "a", "to": "d"]]] as JSON).compactText
+        let plain = try JSON(text: canvas(server, ["measure", "-"], input: document).output)
+        expect(plain["tightness"] == nil, "not asked, not answered")
+        let first = try canvas(server, ["measure", "-", "--tightness"], input: document)
+        expectEqual(first.status, 0, first.error)
+        let answered = try JSON(text: first.output)
+        let tightness = try require(answered["tightness"])
+        expectEqual(tightness["model"], "scripted")
+        let pairs = try require(tightness["pairs"]?.arrayValue)
+        expectEqual(pairs.map { "\($0["a"]?.stringValue ?? "")\($0["b"]?.stringValue ?? "")" }, ["ab", "ac", "de"], "a link between two boards is no pair")
+        expectEqual(pairs.map { $0["board"]?.stringValue }, [nil, nil, "boards"])
+        expectEqual(tightness["asked"], tightness["texts"], "every text was asked once")
+        expectEqual(tightness["texts"], 6, "the notes and the subboard's card: the boards that have a pair")
+        expectEqual(answered["nodes"], plain["nodes"], "the sizes are the same with and without it")
+        let second = try JSON(text: canvas(server, ["measure", "-", "--tightness"], input: document).output)
+        expectEqual(second["tightness"]?["asked"], 0, "from memory")
+        expectEqual(second["tightness"]?["pairs"], tightness["pairs"])
+        let script = try canvas(server, ["measure", "-", "--tightness"], input: #"sticky-note "A""#)
+        expect(script.status != 0 && script.error.contains("invalid_params"), "a script is refused: \(script.error)")
+        let help = try JSON(text: canvas(server, ["help", "measure", "--format", "json"]).output).decode(CommandSpec.self)
+        expectEqual(help.params["properties"]?["tightness"]?["x-timeout"], 120)
+    },
 ])

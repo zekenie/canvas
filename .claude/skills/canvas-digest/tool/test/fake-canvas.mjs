@@ -1,7 +1,8 @@
 // A stand-in for the `canvas` command, for driver.sh: answers kinds, measure (estimated sizes), boards, help, query and apply the way the app does, from files.
 // FAKE_DIR holds what it keeps: apply.log (each apply's arguments), applied.json (the last document), rows.json (what the query answers, when there is a file),
 // query-fails (when it exists, query fails as the app does when it is too slow), measure.log (each measure's arguments),
-// refuse (when it exists, apply refuses the document with the contents of the file as its refusals).
+// tightness-old (when it exists, measure --tightness is refused as an older app does: no such option), tightness-timeout (when it exists, measure --tightness times out),
+// measure-refuses (when it exists, every measure is refused with a message that quotes the word tightness), refuse (when it exists, apply refuses the document with the contents of the file as its refusals).
 import fs from 'fs';
 import { buildModel } from '../lib/model.mjs';
 import { estimateMeasure } from './helpers.mjs';
@@ -15,7 +16,13 @@ else if (cmd === 'boards') out([{ id: 'board-1', name: 'Untitled' }]);
 else if (cmd === 'status') process.stdout.write('build: fake\n');
 else if (cmd === 'help') process.stdout.write('help ' + args[1] + '\n');
 else if (cmd === 'measure') { fs.appendFileSync(dir + '/measure.log', args.filter((a, i) => a !== '--timeout' && args[i - 1] !== '--timeout').join(' ') + '\n');
-  const g = JSON.parse(stdin()); out(estimateMeasure(buildModel(g, null, kinds), g)); }
+  const asked = args.includes('--tightness');
+  if (asked && fs.existsSync(dir + '/tightness-old')) { process.stderr.write('{"error":{"reason":"invalid_params","message":"measure has no option --tightness"}}\n'); process.exit(2); }
+  if (asked && fs.existsSync(dir + '/tightness-timeout')) { process.stderr.write('{"error":{"reason":"timed_out","message":"no answer in time","hint":"the app may still do it"}}\n'); process.exit(1); }
+  if (fs.existsSync(dir + '/measure-refuses')) { process.stderr.write('{"error":{"reason":"invalid_params","message":"a note titled tightness has no text","hint":"give it some"}}\n'); process.exit(2); }
+  const g = JSON.parse(stdin()), answer = estimateMeasure(buildModel(g, kinds), g);
+  if (asked) answer.tightness = { unavailable: 'the fake canvas embeds nothing', reason: 'no_model' };
+  out(answer); }
 else if (cmd === 'query') {
   fs.appendFileSync(dir + '/query.log', args.join(' ') + '\n');
   // a failure the app has (too slow, timed out), else the rows of the drawing, else what the app answers for a drawing the file lacks: no rows

@@ -1,8 +1,5 @@
 {
  "drawing": "shop-folders",
- "layout": {
-  "mess": 0.1
- },
  "nodes": [
   {
    "key": "web",

@@ -305,6 +305,7 @@ edge "API" -> "Cache" channel: none
         let measure = try JSON(text: canvas(server, ["help", "measure", "--format", "json"]).output).decode(CommandSpec.self)
         expectEqual(measure.scope, .board)
         expectEqual(measure.boardOptional, true)
+        expectEqual(measure.params["properties"]?["tightness"]?["x-timeout"], 120, "its flag waits for the embedding model")
         let draw = try JSON(text: canvas(server, ["help", "draw", "--format", "json"]).output).decode(CommandSpec.self)
         expectEqual(draw.boardOptional, nil)
         expectEqual(try JSON(text: canvas(server, ["status"]).output)["protocol"], .number(Double(RPC.protocolVersion)))

@@ -15,7 +15,7 @@ def refused(call):
 out = {}
 
 # a document, as written: keys, `in` by key, props and layout passed through as given, nothing else added
-g = Graph("shop", mess=0.1)
+g = Graph("shop", ranks="rows")
 band = g.node("band:Core", "frame", {"title": "Core"}, layout={"rank": 0})
 core = g.node("module:Core", "subboard", {"title": "Core", "description": "Takes the money."}, in_=band)
 a = g.node("file:src/index.ts", "sticky-note", {"title": "index.ts", "is": ["type:File"], "fieldValues": {"lines": 3}}, in_=core)

@@ -75,7 +75,9 @@ public enum StandInSeat: Sendable, Equatable {
     /// is inside, outermost first, and of those where it sits; `opening`, the names among them that a board of the open file
     /// is known to be owned by (a subboard's), which a place says in its own weight; `root`, what the open file calls its top
     /// board (the host's name for it), which a place led by the top board says: empty where there's no file, or it has none.
-    case written(shape: [String], seat: [String], opening: Set<String> = [], root: String = "")
+    /// `shared`, when the writer knows which containers are one shape and not only called alike (an untitled frame is "Frame"
+    /// whichever it is), is how many of the first of `shape` and `seat` are the same containers; nil: those the names agree on.
+    case written(shape: [String], seat: [String], opening: Set<String> = [], root: String = "", shared: Int? = nil)
 }
 
 /// How a stand-in kind's shape, made to stand for a shape (`ForwardingMaker`), takes where it sits: it shows where that shape

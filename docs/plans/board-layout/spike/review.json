@@ -1,0 +1,1995 @@
+{
+ "themes": {
+  "themes": [
+   {
+    "theme": "Long arrows and connected notes placed far apart (no edge-length penalty)",
+    "boards": [
+     "CanvasModel",
+     "CanvasTools",
+     "DetailPanel",
+     "LanguageRules",
+     "References",
+     "Subboards",
+     "Arrows",
+     "Colors",
+     "Draw",
+     "Grouping",
+     "Automation",
+     "CanvasPlugins",
+     "Mentions",
+     "Queries",
+     "Selection",
+     "SlashCommands",
+     "Titles",
+     "TypesFields",
+     "TypesType",
+     "TypesEngines",
+     "Boards",
+     "CanvasRendering",
+     "ContextMenus",
+     "Frames",
+     "DrawScript",
+     "CanvasUI",
+     "Topology",
+     "TypesForm",
+     "Validation",
+     "CanvasEditor",
+     "CanvasShapes",
+     "LanguageModels",
+     "Transform",
+     "TypesIsA",
+     "QueryLanguage",
+     "Moving",
+     "ProseMaps",
+     "Find",
+     "JumpTo",
+     "TypesChecks",
+     "QueryCommands",
+     "Snapping",
+     "Keyboard",
+     "CanvasRPC",
+     "DecisionCommands",
+     "TextEditing",
+     "TypesSync",
+     "Publishing",
+     "TableOfContents",
+     "QueryTranslation",
+     "Connections",
+     "Neighbors"
+    ],
+    "count": 52,
+    "severity": 2.5,
+    "rule": "After placement, measure each uncut arrow's length between facing sides. (1) Order and place stars by arrow weight: place each note next to its most-connected neighbour, and put a hub at the centroid of its users on rings by weight. (2) Add edge length to the packing cost, not only crossings. (3) Cut to a pill any arrow longer than about 3 note widths, or about a third of the board's width. (4) Run a post-pass that moves any note whose longest uncut arrow exceeds the cap next to that arrow's other end when a free slot is there. Aim at straight, short links, and avoid U-shaped arcs that double back.",
+    "examples": "DetailPanel: DetailTabView to Controls (1200) and DetailPanelPlugin to DetailTakeovers (1114). Validation: IssuesTab to IssueLinePlaces (1620) and IssueList to IssueWalkStyle (1419). Mentions: MentionPicker to Mentionable (1858) and MentionDrawing to MentionTextFormat (1673). Queries: QueryState to Hints (1477). Also TypesForm (DefinitionAccessibility to CardAccessibility, 1119) and CanvasPlugins (core to MadeBeside, 2400+)."
+   },
+   {
+    "theme": "Pill strips fan, hatch and crowd: too many per note, on the arrow side, or converging on one point",
+    "boards": [
+     "Adornments",
+     "CanvasModel",
+     "CanvasTools",
+     "Clipboard",
+     "DetailPanel",
+     "LanguageRules",
+     "References",
+     "Subboards",
+     "Types",
+     "Arrows",
+     "CanvasPersistence",
+     "Colors",
+     "Draw",
+     "Grouping",
+     "Locking",
+     "Publishing",
+     "Reordering",
+     "TableOfContents",
+     "TypesChecks",
+     "TypesRows",
+     "Automation",
+     "CanvasPlugins",
+     "Connections",
+     "Mentions",
+     "Queries",
+     "Selection",
+     "TypesEngines",
+     "TypesSync",
+     "Boards",
+     "CanvasRendering",
+     "Find",
+     "JumpTo",
+     "Moving",
+     "QueryCommands",
+     "SlashCommands",
+     "Titles",
+     "TypesFields",
+     "TypesType",
+     "CanvasSchema",
+     "CanvasUI",
+     "DecisionCommands",
+     "Frames",
+     "Keyboard",
+     "Neighbors",
+     "Snapping",
+     "Topology",
+     "TypesForm",
+     "Validation",
+     "CanvasEditor",
+     "CanvasShapes",
+     "DecisionModels",
+     "LanguageModels",
+     "QueryTranslation",
+     "StickyNotes",
+     "Transform",
+     "TypesIsA",
+     "ContextMenus",
+     "TypesJSON"
+    ],
+    "count": 58,
+    "severity": 2.1,
+    "rule": "For each note, cap pills per strip at 5-8 and cap total pills near the note (about 12-24). Spill the rest to the other free sides, then to a second ring, or collect them into a shared hub note or pill list. Never put a strip on the side where the note's own uncut arrows leave, or on the side facing a neighbouring note: choose sides by the free-side angle. Put pills level with their attachment points so lines run straight and parallel, not fanned into one point and not arcing around neighbours. Keep a gap of at least one strip width between neighbouring notes' strips, so it is clear whose pills are whose.",
+    "examples": "Types: TypesPlugin with 62 pills in an 8-wide block that hides the note. StickyNotes: StickyNotes.swift with about 60 pills in a wall. Arrows: ArrowDefinition with 50 pills. CanvasEditor: CanvasEditor.swift with 48 pills in a ring. TypesRows: RowBook with 45 pills. TypesSync: FieldFill with 35 pills in a curved fan."
+   },
+   {
+    "theme": "Plugin system frame placed far from the notes that connect to it, or sparse, oversized or mis-sized",
+    "boards": [
+     "Adornments",
+     "Clipboard",
+     "DetailPanel",
+     "LanguageRules",
+     "ProseMaps",
+     "References",
+     "Subboards",
+     "Types",
+     "Arrows",
+     "Colors",
+     "Draw",
+     "Grouping",
+     "Locking",
+     "Publishing",
+     "TableOfContents",
+     "TypesRows",
+     "Automation",
+     "CanvasPlugins",
+     "Connections",
+     "Mentions",
+     "Queries",
+     "Selection",
+     "TypesEngines",
+     "Boards",
+     "Find",
+     "Moving",
+     "SlashCommands",
+     "Titles",
+     "TypesFields",
+     "TypesType",
+     "DecisionCommands",
+     "Frames",
+     "Keyboard",
+     "Neighbors",
+     "Snapping",
+     "Topology",
+     "TypesForm",
+     "Validation",
+     "DecisionModels",
+     "LanguageModels",
+     "QueryTranslation",
+     "StickyNotes",
+     "Transform",
+     "ContextMenus",
+     "TypesChecks"
+    ],
+    "count": 45,
+    "severity": 1.8,
+    "rule": "Place the frame on the board edge facing the notes with the most arrows into it, adjacent to them, so its links are short and do not cross the frame or other notes. Size the frame to its contents plus a margin: use a tight star around the dominant plugin (ring radius grows with leaf count and note size) or a compact grid, with no empty band. Keep its members inside it, and give a one-note frame no extra space. Count the frame's links when scoring edge length.",
+    "examples": "CanvasPlugins: a 40-wide fan inside a frame that takes two thirds of the board. Validation: a wide band along the bottom with IssueRowValues below it, outside. DetailPanel: the frame sits far below DetailPanel and DetailPanelPlugin with a long gray arrow. Mentions: the frame spans the top with a 1000+ line down to a pink note. Also Colors and DecisionCommands (a mostly empty frame)."
+   },
+   {
+    "theme": "Loose or low-degree notes parked at corners or in the middle of open space",
+    "boards": [
+     "CanvasModel",
+     "CanvasTools",
+     "DetailPanel",
+     "LanguageRules",
+     "References",
+     "TypesRows",
+     "CanvasCLI",
+     "Colors",
+     "ColorTints",
+     "Connections",
+     "CanvasUI",
+     "Neighbors",
+     "Selection",
+     "TypesEngines",
+     "TypesFields",
+     "TypesType",
+     "Titles",
+     "SlashCommands",
+     "LanguageModels",
+     "QueryTranslation",
+     "StickyNotes",
+     "CanvasEditor",
+     "CanvasRendering",
+     "TextEditing",
+     "TypesSync",
+     "Boards",
+     "JumpTo",
+     "Mentions",
+     "TypesChecks",
+     "Subboards",
+     "Find",
+     "TypesIsA",
+     "Publishing"
+    ],
+    "count": 33,
+    "severity": 1.8,
+    "rule": "Detect notes whose uncut arrows number 0 or 1 (a note whose arrows were all cut to pills counts). Move a single-arrow note next to that neighbour. Pack a note with no arrows into a compact leftover row or grid beside the main cluster, or beside the note holding the pill that points at it, never at a corner, the far edge or the middle of open space.",
+    "examples": "TypesRows: TypePillEditor stranded top-right. CanvasEditor: ReadsAsText in the bottom-left corner. Selection: Labels, Accessibility and Popovers alone at the left. QueryTranslation: StoredBinding floating in the centre. Also CanvasTools (ResizeAdjusting) and JumpTo (JumpToCatalog)."
+   },
+   {
+    "theme": "Board too big or sparse, with an aspect far from the window's about 1.5",
+    "boards": [
+     "CanvasModel",
+     "DetailPanel",
+     "LanguageRules",
+     "References",
+     "Draw",
+     "Grouping",
+     "Locking",
+     "Publishing",
+     "TableOfContents",
+     "TypesRows",
+     "CanvasPlugins",
+     "Connections",
+     "Mentions",
+     "Queries",
+     "Selection",
+     "SlashCommands",
+     "Titles",
+     "TypesFields",
+     "TypesForm",
+     "Validation",
+     "CanvasUI",
+     "ContextMenus",
+     "Topology",
+     "TextEditing",
+     "FuzzyMatching",
+     "Snapping",
+     "Frames",
+     "CanvasShapes",
+     "TypesSync",
+     "Arrows",
+     "Colors",
+     "Boards"
+    ],
+    "count": 32,
+    "severity": 2.5,
+    "rule": "Compute the board's area against the sum of its notes plus their strips, and its aspect. Pack stars by shelves or tiles, ordered by connectivity, with gaps sized to strip width (about one strip plus a margin, not a fixed large spacing), and compress any empty gap wider than a note after strips are placed. Target an aspect of 1.5 (reject above about 2 or below about 0.8): wrap long rows and chains into a grid or columns. A cap on area per note (area at most about 1.0x today's) catches the sprawl before it ships.",
+    "examples": "Publishing: 3339x1061, aspect 3.15. FuzzyMatching: aspect 5.3 from five notes in one row. References: 5643x2841 at 1.19x today. CanvasPlugins: 6653x4348. Mentions: 6041x5690 at 1.63x. Draw: 2.2x today's area. ContextMenus and Topology: tall chains at aspect 0.77 and 0.76."
+   },
+   {
+    "theme": "Disconnected clusters or islands with big gaps between them",
+    "boards": [
+     "Draw",
+     "Grouping",
+     "CanvasUI",
+     "Connections",
+     "TypesForm",
+     "QueryTranslation",
+     "CanvasPlugins",
+     "Selection",
+     "Mentions",
+     "CanvasShapes",
+     "TypesSync",
+     "Boards",
+     "Neighbors",
+     "TypesRows",
+     "ContextMenus"
+    ],
+    "count": 15,
+    "severity": 2.6,
+    "rule": "Treat connected components or loosely linked clusters as rectangles and pack them tightly, with the larger ones first and smaller ones in the gaps beside them. Keep the gap between clusters to about one note width or one strip width. Where a few thin lines join the clusters, move the cluster ends together, or cut those lines to pills.",
+    "examples": "CanvasUI: three islands (Minimap/Card/Zoom, ShapeElements/CanvasView, the window cluster) in 3575x2554. Draw: three loose clusters in 2.2x the area. Connections: the Port family spread over the board at 1.7x. Grouping: three disconnected places."
+   },
+   {
+    "theme": "Staggered or ragged note alignment, and links entering off-centre",
+    "boards": [
+     "DrawScript",
+     "TextEditing",
+     "TypesChecks",
+     "Canvas",
+     "Boards",
+     "Moving",
+     "QueryLanguage",
+     "TypesIsA",
+     "Publishing",
+     "Frames"
+    ],
+    "count": 10,
+    "severity": 1.4,
+    "rule": "Snap notes into rows or columns by connectivity, with linked notes sharing a row or column when they can. Attach each link at the facing sides' midpoints, with the note-gap uniform. Avoid long single-column chains by folding them into a row. Lay notes that have no edges between them in an even balanced grid, with the connected note inside it, not off to one side.",
+    "examples": "DrawScript: staggered grid with Syntax.swift off-centre among its users. TextEditing: EditingTextView to TextEditingStyle entering at off-centre stubs. Canvas: nine unconnected notes in rows of 2, 4 and 2. Publishing: PublicStyle stacked in a long column."
+   },
+   {
+    "theme": "Hub not at the centre of its users, and a repeated hub not drawn as a note",
+    "boards": [
+     "Colors",
+     "Draw",
+     "CanvasEditor",
+     "CanvasRendering",
+     "CanvasSchema",
+     "DrawScript",
+     "QueryLanguage",
+     "LanguageModels",
+     "Moving",
+     "Boards"
+    ],
+    "count": 10,
+    "severity": 1.8,
+    "rule": "Place a hub at the centroid of its users, with users in a ring or fan at a bounded distance (about the hub's size). When the same target would be drawn as a pill beside four or more notes, make it a hub note, or a pill strip they share, instead of one pill per user.",
+    "examples": "Colors: NamedColors sits off to the bottom-right of ColorBook and ColorList. Draw: DrawPoints at the far right, away from its users. CanvasEditor: CanvasEditor.swift low-centre, away from CanvasEditor+Host. CanvasSchema: JSONValue, JSON and Identity pills repeated beside four or five notes."
+   }
+  ],
+  "good": [
+   "Geometry",
+   "CanvasQuickLook",
+   "InfiniteCanvas",
+   "Chrome",
+   "Palette",
+   "CanvasCLI",
+   "CanvasRPC",
+   "Clipboard",
+   "Adornments",
+   "TypesJSON",
+   "Reordering",
+   "DecisionModels"
+  ],
+  "summary": "The stars layout reads well on small, quiet boards (12 judged good; Geometry, CanvasQuickLook, InfiniteCanvas, Chrome and Palette had no issues), but it degrades as boards grow: 17 of the 71 were judged bad and most of the rest ok-with-flaws. The recurring defects are structural, not cosmetic. Placement ignores arrow length, so connected notes land far apart and the frame, loose notes and clusters end up scattered, which also inflates the board's size and skews its aspect. Pill strips are the second fault: hubs carry 30 to 60 pills that fan into one point, sit on the side the note's arrows leave from, and hatch over neighbours. The first fix to try is an edge-length-aware placement with a length cap, followed by caps on pills per strip and per note, side selection that avoids the arrow side, and packing for aspect."
+ },
+ "boards": [
+  {
+   "board": "CanvasEditor",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Hub CanvasEditor.swift is parked low-center with 48 pills as a ring around it on all sides, a dense hatched block; its lines cross its own pills",
+     "where": "CanvasEditor.swift (bottom centre); also CanvasEditor+Host.swift and ShapeIndex.swift, whose top rows fan lines over their own pills",
+     "severity": 2,
+     "rule": "Cap pills per side so a big hub's pills split into several short strips, and keep a strip off the side where the note's arrows leave"
+    },
+    {
+     "what": "Loose notes with no arrows left far from everything",
+     "where": "ReadsAsText.swift (bottom-left corner), MenuPopUp.swift, CoveredEdges.swift",
+     "severity": 2,
+     "rule": "Pack notes with no remaining arrows into a compact row or grid beside the main cluster, never at the board's corners"
+    },
+    {
+     "what": "Long arrows sweep across the board between notes placed far apart",
+     "where": "EdgeScrolling.swift to Scheduler.swift; ShapeIndex.swift to CanvasEditor+Layout.swift and EditorService.swift",
+     "severity": 2,
+     "rule": "Place connected notes by their arrows (pull neighbours together) before spreading for pill room"
+    },
+    {
+     "what": "Hub CanvasEditor.swift, the most-used file, sits away from the files that use it",
+     "where": "CanvasEditor.swift vs CanvasEditor+Host.swift (top left)",
+     "severity": 1,
+     "rule": "Place a hub at the centroid of its users, with users around it"
+    }
+   ]
+  },
+  {
+   "board": "CanvasShapes",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Board is much larger than its four notes need (1.72x today's area) and the notes are far apart, so the arrows between them are long and cross wide empty space",
+     "where": "LayoutInputs.swift to Capabilities.swift and ShapeDefinition.swift; Erasure.swift to ShapeDefinition.swift",
+     "severity": 2,
+     "rule": "Set note gaps by the room pill strips need, not a fixed large spacing; size the board to its content"
+    },
+    {
+     "what": "Pill lines fan and hatch into the note's top edge, and strips sit on the sides where the note's arrows leave",
+     "where": "Capabilities.swift top strip (CanvasDocument, Identity, ShapeRecord...); LayoutInputs.swift bottom pills; Erasure.swift right strip",
+     "severity": 2,
+     "rule": "Put a note's pill strips on the sides away from its arrows, and line each pill up with the note's edge so lines run straight"
+    },
+    {
+     "what": "Pills of one note sit beside another note's strip, so it is unclear whose they are",
+     "where": "Erasure.swift pills (Identity, CanvasDocument) next to LayoutInputs pills",
+     "severity": 1,
+     "rule": "Keep each strip closer to its own note than to any other note"
+    }
+   ]
+  },
+  {
+   "board": "Chrome",
+   "verdict": "good",
+   "issues": []
+  },
+  {
+   "board": "DecisionModels",
+   "verdict": "good",
+   "issues": [
+    {
+     "what": "Eight pills in one strip on DecisionModelsPlugin.swift's left side, packed with lines overlapping at the note edge",
+     "where": "DecisionModelsPlugin.swift (TypeSafeSettings ... ShippedList)",
+     "severity": 1,
+     "rule": "Split a strip longer than about 5 pills into two, one on another side"
+    },
+    {
+     "what": "Plugin system frame sits at top-left with a long gray arrow down to DecisionModelsPlugin.swift, while the other notes are in the centre and right",
+     "where": "Plugin system frame to DecisionModelsPlugin.swift",
+     "severity": 1,
+     "rule": "Place the Plugin system frame next to the note it connects to"
+    }
+   ]
+  },
+  {
+   "board": "FuzzyMatching",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Five unconnected notes in a single row make a very wide strip (aspect 5.3), poor fit for the window",
+     "where": "PathMatcher, FuzzyMatcher, BoundedHeap, Suggestions, TextSearch",
+     "severity": 2,
+     "rule": "Wrap loose notes into a grid near the window's 1.5 aspect"
+    }
+   ]
+  },
+  {
+   "board": "LanguageModels",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "ModelAnswer.swift is a loose note parked far below the rest",
+     "where": "ModelAnswer.swift (bottom-left)",
+     "severity": 2,
+     "rule": "Pack loose notes beside the main cluster, not in empty space"
+    },
+    {
+     "what": "Many long arrows form a mesh across the board; no clear hub with users around it, and an arc sweeps down the left edge",
+     "where": "AnthropicSettings.swift to AnthropicModel.swift, AnthropicSettingsView.swift; AnthropicModel.swift to ClaudeCodeModel.swift",
+     "severity": 2,
+     "rule": "Lay out connected notes by arrow length, and cut the longest arrows into pills when they cross the board"
+    },
+    {
+     "what": "Plugin system frame is far from most notes, low on the right under the plugin note, leaving a large empty lower half",
+     "where": "Plugin system frame / LanguageModelsPlugin.swift",
+     "severity": 1,
+     "rule": "Put the frame by its connected note and close gaps, so the board is not taller than needed"
+    },
+    {
+     "what": "A strip of 7 pills hatches into LanguageModelsPlugin.swift's right edge, which is also where its arrows leave",
+     "where": "LanguageModelsPlugin.swift",
+     "severity": 1,
+     "rule": "Put strips on a side without arrows"
+    }
+   ]
+  },
+  {
+   "board": "Palette",
+   "verdict": "good",
+   "issues": []
+  },
+  {
+   "board": "QueryTranslation",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "StoredBinding.swift floats in the middle as a loose note with no arrows, although it is the target of a pill on QueryTranslator",
+     "where": "StoredBinding.swift (centre)",
+     "severity": 2,
+     "rule": "Place a note whose arrows are all pills at the edge of the user that holds its pill, or in a loose-note row"
+    },
+    {
+     "what": "QueryTranslator.swift has 23 pills wrapped on all four sides, crowded, with lines hatching over its own pills at the top and bottom",
+     "where": "QueryTranslator.swift",
+     "severity": 2,
+     "rule": "Cap pills per side and keep a strip off the side its arrows leave from"
+    },
+    {
+     "what": "Board is large with big gaps between three clusters, so short arrows still leave a wide spread; the Plugin system frame floats above without arrows to the notes",
+     "where": "Plugin system frame (top) vs the three clusters below",
+     "severity": 1,
+     "rule": "Pack clusters tighter and place the frame beside the notes it connects to"
+    }
+   ]
+  },
+  {
+   "board": "StickyNotes",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "StickyNotes.swift has about 60 pills in rows above and below and columns beside it, a dense wall with lines hatching over its own pills",
+     "where": "StickyNotes.swift (top left)",
+     "severity": 2,
+     "rule": "Cap total pills per hub, and put surplus pills in a second ring or on one reference note"
+    },
+    {
+     "what": "NoteLinks.swift and NoteRow.swift sit apart at the bottom left, with only a few arrows to others",
+     "where": "NoteLinks.swift, NoteRow.swift",
+     "severity": 1,
+     "rule": "Place notes next to the notes they connect to"
+    },
+    {
+     "what": "Plugin system frame sits at the bottom, far from the notes it connects to, with a very large inside",
+     "where": "Plugin system frame vs StickyNotes.swift",
+     "severity": 1,
+     "rule": "Place the frame near its connected notes and keep its size in step with the notes"
+    },
+    {
+     "what": "Pill strips of neighbouring notes run into each other, so it is hard to tell whose they are",
+     "where": "NoteHops.swift and NoteSkeleton.swift on the right",
+     "severity": 1,
+     "rule": "Keep a gap between neighbouring notes' strips"
+    }
+   ]
+  },
+  {
+   "board": "Transform",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Two long gray arcs sweep across the board from Transform.swift to the frame's TransformSources and TransformTargets",
+     "where": "Transform.swift to TransformSources and TransformTargets in the Plugin system frame",
+     "severity": 2,
+     "rule": "Place the Plugin system frame close to the note that points into it (below or beside it), so the arrows stay short"
+    },
+    {
+     "what": "Pills hatch against the notes' edges: Transform.swift has 6 pills each side plus top and bottom, and strips sit where its arrows leave",
+     "where": "Transform.swift, TransformState.swift",
+     "severity": 1,
+     "rule": "Keep strips off the arrow side and limit a note to about 3 sides of pills"
+    }
+   ]
+  },
+  {
+   "board": "TypesIsA",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "No hubs with users around them: a mesh of 18 notes, each with up to 30 pills; pills crowd together between neighbouring notes",
+     "where": "RelationshipPill.swift, TypePanel.swift, RelationshipMenus.swift, FarNotes.swift",
+     "severity": 2,
+     "rule": "Keep a gap between neighbouring notes at least as large as their pill strips, so strips do not meet"
+    },
+    {
+     "what": "Long arrows cross the board between distant notes",
+     "where": "EndRules.swift to TypeCompletions.swift; TypePanel.swift to FarNotes.swift and RelationshipWrites.swift",
+     "severity": 2,
+     "rule": "Place notes near the notes they connect to and cut the longest arrows into pills"
+    },
+    {
+     "what": "Lines hatching over a note's own pills: a note's pills form rings and strips on all sides, thick tangles at the edge",
+     "where": "TypeChips.swift, TypeMenus.swift, TypeCompletions.swift",
+     "severity": 2,
+     "rule": "Cap pills per side so lines run straight, and keep strips off the arrow side"
+    },
+    {
+     "what": "Notes in the lower part sit apart in a ragged line",
+     "where": "EndSelection.swift, RelationshipDeletes.swift, TypeAccessibility.swift",
+     "severity": 1,
+     "rule": "Pack weakly connected notes closer to the cluster"
+    }
+   ]
+  },
+  {
+   "board": "Boards",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "BoardHeadings.swift sits far from BoardCrumbs.swift (773) with a huge arc over the top, and BoardHeadingsPlugin is a 649 line to it; users of a hub are not kept adjacent",
+     "where": "BoardCrumbs.swift to BoardHeadings.swift; BoardHeadingsPlugin to BoardHeadings.swift",
+     "severity": 2,
+     "rule": "Place notes joined by a real (uncut) arrow within a bounded distance; avoid arcs that wrap over a whole note."
+    },
+    {
+     "what": "Plugin system frame is a big empty rectangle to the right; plugins have long gray lines to far-apart notes, and BoardQueries.swift floats off alone at the far right",
+     "where": "Plugin system frame, BoardQueries.swift, BoardKinds",
+     "severity": 2,
+     "rule": "Position the frame next to the notes it connects to and put notes linked only to a plugin directly beside the frame edge, keeping the frame compact."
+    },
+    {
+     "what": "Pill strips are dense; notes such as Boards.swift have pills on the same side as their arrows, and lines run through the pill columns (e.g. PathValidation.swift and ShapePaths.swift)",
+     "where": "Boards.swift, PathValidation.swift",
+     "severity": 1,
+     "rule": "Put pill strips on the sides facing away from the note's remaining arrows."
+    },
+    {
+     "what": "Notes are widely spread, leaving large gaps between the three left blocks",
+     "where": "BoardPath.swift, BoardsStyle.swift, OpensBoard.swift",
+     "severity": 1,
+     "rule": "Pack components by their size, closing gaps after pill strips are placed."
+    }
+   ]
+  },
+  {
+   "board": "CanvasRendering",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Long arrows radiate from CanvasEditor+Drawing.swift across the board to DotGrid (783) and OutlineStandoff (653); a spoke hub with leaves scattered at the bottom",
+     "where": "CanvasEditor+Drawing.swift to DotGrid.swift, ShapeShadows.swift, OutlineStandoff.swift",
+     "severity": 2,
+     "rule": "Place a hub's users in a ring around it at a distance bounded by the hub's size, rather than spread along the board."
+    },
+    {
+     "what": "Curved loops from BoardPicture and Silhouettes go around notes (big arcs below BoardPicture, beside BoardPreviews), reading messy",
+     "where": "BoardPicture.swift to BoardPreviews.swift; Silhouettes.swift to BoardPreviews.swift",
+     "severity": 2,
+     "rule": "Prefer straight links; if an arc is needed, avoid a 'U' that doubles back past its own end."
+    },
+    {
+     "what": "SkeletonTextBars and SkeletonText are a loose pair parked at the lower left, far from everything",
+     "where": "SkeletonTextBars.swift, SkeletonText.swift",
+     "severity": 1,
+     "rule": "Park unconnected components next to the main cluster, not at a corner."
+    },
+    {
+     "what": "Pill fans onto CanvasEditor+Drawing and BoardPicture bunch lines tightly into one point, hatching",
+     "where": "CanvasEditor+Drawing.swift top strip, BoardPicture.swift top",
+     "severity": 1,
+     "rule": "Spread pill lines across the strip side's width; cap fan angle."
+    }
+   ]
+  },
+  {
+   "board": "CanvasRPC",
+   "verdict": "good",
+   "issues": [
+    {
+     "what": "Help.swift to Commands.swift is a long arc around the right side, and Help is crowded against Arguments",
+     "where": "Help.swift, Commands.swift",
+     "severity": 1,
+     "rule": "Prefer straight routing for the one long edge; give notes a minimum gap."
+    }
+   ]
+  },
+  {
+   "board": "ContextMenus",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Tall narrow board (aspect 0.77, 1465x1904) as a vertical chain; Resolution.swift is far below, with a 622-long arrow into ContextMenus.swift from ShapeContextMenus and many pill lines running a long way",
+     "where": "Resolution.swift, MenuItems.swift, ShapeContextMenus",
+     "severity": 3,
+     "rule": "Place notes to fit the window's aspect, using rows and columns of components not just one column."
+    },
+    {
+     "what": "Long gray arcs from ContextMenus.swift sweep under the Plugin system frame to ShapeContextMenus and CanvasContextMenu",
+     "where": "ContextMenus.swift to CanvasContextMenu, ShapeContextMenus",
+     "severity": 2,
+     "rule": "Put the frame beside the note it connects to so the lines are short; keep arcs from crossing the frame's inside."
+    },
+    {
+     "what": "Resolution.swift's bottom pill row has long fans of lines passing the full row width and a side column; pills at the top have lines spanning many pill widths",
+     "where": "Resolution.swift, MenuItems.swift top row (Order, Registry, Groups, Selection)",
+     "severity": 2,
+     "rule": "Place a strip close to its note (short lines), and put the strip's pills nearer than a note's width."
+    },
+    {
+     "what": "Big empty area at right and bottom left beside the chain",
+     "where": "right half below the frame",
+     "severity": 2,
+     "rule": "Fill the window's width: lay out components side by side."
+    }
+   ]
+  },
+  {
+   "board": "Find",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Find.swift at lower left has a thick bundle of long curved lines to its pills, which are spread in two columns far above it, hatching over its own strip",
+     "where": "Find.swift and its pills (Order, Registry, ShapeScopes, ... Input, ChangeSet)",
+     "severity": 3,
+     "rule": "Pills must sit adjacent to their note, in strips of at most 8 on its sides; do not let a pill strip detach from its note."
+    },
+    {
+     "what": "Pills stand between notes: FindState.swift's bottom pills FindOverlay/FindState sit left of FindPanel with long lines; pills for FindPanel are placed in the way of the line to FindIndex",
+     "where": "FindState.swift, FindPanel.swift, FindIndex.swift",
+     "severity": 2,
+     "rule": "Keep pill strips on sides without other arrows; leave arrow corridors."
+    },
+    {
+     "what": "The Plugin system frame is below, with long gray lines to Find.swift; FindableTexts note is far from FindPlugin users",
+     "where": "Plugin system, Find.swift",
+     "severity": 2,
+     "rule": "Place the frame beside the note that uses its plugins."
+    },
+    {
+     "what": "Notes are spread over a wide board, with FindStyle far from FindIndex",
+     "where": "FindStyle.swift, FindIndex.swift",
+     "severity": 1,
+     "rule": "Pack linked notes closer; limit mean arrow length."
+    }
+   ]
+  },
+  {
+   "board": "JumpTo",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "JumpTo.swift is a hub at the bottom with a thick bundle of long curved lines up to pills clustered in the middle, hatching over the area between the notes",
+     "where": "JumpTo.swift and its pills (Commands, HostSlots, Order, ShippedList, KeyChord, Keyboard, CanvasEditor, ...)",
+     "severity": 3,
+     "rule": "A note's pill strip stays within a bounded distance of the note (short lines) rather than centered far above; strips at note sides."
+    },
+    {
+     "what": "JumpToCatalog.swift is parked at the far lower left, linked by a long line (325 and longer) to JumpTo.swift",
+     "where": "JumpToCatalog.swift",
+     "severity": 2,
+     "rule": "Place a note near the note it connects to, even a hub."
+    },
+    {
+     "what": "JumpToPalette pills (JumpToPalette, JumpToState) float above JumpTo with lines running down through the middle",
+     "where": "pills over JumpTo.swift",
+     "severity": 1,
+     "rule": "Pills of a note go on the nearer side of that note."
+    }
+   ]
+  },
+  {
+   "board": "Moving",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Dropping.swift to Moving.swift is a 501 arc looping under the middle to reach the right; many lines from both cross a band across the board to pills of the other",
+     "where": "Dropping.swift, Moving.swift",
+     "severity": 2,
+     "rule": "Place the two ends of the longest remaining arrow adjacent; spread hubs by distance."
+    },
+    {
+     "what": "Pill strips are dense at the Move.swift and MoveToMenu.swift left and right, with lines hatching and a long vertical chain on the left",
+     "where": "Move.swift, MoveToMenu.swift",
+     "severity": 1,
+     "rule": "Cap pills per note or use a larger gap per strip; a note with 22 pills becomes a block."
+    },
+    {
+     "what": "Plugin system frame is at the bottom right, away from Moving.swift, with a pill standing in for it, and a empty gap beside",
+     "where": "Plugin system, MovingPlugin",
+     "severity": 1,
+     "rule": "Align the frame to the notes it touches."
+    }
+   ]
+  },
+  {
+   "board": "QueryCommands",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "QueryParams.swift at lower left has pills that are bent in tight arcs with lines fanning from a single point beneath its strip",
+     "where": "QueryParams.swift pills (Automation, SchemaDefined, Commands, JSON, Hints)",
+     "severity": 2,
+     "rule": "Spread a strip's lines over the note's edge; don't converge them at its top."
+    },
+    {
+     "what": "Long lines from QueryCommands to QueryParams and QueryOutput pills form a big triangle with a big void in the middle; pills (QueryOutput, QueryParams) sit as pills of an adjacent note",
+     "where": "QueryCommands.swift, QueryParams.swift, QueryOutput.swift",
+     "severity": 1,
+     "rule": "Place connected notes closer; tighten the board."
+    },
+    {
+     "what": "QueryOutput's pills sit on top with lines curling to its top corner, lines running behind pills of QueryCommands",
+     "where": "QueryOutput.swift",
+     "severity": 1,
+     "rule": "Place pills on sides facing away from other notes' strips."
+    }
+   ]
+  },
+  {
+   "board": "SlashCommands",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Very large (2707x2892, 1.21 of today) with huge empty gaps; SlashCommand.swift to SlashChoices.swift (1190) and SlashCommandTyping.swift to SlashArguments.swift (1187) cross the board",
+     "where": "SlashCommand.swift, SlashChoices.swift, SlashCommandTyping.swift, SlashArguments.swift",
+     "severity": 3,
+     "rule": "Bound the edge length: put the endpoints of any uncut arrow within a small multiple of the note size, rearranging components."
+    },
+    {
+     "what": "SlashCommands.swift at the bottom has bundled arcs, with double lines coming through its left, and pills far above it",
+     "where": "SlashCommands.swift",
+     "severity": 2,
+     "rule": "Keep pill strips next to their note; avoid parallel arc pairs."
+    },
+    {
+     "what": "The Plugin system frame is at top left, linked by a long vertical to SelectionSlashCommands; SlashBar with 32 pills is a dense block on top right far from the others",
+     "where": "Plugin system, SlashBar.swift",
+     "severity": 2,
+     "rule": "Place frame next to its users; limit a note's pills (spread more over bigger perimeter)."
+    },
+    {
+     "what": "Notes are scattered as a ladder across the board; SlashTarget, SlashCommandLine lie far from users",
+     "where": "SlashTarget.swift, SlashCommandLine.swift",
+     "severity": 2,
+     "rule": "Place loosely connected notes in the nearest empty slot to their neighbours."
+    }
+   ]
+  },
+  {
+   "board": "Titles",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Very large (3784x2574, 1.68 of today) with the notes spread around a huge Plugin system frame; TitleFindPlugin to TitleFind.swift 1022, TitleQueriesPlugin to TitleQueries 770, TitleFind to TitleCovers 709",
+     "where": "TitleFind.swift, TitleQueries.swift, TitleCovers.swift and their plugins",
+     "severity": 3,
+     "rule": "Place notes beside the plugin that is their only connection; keep the frame compact and its outside users near the frame."
+    },
+    {
+     "what": "The frame's inside is sparse: TitleCoverSurfaces, TitlePillLooks, ShapeTitles on top, 'title' note left, TitleTabs right, all spread with big empty space, long gray lines",
+     "where": "Plugin system frame",
+     "severity": 2,
+     "rule": "Lay a frame's inside as a star with tight spacing, shrinking the frame to its contents."
+    },
+    {
+     "what": "TitleHeader.swift and TitleNames.swift are loose notes parked top left",
+     "where": "TitleHeader.swift, TitleNames.swift",
+     "severity": 2,
+     "rule": "Place loose notes next to the main cluster."
+    },
+    {
+     "what": "TitleCovers and TitleTabStyle pill fans converge on TitleCovers' top, crowding lines",
+     "where": "TitleCovers.swift, TitleTabStyle.swift",
+     "severity": 1,
+     "rule": "Spread fan lines; don't aim a whole strip at the one corner."
+    }
+   ]
+  },
+  {
+   "board": "TypesFields",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Huge (4662x2933, 1.72 of today) and a hairball, with very long arrows (FieldTitling to FieldText 809, fieldValues to FieldValues 726, FileFields to RelationshipIndex 618) crossing the middle",
+     "where": "FieldTitling.swift, FieldText.swift, FileFields.swift, RelationshipIndex.swift",
+     "severity": 3,
+     "rule": "Bound the edge length; use hub-and-users with users in a ring and reduce total spread; the layout must pack."
+    },
+    {
+     "what": "Large hubs (RelationshipIndex 28 pills, FileFields, FieldBook) have pill fans of lines converging into one point, hatching densely over the strips",
+     "where": "RelationshipIndex.swift, FileFields.swift, FieldBook.swift",
+     "severity": 2,
+     "rule": "Spread pill lines; cut more edges into pills for heavy hubs or add strips on all four sides."
+    },
+    {
+     "what": "Plugin system frame with the two purple notes (endRule, fieldValues) is isolated at the lower right; fieldValues has a 726 line to FieldValues.swift",
+     "where": "endRule, fieldValues frame",
+     "severity": 2,
+     "rule": "Put a frame beside the note its entries connect to."
+    },
+    {
+     "what": "Many loose-looking notes (FieldWords, RowList, FieldSummary, TitleSource) in the middle left are scattered, with long lines",
+     "where": "FieldWords.swift, RowList.swift, TitleSource.swift",
+     "severity": 2,
+     "rule": "Park low-degree notes right beside their one neighbour."
+    }
+   ]
+  },
+  {
+   "board": "TypesType",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "TypeSchema.swift to SchemaReferences.swift (763), schema to TypeSchema (743) and TypeColorDirective to TypeSchema (656): long lines across the lower right, with the schema/relationship notes in the frame far above",
+     "where": "TypeSchema.swift, SchemaReferences.swift, schema (frame)",
+     "severity": 2,
+     "rule": "Place the frame's members close to the notes that use them, or put the notes next to the frame."
+    },
+    {
+     "what": "SchemaReadings.swift and JSONCodeColors.swift are loose notes parked at the bottom left, far from TypeSchema",
+     "where": "SchemaReadings.swift, JSONCodeColors.swift",
+     "severity": 2,
+     "rule": "Place a loosely connected note next to its nearest neighbour."
+    },
+    {
+     "what": "The Plugin system frame is large with a sparse inside (6 or so notes, much empty space) and gray lines escaping it",
+     "where": "Plugin system frame",
+     "severity": 1,
+     "rule": "Shrink the frame to its contents and lay it out as a tight grid or star."
+    },
+    {
+     "what": "TypeIndex.swift (29 pills) is a dense block at top right with lines hatching through its left strip",
+     "where": "TypeIndex.swift",
+     "severity": 1,
+     "rule": "Cap pills per strip; place strips on sides without arrows."
+    }
+   ]
+  },
+  {
+   "board": "Arrows",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Very long arrows sweep across the board between top-row hubs and the lower plugin frame, crossing the middle band (ArrowsPlugin to ArrowBindingRules about 1580; ArrowEndLine to ArrowStyle; ArrowParts to Connectables). They fan from a few hubs into a hatch.",
+     "where": "ArrowParts, ArrowLabelEditing, ArrowEndLine, ArrowStyle, Connectables",
+     "severity": 2,
+     "rule": "Place notes by connectivity (force or ranked), so heavily connected notes sit adjacent; penalize edge length in the packing, not only crossings."
+    },
+    {
+     "what": "Several stars have pill strips of 6 to 8 on both sides, so each star is a dense block. ArrowDefinition has 50 pills in a wide ring. Pill-note lines bunch where strips meet.",
+     "where": "ArrowDefinition.swift (50 pills), ArrowLabelEditing, ArrowTargeting",
+     "severity": 2,
+     "rule": "Cap pills per note near 24 and spend the rest as hub notes or a shared hub on the board; spread strips over all four sides."
+    },
+    {
+     "what": "Plugin-system frame sits below, away from the notes it connects to. Long grey/teal arcs from ArrowLights/ArrowPorts and a big blue arc from ArrowPlugin to the 'arrow' note run through the frame's lower half.",
+     "where": "ArrowLightsPlugin, ArrowPortsPlugin, ArrowPlugin, arrow",
+     "severity": 2,
+     "rule": "Place the plugin frame beside the notes with the most arrows into it, and keep type/edge notes on the side facing their callers."
+    },
+    {
+     "what": "Strips at the lower edge (ArrowDefinition, ArrowFlow) have uneven rows, and the whole board is 12 percent bigger than today with scattered notes (ArrowGeometry, ArrowThrough, ArrowStyle).",
+     "where": "ArrowGeometry.swift, ArrowThrough.swift, ArrowStyle.swift",
+     "severity": 1,
+     "rule": "Compact toward aspect 1.5 and pull low-degree notes next to their one neighbor."
+    }
+   ]
+  },
+  {
+   "board": "CanvasPersistence",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Pill lines from OpaqueProps and BoardCodec run through each other's pills; the long horizontal lines cut across Identity, ShapeMeta, ShapeRecord, SchemaDefined, Erasure and Registry pills so it is hard to tell whose line is whose.",
+     "where": "OpaqueProps.swift to BoardCodec.swift pills, between the two notes",
+     "severity": 2,
+     "rule": "Pills must sit on the side of their note away from other notes. Do not put a strip on the side facing a neighbor note."
+    },
+    {
+     "what": "The JSON-to-JSONValue line passes under JSON.swift and the pill row, and two notes (JSONValue, PropsMigration) share a bare join.",
+     "where": "JSONValue.swift, OpaqueProps.swift",
+     "severity": 1,
+     "rule": "Route and place pill strips clear of the arrow from the note to another note."
+    }
+   ]
+  },
+  {
+   "board": "CanvasCLI",
+   "verdict": "good",
+   "issues": [
+    {
+     "what": "main.swift floats at the lower left while its single arrow runs straight to Invocation. This is fine, only slightly detached.",
+     "where": "main.swift",
+     "severity": 1,
+     "rule": "Align a leaf with its hub's row to tighten."
+    }
+   ]
+  },
+  {
+   "board": "Colors",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Long arrows: ColorBook to NamedColors (about 900), ColorList to NamedColors (800), and ColorsPlugin to ColorDefaults (650) sweep as arcs across the board, bending around other notes and cutting under Colors.swift.",
+     "where": "NamedColors.swift, ColorBook.swift, ColorList.swift, ColorsPlugin",
+     "severity": 2,
+     "rule": "Put a hub that many notes use at the centre of its users; here NamedColors sits off to the bottom-right of its users."
+    },
+    {
+     "what": "Plugin-system frame is far on the right and its inside is a scattered grid of plugin notes with large gaps. ColorWords floats above the frame, tied by a long thin line.",
+     "where": "Plugin system, ColorWords.swift, ColorsPlugin",
+     "severity": 2,
+     "rule": "Size the frame to its content and pull plugin notes in. Place a note linked only to the frame next to the frame."
+    },
+    {
+     "what": "ColorTints is at far left, bottom-left, with its arrow arcing around ColorBook; the board is 28 percent bigger than today with empty space top-left and top-right.",
+     "where": "ColorTints.swift",
+     "severity": 1,
+     "rule": "Compact by pulling single-link notes toward the neighbor they link to."
+    },
+    {
+     "what": "Pill strips on ColorMenu and ColorPanelModel sit on the side with the note-to-note lines, so lines hatch over them.",
+     "where": "ColorMenu.swift, ColorPanelModel.swift",
+     "severity": 1,
+     "rule": "Keep strips off the sides where note arrows leave."
+    }
+   ]
+  },
+  {
+   "board": "Draw",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "The board is 2.2 times today's area, broken into three loosely connected clusters (left column, top right, right-middle) with big empty spaces; far too big for the window, and the details shrink to unreadable.",
+     "where": "whole board; left stack (DrawVocabulary, Drawing, DrawFields...) vs right (DrawPoints, DrawLayout, Draw)",
+     "severity": 3,
+     "rule": "Pack components compactly (shelf pack by area, aspect near 1.5) and avoid gaps beyond one note's width between clusters."
+    },
+    {
+     "what": "Very long arrows: DrawNames/DrawChecks/DrawEdgeIdentities to DrawPoints.swift (900 to 1200) cross the right half; DrawPoints sits at the far right, away from its users.",
+     "where": "DrawPoints.swift, plugin notes in the Plugin system frame",
+     "severity": 3,
+     "rule": "Place a hub in the middle of the notes it links to, not at the end of a row."
+    },
+    {
+     "what": "Plugin-system frame is in the lower right, with grey arcs of about 1000 from DrawPoints into it. Its inside is a good star, but the frame is far from the notes it connects to.",
+     "where": "Plugin system frame, DrawPlugin",
+     "severity": 2,
+     "rule": "Put the frame beside the notes it has the most arrows to."
+    },
+    {
+     "what": "Strips of 6 to 8 pills on both sides of Drawing, DrawBrought, DrawLayout, Draw and SurroundingsHub make crowded blocks. Pill lines hatch over each note's own pills (Drawing.swift 39).",
+     "where": "Drawing.swift, DrawLayout.swift, Draw.swift",
+     "severity": 2,
+     "rule": "Cap pills per note and spread them over all sides."
+    }
+   ]
+  },
+  {
+   "board": "Grouping",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "The notes are in three disconnected places (left, upper right, lower right), with the frame at bottom-left and wide gaps; the board is 22 percent bigger than today.",
+     "where": "GroupDraw, BoardGroups, Grouping, GroupQueries",
+     "severity": 2,
+     "rule": "Pack the layout against the aspect with the frame placed beside its users and shorter gaps."
+    },
+    {
+     "what": "GroupQueries sits far down-right and its arrow to GroupQueriesPlugin is an arc of about 535 across empty space. The arrows into the frame from GroupDraw run along the left side and across the frame border.",
+     "where": "GroupQueries.swift, GroupQueriesPlugin, GroupDraw.swift",
+     "severity": 2,
+     "rule": "Put a note next to the plugin it connects to and keep arrows between a note and a frame member short."
+    },
+    {
+     "what": "Pill lines from Grouping.swift run into a hatch over its own pills on the left (SchemaDefined, ContextMenus, MenuItems, KeyChord, Keyboard) with several lines passing under the pills; the BoardGroups line also crosses them.",
+     "where": "Grouping.swift",
+     "severity": 1,
+     "rule": "A strip must not sit on the side from which note arrows leave."
+    }
+   ]
+  },
+  {
+   "board": "Locking",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Locking.swift's left strip is a block of 10 to 12 pills tight against the note, and its lines (from LockState to the note) run through the pills; LockState's pills sit on the side facing Locking.",
+     "where": "Locking.swift, LockState.swift",
+     "severity": 3,
+     "rule": "No pill strip on the side facing the other note; hold strips to 8 per strip and use the open side."
+    },
+    {
+     "what": "The board is nearly 1:1 tall and has a large empty area to the right of the frame and between notes and frame, with the frame's inside spread wider than it needs.",
+     "where": "Plugin system frame",
+     "severity": 1,
+     "rule": "Compact the frame and place it to the side to get aspect near 1.5."
+    }
+   ]
+  },
+  {
+   "board": "Publishing",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Aspect 3.15 on a 3339 x 1061 board: far too wide for a window; text is tiny when it fits.",
+     "where": "whole board",
+     "severity": 3,
+     "rule": "Wrap rows so aspect stays under 2; stack the frame under the notes."
+    },
+    {
+     "what": "PublishingState's right strip sits on the side its arrows leave to PublicChip, and lines pass over DetailPanel, NeighborDetails, SelectionState pills; the Publishing note's lines to PublicChip run through its left strip.",
+     "where": "PublishingState.swift, Publishing.swift",
+     "severity": 2,
+     "rule": "Pills not on the side with note-to-note arrows."
+    },
+    {
+     "what": "The PublicStyle note is bare, with only a vertical line, stacked between PublicChip and PublishMenus as a long column.",
+     "where": "PublicStyle.swift",
+     "severity": 1,
+     "rule": "Avoid long single-column chains; fold them into a row."
+    },
+    {
+     "what": "Plugin frame: a long blue arc and a grey line from PublishingPlugin cross the frame to 'public'; the frame is tall with white space.",
+     "where": "PublishingPlugin, public",
+     "severity": 1,
+     "rule": "Place type notes beside the plugin."
+    }
+   ]
+  },
+  {
+   "board": "Reordering",
+   "verdict": "good",
+   "issues": [
+    {
+     "what": "23 pills around one note is a dense ring, but strips are tidy and short, and the frame sits below. A small flaw: pills at the top (CanvasPlugin, ShapeRecord) stack close.",
+     "where": "Reordering.swift",
+     "severity": 1,
+     "rule": "Spread pills evenly over all four sides."
+    }
+   ]
+  },
+  {
+   "board": "TableOfContents",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Grey arcs of about 950 and 885 leave TableOfContents.swift through the frame to TableOfContentsPlugin and ContentsSections; two arcs cross over the frame's left part and end in unexplained spots.",
+     "where": "TableOfContents.swift, ContentsSections, TableOfContentsPlugin",
+     "severity": 2,
+     "rule": "Put the note with the most arrows into the frame on the frame's border, and route arrows to frame members from the nearest side."
+    },
+    {
+     "what": "The bottom row of five notes (ContentsDragging, ContentsList, ContentsListing, ContentsState) is a long line far below the top, with a long arc from ContentsList to ContentsListing; ContentsState has 24 pills in a block.",
+     "where": "ContentsList.swift, ContentsListing.swift, ContentsState.swift",
+     "severity": 2,
+     "rule": "Fold long rows into a grid and cut per-note pills to what fits in 8-per-strip."
+    },
+    {
+     "what": "Plugin-system inside is a good star, but TableOfContentsPlugin's arrows to ContentsHeadings/Marks are long and the frame has empty space.",
+     "where": "Plugin system",
+     "severity": 1,
+     "rule": "Size the frame to fit its star."
+    }
+   ]
+  },
+  {
+   "board": "TypesChecks",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "FieldChecks has 44 pills in a dense block below with strips of 8+ on both sides, plus a long ring around the bottom; its lines hatch over its own pills.",
+     "where": "FieldChecks.swift",
+     "severity": 2,
+     "rule": "Cap pills per note and move the excess into hub notes."
+    },
+    {
+     "what": "Notes sit in a loose chain with long vertical and diagonal lines (RelationChecks to FieldCheck, FieldChecker to FieldChecks, FieldChecks to RunTouches); FieldSchemas floats at right with no direct arrow except via pills.",
+     "where": "FieldCheck.swift, FieldSchemas.swift, RunTouches.swift",
+     "severity": 1,
+     "rule": "Place notes by their arrows; a note linked to one neighbor goes beside it."
+    }
+   ]
+  },
+  {
+   "board": "TypesRows",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Notes are scattered over a 4705x2785 board (137 percent of today's area) with large gaps and TypePillEditor stranded top-right and alone (no arrows), RowField/RowGeometry floating top-middle.",
+     "where": "TypePillEditor.swift, RowField.swift, RowGeometry.swift",
+     "severity": 3,
+     "rule": "Park loose notes in a compact row near the others, never at the far edge; pack by shelves."
+    },
+    {
+     "what": "Huge crowded pill strips (RowBook 45, RowsDrawing, RowShown, RowFaces, RowsView) form big dense blocks with lines passing over neighbors' pills; note-to-note lines (RowsValuesDrawing to RowFaces, RowBook to FieldsCommand) run through pill strips.",
+     "where": "RowBook.swift, RowsValuesDrawing.swift, RowFaces.swift",
+     "severity": 3,
+     "rule": "Never put pill strips on the side where a note-to-note arrow leaves; cap pills per note."
+    },
+    {
+     "what": "RowsView's strips run down about 10 pills in a long column; its lower strips are far from the note.",
+     "where": "RowsView.swift",
+     "severity": 2,
+     "rule": "Hold strips to 8 and wrap to the next side."
+    },
+    {
+     "what": "The Plugin-system frame holds a single note (TypeRowsPlaces), parked under TypeRows as a tiny frame.",
+     "where": "TypeRowsPlaces",
+     "severity": 1,
+     "rule": "A frame of one note should sit next to its user, which it does; accept it, or draw the note without a frame."
+    }
+   ]
+  },
+  {
+   "board": "Automation",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Two very long arcs sweep around the board: Commands.swift to Automation.swift (1021) loops under the Plugin system frame, and QueryRefusals to Automation.swift curves out to the right. Commands sits far right of its user, with Show.swift and Params.swift stacked in a separate column.",
+     "where": "Commands.swift (right column) to Automation.swift (left column)",
+     "severity": 2,
+     "rule": "Place a hub's strongest users adjacent to it; weigh arrow length so a pair joined by an uncut arrow lands within one note-gap, and route arcs outward only when they cannot be shortened."
+    },
+    {
+     "what": "Pill strips are heavy next to small notes: Automation.swift and Capture.swift each carry a column of 8 to 9 pills on both sides with lines fanning into the note's edge; strips on the Show.swift column crowd the same side the Commands arrow leaves from.",
+     "where": "Automation.swift, Capture.swift, Show.swift",
+     "severity": 1,
+     "rule": "Put a note's pill strips on the sides away from its uncut arrows, and spread over more sides before a strip reaches 8."
+    },
+    {
+     "what": "The Plugin system frame has a lot of empty space to its right and below its two notes, and the AutomationPlugin to AutomationCommands link is the only arrow; the gray line from Automation.swift enters it at the far edge.",
+     "where": "Plugin system frame",
+     "severity": 1,
+     "rule": "Size a frame to its content plus a margin, and place it next to the notes it connects to."
+    }
+   ]
+  },
+  {
+   "board": "CanvasPlugins",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Huge board: 6653x4348, 1.25x today, with a 40-wide fan of orange notes in the Plugin system frame, each linked by a long blue line to one blue hub (the 'core' note); lines are 1000+ points and the frame takes two thirds of the board. Long arrows from the core to MadeBeside, Shapes, AccessibleOrder reach 2400+.",
+     "where": "Plugin system frame: core hub and its orange notes ring",
+     "severity": 3,
+     "rule": "Lay a star's leaves in a compact ring or grid sized to the hub (radius grows with count, orange notes in two or three tight rings), not around the full frame edge."
+    },
+    {
+     "what": "The frame is placed below the pink notes but connected to the hub notes through arrows crossing the whole board; HostSlots.swift's fan of lines runs 1000+ down into the frame, and one gray arc sweeps from the right edge round the whole frame.",
+     "where": "HostSlots.swift, Commands.swift, and the right-hand arc to the frame's LayoutPenalty note",
+     "severity": 3,
+     "rule": "Put the frame beside the notes it connects to and cap arrow length; cut long edges into pills instead of arcs across the board."
+    },
+    {
+     "what": "Pink notes are scattered in three clusters (left column Registry/PropertyTable, top row, far right CorePoints.swift) with big gaps, and CorePoints.swift sits alone at the far right with a long arc.",
+     "where": "Registry.swift, PropertyTable.swift, CorePoints.swift, ShippedTest.swift",
+     "severity": 2,
+     "rule": "Pack the stars of a board by their connections into one compact block, with loose or lightly-connected stars parked close to their strongest neighbor."
+    },
+    {
+     "what": "Strips of 10-plus pills in a fan above CanvasPlugin.swift and Registry.swift where the lines hatch over one another.",
+     "where": "CanvasPlugin.swift (top), Registry.swift",
+     "severity": 1,
+     "rule": "Cap a strip at 8 and keep pill lines parallel, not fanning, by making rows straight."
+    }
+   ]
+  },
+  {
+   "board": "CanvasQuickLook",
+   "verdict": "good",
+   "issues": []
+  },
+  {
+   "board": "Connections",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Notes of one family are scattered across the board: PortState, Ports, PortOverlay in the top left, PortEdges top right, PortTable and ConnectionParts on the right, Connect bottom right. Only a few straight black arrows tie them, and areaVsToday 1.7 shows it is much bigger than needed with big empty areas.",
+     "where": "PortEdges.swift, PortTable.swift, Connect.swift against the left cluster",
+     "severity": 3,
+     "rule": "Pack stars into a tight grid ordered by arrow connectivity and bound the board's area against the sum of its notes plus strips."
+    },
+    {
+     "what": "The Plugin system frame sits at the bottom left, far from the pink notes it connects to; PortEdgesPlugin links to PortEdges.swift with a 515 gray line, and ConnectionMade/channel are far from Connect.swift.",
+     "where": "Plugin system frame vs PortEdges.swift and Connect.swift",
+     "severity": 2,
+     "rule": "Put the frame beside the star holding most of its pills, and shorten its link by placing the connected notes at the frame edge."
+    },
+    {
+     "what": "PortEdges.swift's pills sit in a loose strip above it, with several long lines fanning out and crossing each other's strip; PortState.swift has 25 pills with arcs looping around its own pill strips.",
+     "where": "PortEdges.swift, PortState.swift, Ports.swift",
+     "severity": 2,
+     "rule": "Place pills for a note in strips on the sides not taken by its arrows, and keep each strip a straight row so lines do not arc round their neighbors."
+    },
+    {
+     "what": "Internal frame layout wastes space: the blue PortsPlugin star has orange leaves placed with big gaps and the purple 'channel' note far to the left.",
+     "where": "PortsPlugin, channel, ConnectionMade",
+     "severity": 1,
+     "rule": "Lay the frame's inside as a compact star of its dominant plugin."
+    }
+   ]
+  },
+  {
+   "board": "DrawScript",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Notes sit in a staggered grid with uneven gaps, and several arrows cross long diagonal distances through gaps (Syntax to Solver 468, Solver to ScriptError, Syntax to Parser arc) while heavy hub Syntax.swift is not centered among its users.",
+     "where": "Syntax.swift, Solver.swift, ScriptError.swift, Parser.swift",
+     "severity": 2,
+     "rule": "Place a hub centrally and its users on rings by connection weight; align notes in rows so edges run straight."
+    },
+    {
+     "what": "Lines run into note edges at off-center points and one passes behind the DrawScript.swift tab edge region; many near-parallel lines between the left column and Syntax make it look tangled although none cross.",
+     "where": "Syntax.swift to LayoutProblem.swift and Solver.swift",
+     "severity": 1,
+     "rule": "Attach arrows at the facing sides' midpoints of notes aligned in rows or columns."
+    }
+   ]
+  },
+  {
+   "board": "InfiniteCanvas",
+   "verdict": "good",
+   "issues": []
+  },
+  {
+   "board": "Mentions",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Huge sprawling board, 6041x5690, 1.63x today, with 45 notes in a loose tree of scattered stars joined by single long arrows (1858 MentionPicker to Mentionable, 1673 MentionDrawing to MentionTextFormat, 1003 MentionParts to MentionDrawing); big empty areas between clusters.",
+     "where": "MentionPicker.swift, Mentionable.swift, MentionDrawing.swift, MentionTextFormat.swift",
+     "severity": 3,
+     "rule": "Bound the area: tighten spacing between stars, place a star next to its heaviest neighbor, and cut or fold arrows over a length cap into pills."
+    },
+    {
+     "what": "The Plugin system frame sits wide across the top with its notes in a wide row, a gray line going 1000+ to a pink note far down; a long thin line from the frame's right plugin to MentionValidation at the right.",
+     "where": "Plugin system frame at top, MentionValidation.swift",
+     "severity": 2,
+     "rule": "Put the frame next to its pink notes and lay its inside as a star or compact grid."
+    },
+    {
+     "what": "Hubs with 30+ pills (MentionState.swift, MentionDrawing.swift, Mentions.swift) have crowded blocks of strips on several sides with lines hatching over each other near the note; arcs loop from strips back round the note.",
+     "where": "MentionState.swift, MentionDrawing.swift, MentionTextFormat.swift",
+     "severity": 2,
+     "rule": "Spread pills over all four sides in short strips, with the long side of each strip facing away from the note's own uncut arrows."
+    },
+    {
+     "what": "Small notes at the right edge (MentionMatching, MentionCommands) and left (MentionMenu, MentionKeys) float apart from the main tree.",
+     "where": "MentionMatching.swift, MentionCommands.swift",
+     "severity": 1,
+     "rule": "Put loosely-connected notes in the nearest gap to their one neighbor."
+    }
+   ]
+  },
+  {
+   "board": "Queries",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Very large, spread board (4916x3050, 1.58x today): notes with big empty areas between; arrows run long, QueryState to Hints (1477), Evaluation to Hints (982), SelectionQueries to QueryPoints (857).",
+     "where": "QueryState.swift, Evaluation.swift, Hints.swift, SelectionQueries.swift",
+     "severity": 3,
+     "rule": "Place each star close to the stars it shares uncut arrows with and cap arrow length."
+    },
+    {
+     "what": "Hints.swift sits at the bottom right corner, reached by long arcs sweeping from QueryState top right and Evaluation; Evaluation and QueryVocabulary have many arcs fanning to their strips, creating dense hatched curves.",
+     "where": "Hints.swift, Evaluation.swift, QueryVocabulary.swift",
+     "severity": 2,
+     "rule": "Pills lines should leave a note straight; strips go on sides with no uncut arrows."
+    },
+    {
+     "what": "The Plugin system frame sits at the left, apart from the notes it connects to, with gray lines running far to QueryPoints and Queries.swift; SelectionQueries.swift is a long way below it.",
+     "where": "Plugin system frame, SelectionQueries.swift",
+     "severity": 2,
+     "rule": "Place the frame adjacent to the star with most links into it."
+    },
+    {
+     "what": "Stacks of notes at the bottom (PathTest, Comparing, QueryPlan, Resolution) are packed in a column with strips of 8 pills touching neighbors' strips.",
+     "where": "PathTest.swift, Comparing.swift, QueryPlan.swift",
+     "severity": 1,
+     "rule": "Keep a gap of one strip width between neighbouring stars."
+    }
+   ]
+  },
+  {
+   "board": "Selection",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Largest board here, 5231x4703, 1.4x today, tall, with stars spread in a loose cloud and large empty areas; arrows run 1000+ (ShapeFaces to Faces 1508, SelectionObservers to Selection 1465, SelectionPlugin to Selection 1163) as big arcs round the Plugin frame.",
+     "where": "Faces.swift, Selection.swift, SelectionObservers, SelectionPlugin",
+     "severity": 3,
+     "rule": "Cap arrow length and area: place a frame beside its connected notes, and cut arcs longer than the cap to pills."
+    },
+    {
+     "what": "Labels.swift and Accessibility.swift are parked alone in the bottom-left corner far from everything; Popovers.swift also floats alone at the left with one long line.",
+     "where": "Labels.swift, Accessibility.swift, Popovers.swift",
+     "severity": 2,
+     "rule": "Place notes with all arrows cut next to the note they have most pills in common with, or in a compact row below the board, never at the far corner."
+    },
+    {
+     "what": "Selection.swift and SelectionState.swift hubs have 30+ pills in crowded strips on three sides with lines hatching, and big arcs loop through the middle of the board near Selection.swift to Faces.swift.",
+     "where": "Selection.swift, SelectionState.swift",
+     "severity": 2,
+     "rule": "Distribute pills in short strips on all sides and keep arcs away from other note's strips."
+    },
+    {
+     "what": "The Plugin system frame's inside is a wide ring with the blue SelectionPlugin in the middle, spaced loosely so the frame is about 850 wide with big gaps and long blue spokes.",
+     "where": "Plugin system frame",
+     "severity": 1,
+     "rule": "Size the star's ring radius to its leaves count and note sizes."
+    }
+   ]
+  },
+  {
+   "board": "TextEditing",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Tall board (aspect 0.69) with two disconnected notes, CaretListSubstitutions and StringDrawingLayout, parked in a bottom row far below the rest.",
+     "where": "CaretListSubstitutions.swift, StringDrawingLayout.swift",
+     "severity": 2,
+     "rule": "Place notes with no uncut arrows in the free spots of the main block or beside it to keep the aspect near the window's."
+    },
+    {
+     "what": "Layout is a staggered grid: lines connect notes at mismatched heights, so several short stubs enter at off-center points (EditingTextView to TextEditingStyle and CaretListWindow).",
+     "where": "EditingTextView.swift, CaretListWindow.swift, TextHighlight.swift",
+     "severity": 1,
+     "rule": "Align linked notes in rows or columns and attach at facing-side midpoints."
+    }
+   ]
+  },
+  {
+   "board": "TypesEngines",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Stars are spread around the Plugin frame with large gaps between them; the IssueRowValues.swift note is far below with one 860 arrow to its plugin in the frame, and long thin line from TypeQueries.swift down to FieldFind.swift.",
+     "where": "IssueRowValues.swift, IssueRowValuesPlugin, TypeQueries.swift",
+     "severity": 2,
+     "rule": "Place a star next to the frame notes it links to and tighten the gaps between stars."
+    },
+    {
+     "what": "Strips of 8 or more pills on FieldValuesDraw, RelationshipDraw and FieldFind form crowded blocks; at RelationshipDraw a fan of curved lines from the bottom strip hatches over the note's lower pills.",
+     "where": "RelationshipDraw.swift, FieldFind.swift",
+     "severity": 2,
+     "rule": "Pill rows straight, with lines leaving radially, never arcs through neighbors' strips."
+    },
+    {
+     "what": "TypeLights.swift floats at the top far from the frame it relates to, with no arrow out.",
+     "where": "TypeLights.swift",
+     "severity": 1,
+     "rule": "Put a loose note near the other notes or the frame it shares pills with."
+    }
+   ]
+  },
+  {
+   "board": "TypesSync",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "FieldFill.swift has 35 pills in a dense fan of curved lines on its top and left, with strips piled up in two rows; the lines hatch heavily and cross each other's pills visually.",
+     "where": "FieldFill.swift",
+     "severity": 3,
+     "rule": "Spread a note's pills over all four sides and cap a strip at 8; curved fan lines should become straight row lines."
+    },
+    {
+     "what": "TypeSync.swift has strips on all sides with arcs looping from its right strip around the note; the SchemaHighlights to TypeSync link crosses its pills region.",
+     "where": "TypeSync.swift, SchemaHighlights.swift",
+     "severity": 2,
+     "rule": "Keep a hub's uncut arrows on sides without strips."
+    },
+    {
+     "what": "FillPrompts.swift and SchemaPrompts.swift are parked alone at the bottom, connected to the rest by one pill strip only; board is 1.65x today.",
+     "where": "FillPrompts.swift, SchemaPrompts.swift",
+     "severity": 1,
+     "rule": "Place near their linked star; compact the board."
+    }
+   ]
+  },
+  {
+   "board": "Adornments",
+   "verdict": "good",
+   "issues": [
+    {
+     "what": "Adornments.swift's left pill column hugs the note and its right-side arrows to AdornmentOverlay run diagonally through the pill area; AdornmentLayout/AdornmentOverlay/AdornmentState pills in the row between Adornments and AdornmentState look jumbled in one band.",
+     "where": "Adornments.swift to AdornmentState.swift row of pills (AdornmentLayout, AdornmentOverlay, CanvasEditor+Layout)",
+     "severity": 1,
+     "rule": "Pills for the note's neighbours below it should sit on the side facing that neighbour but not share a row with the next note's top pills; keep a gap row between a note's strip and the next note's label."
+    },
+    {
+     "what": "Plugin-system frame is at the far left, long thin gray line to the notes, away from the notes it connects to.",
+     "where": "Plugin system frame vs Adornments.swift",
+     "severity": 1,
+     "rule": "Place the frame beside the note it connects to most, not in a free corner."
+    }
+   ]
+  },
+  {
+   "board": "CanvasModel",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Transaction.swift is a fan of 22 arrows/pills crossing as bundle; long arrows (829, 632, 504) sweep from bottom-left Transaction to Containment and from FileProperty to AddedProperty over the whole board, and big arcs loop around ShapeRecord/BoardID area.",
+     "where": "Transaction.swift to Containment.swift; FileProperty.swift to AddedProperty.swift; AddedProperty.swift to ShapeRecord.swift",
+     "severity": 3,
+     "rule": "Place notes by connection weight so heavily connected pairs end up adjacent; cap arrow length by cutting any arrow over a threshold (a few note widths) to pills."
+    },
+    {
+     "what": "Board is tall and narrow (aspect 0.81, 2229x2751) with Transaction's pills piled in a dense strip of 9 on its top plus an overlapping lower cluster (PropertyTable/Capabilities/Erasure fan lines hatch over the strip).",
+     "where": "Transaction.swift pills above it",
+     "severity": 2,
+     "rule": "Fanning lines to a note's own pills must not be bundled; split a strip over 6 into two sides, and the note with the most arrows gets the central position."
+    },
+    {
+     "what": "Loose-ish notes (BoardID, ReverseIndex, StackingKey, ShapeMap) float with few or no visible arrows and pills, leaving big gaps; BoardID sits mid-board with only an arc to CanvasFile.",
+     "where": "BoardID.swift, StackingKey.swift, ReverseIndex.swift",
+     "severity": 2,
+     "rule": "Park notes with no remaining arrows in a compact row at the board edge rather than in the middle of the grid."
+    },
+    {
+     "what": "Pills for Enclosing.swift wrap on three sides including bottom, near Geometry/CanvasDocument pills, crowded.",
+     "where": "Enclosing.swift",
+     "severity": 1,
+     "rule": "Limit pill strips to two sides when the note also has arrows leaving on the others."
+    }
+   ]
+  },
+  {
+   "board": "CanvasTools",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Translating.swift is a hub with 20 pills in a fan above it whose lines hatch across each other; the pills are also in one cluster to its upper-left, while the note sits far right and low.",
+     "where": "Translating.swift pills (Registry..Geometry column, Containment..OpaqueProps column)",
+     "severity": 2,
+     "rule": "Spread a hub's pills round all free sides and keep lines from a strip fanning from one point; avoid a strip whose lines converge to one spot."
+    },
+    {
+     "what": "ResizeAdjusting.swift is parked bottom-left with one long arrow (281) to Translating, leaving a large empty gap.",
+     "where": "ResizeAdjusting.swift to Translating.swift",
+     "severity": 2,
+     "rule": "Place a note beside the note it connects to if it has a single arrow; pull it up toward its neighbour."
+    },
+    {
+     "what": "Board is a bit tall (aspect 0.91) with empty lower right.",
+     "where": "bottom right",
+     "severity": 1,
+     "rule": "Compact by packing leaf notes into empty corners."
+    }
+   ]
+  },
+  {
+   "board": "Clipboard",
+   "verdict": "good",
+   "issues": [
+    {
+     "what": "Clipboard.swift's and ClipboardState.swift's pill strips almost touch and the middle strip (Containment, Identity, Settling, CanvasDocument) sits between two notes with doubled parallel lines, reading cramped.",
+     "where": "between Clipboard.swift and ClipboardState.swift",
+     "severity": 1,
+     "rule": "Keep a minimum gap between two connected notes wider than a pill row, or put the strip on a free side."
+    },
+    {
+     "what": "Plugin system frame sits right of the notes, only a single gray line (166) to Clipboard.swift crossing the frame.",
+     "where": "ClipboardPlugin to ShapeCopyability",
+     "severity": 1,
+     "rule": "Align the frame next to the note it connects to."
+    }
+   ]
+  },
+  {
+   "board": "DetailPanel",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Giant arcs and very long arrows (1200, 1114, 978) sweep across the board: DetailTabView to Controls, DetailPanelPlugin to DetailTakeovers, DetailPanelView to DetailTakeovers; a huge arc loops over the top of the board.",
+     "where": "DetailTabView.swift to Controls.swift; DetailPanelPlugin.swift and DetailPanelView.swift to DetailTakeovers.swift",
+     "severity": 3,
+     "rule": "Cut to a pill any arrow longer than a few note widths, and place a note next to its most-connected neighbour."
+    },
+    {
+     "what": "DetailTakeovers.swift is parked far lower right outside the plugin frame at the edge, three long lines run to it and into the frame; the frame itself is far below the notes it connects to (DetailPanel, DetailPanelPlugin) with a long gray arrow.",
+     "where": "DetailTakeovers.swift, Plugin system frame",
+     "severity": 3,
+     "rule": "Put the frame next to the notes that use it and pull its users adjacent; cap arrow length."
+    },
+    {
+     "what": "ListRows.swift is loose at top right, parked far away with only pills.",
+     "where": "ListRows.swift",
+     "severity": 2,
+     "rule": "Park loose notes in a compact row at the board edge near the group, not the far corner."
+    },
+    {
+     "what": "Board is big (3327x3240, 1.56x today) with big gaps between notes; DetailPanelPlugin's 17 pills fan up through a crowded bundle of lines.",
+     "where": "DetailPanelPlugin.swift, whole board",
+     "severity": 2,
+     "rule": "Shrink the gaps toward the strip width; split a strip over 6 into two sides."
+    }
+   ]
+  },
+  {
+   "board": "Geometry",
+   "verdict": "good",
+   "issues": []
+  },
+  {
+   "board": "LanguageRules",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Very long arrows (1448, 1264, 1205) cross the board: RuleWalk to LanguageRulesPlugin, LanguageRulesPlugin to IgnoredRules and RuleBook; many wide arcs sweep across the middle.",
+     "where": "RuleWalk.swift, IgnoredRules.swift, RuleBook.swift to LanguageRulesPlugin.swift",
+     "severity": 3,
+     "rule": "Hub notes should have their users within a short distance; cut arrows past a length threshold into pills."
+    },
+    {
+     "what": "LanguageRulesPlugin.swift hub has ~20 pills in a dense fan above it, lines hatching over one another; RuleChecks, RuleContext with 40+ pills too.",
+     "where": "LanguageRulesPlugin.swift, RuleChecks.swift, RuleContext.swift",
+     "severity": 2,
+     "rule": "Split pills over 8 among all free sides; do not fan a whole strip into one point."
+    },
+    {
+     "what": "Board is huge (4530x3153, 1.24x today); notes scattered, RuleLights and RuleMenus parked far away at the top right with few arrows; large empty areas.",
+     "where": "RuleLights.swift, RuleMenus.swift",
+     "severity": 2,
+     "rule": "Pull notes whose arrows were cut toward the group; cap spacing."
+    },
+    {
+     "what": "Plugin frame sits below-right of its hub with an arrow, fine, but IgnoredRules.swift and RuleWalk are strung far down the bottom with a long line between.",
+     "where": "IgnoredRules.swift, RuleWalk.swift",
+     "severity": 1,
+     "rule": "Place notes in connection order along a path."
+    }
+   ]
+  },
+  {
+   "board": "ProseMaps",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Long arcs (444, 320, 262) connecting ProseMap to ProseTarget and ProseMapService, with curving lines under the notes; ProseTarget is parked at the bottom, ProseMapText left alone.",
+     "where": "ProseMap.swift to ProseTarget.swift; ProseMapService.swift to ProseMap.swift; ProseMapsPlugin to ProseMapService",
+     "severity": 2,
+     "rule": "Place notes close to what they connect to (ProseTarget under ProseMap) and prefer straight connections to big arcs."
+    },
+    {
+     "what": "Plugin system frame sits below ProseMapsPlugin with a long straight line through its label; the notes ProseMapPrompt/ProseMapText are crowded and overlapping edges on the lower left.",
+     "where": "ProseMapsPlugin and the frame; ProseMapPrompt.swift area",
+     "severity": 1,
+     "rule": "Place the frame right beside its note and leave a clear line."
+    }
+   ]
+  },
+  {
+   "board": "References",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Very wide (5643x2841, aspect 1.99) and 1.19x today: much bigger than the window; ReferenceEditing.swift is parked at the far top right with no arrows, and ReferenceEdits at left.",
+     "where": "ReferenceEditing.swift, ReferenceEdits.swift",
+     "severity": 3,
+     "rule": "Park loose notes in a compact row near the group, and keep the aspect near 1.5."
+    },
+    {
+     "what": "Long arrows (885, 623, 603) such as ReferenceAnswers to ReferenceStyle, ReferenceRow to ReferenceCondition, ReferenceDefinition to PillColors go diagonally across the board and through other notes' areas; ReferenceAnswers has a bundle of 10+ lines up to its pills.",
+     "where": "ReferenceAnswers.swift, ReferenceStyle.swift, ReferenceRow.swift, ReferenceCondition.swift, PillColors.swift",
+     "severity": 3,
+     "rule": "Cut arrows longer than a few note widths to pills; order notes so the heaviest pairs are adjacent."
+    },
+    {
+     "what": "The Plugin system frame is at the far bottom left with ReferencesPlugin, a long gap to ReferencesTab-type notes, and a long line to References.swift.",
+     "where": "Plugin system frame",
+     "severity": 2,
+     "rule": "Put the frame next to the note it's most connected to, not a corner."
+    },
+    {
+     "what": "ReferenceTab and ReferenceState strips ring each note on all sides, crowded blocks of 40+ pills (ReferenceState 44), with lines hatching.",
+     "where": "ReferenceState.swift, References.swift",
+     "severity": 2,
+     "rule": "Cap pills per note by placing the rest as a column beyond; avoid strips with lines running through the next strip."
+    }
+   ]
+  },
+  {
+   "board": "Subboards",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Subboards.swift is a hub with 32 pills round it on all sides including a large bottom strip, and lines running long distances from the pills (ColorBook, Titles, Keyboard) across other pills; the strip in the top left of Subboards overlaps the SubboardDefinition pills zone.",
+     "where": "Subboards.swift",
+     "severity": 2,
+     "rule": "Pills in a strip should be next to the note, with lines that don't cross other pills' rows; reduce the count by sharing the pills across the neighbouring notes."
+    },
+    {
+     "what": "Arrows (172, 144, 129) from SubboardPanel to SubboardStyle and SubboardDefinition pass long distances; notes are in a tall column left with SubboardSkeleton and SubboardStyle stacked at top with only one pill, while the right half is just the frame.",
+     "where": "SubboardPanel.swift, SubboardSkeleton.swift, SubboardStyle.swift",
+     "severity": 2,
+     "rule": "Fill the board in a compact rectangle; place a note with few connections beside its user."
+    },
+    {
+     "what": "The Plugin system frame is crowded with the plugin's 30+ pills round it, and is far from Subboards.swift with a single long gray line.",
+     "where": "Plugin system frame",
+     "severity": 1,
+     "rule": "Place the frame beside the note with the line to it, and size it for the strip."
+    }
+   ]
+  },
+  {
+   "board": "Types",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "TypesPlugin.swift has 62 pills in a huge block of 8 columns/rows on all sides, lines hatching over the pills (the crowded block of overlapping lines), so the note disappears in a mass.",
+     "where": "TypesPlugin.swift",
+     "severity": 3,
+     "rule": "Cap pills near a note, put the rest in a second ring or a pill-only frame rather than a block around it; split by the nine parts."
+    },
+    {
+     "what": "Nine parts (Checks, Engines, Fields, Form, IsA, JSON, Rows, Sync, Type) show as empty outlined cards, a line of identical boxes with no connection to anything, parked below and right of the frame.",
+     "where": "Checks, Engines, Fields, Form, IsA, JSON, Rows, Sync, Type",
+     "severity": 2,
+     "rule": "Show each part's notes inside it or draw it on one place near the hub; do not leave detached boxes in a row."
+    },
+    {
+     "what": "The Plugin system frame is far below the TypesPlugin note, with TypesPlugin inside crowded by 30 pills; the frame's inside is a star but is cramped, and pills overlap the plugin's label.",
+     "where": "Plugin system frame, TypesPlugin plugin",
+     "severity": 2,
+     "rule": "Pad around a hub in a frame so that strips do not cover its label."
+    },
+    {
+     "what": "Board is 2043x1943, square-ish with big empty right area.",
+     "where": "right side",
+     "severity": 1,
+     "rule": "Place part boxes next to the hub."
+    }
+   ]
+  },
+  {
+   "board": "TypesJSON",
+   "verdict": "good",
+   "issues": [
+    {
+     "what": "SchemaValidator pills appear twice (left of JSONCaret and right of JSONCompleter) in separate places while 17 arrows is a quiet board; MetaSchema lines run a bit long between notes.",
+     "where": "JSONCaret.swift, JSONCompleter.swift",
+     "severity": 1,
+     "rule": "Pill for the same target is fine, but put it on the side facing a shared direction."
+    }
+   ]
+  },
+  {
+   "board": "Canvas",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Nine notes (Editor, Model, Persistence, Plugins, Rendering, Schema, Shapes, Tools, Style.swift) are laid out as a plain grid with no arrows between them. Style.swift is set apart at top-left with a single pill, Appearance.swift, and the module boxes follow in rows of 2, 4 and 2, so the grid reads as arbitrary.",
+     "where": "Whole board: Editor, Model, Persistence, Plugins, Rendering, Schema, Shapes, Tools",
+     "severity": 1,
+     "rule": "Notes with no edges between them go in a compact, even grid, preferably one balanced block (e.g. rows of 3 or 4, last row centered or left-aligned), with the one connected note placed inside it, not off to one side."
+    }
+   ]
+  },
+  {
+   "board": "CanvasSchema",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "ShapeSchemaChecking has ten pills in two strips above it. Their lines fan into the top of the note, and several are curved and bundled, so they hatch over each other. JSONSchema and SchemaValidator also have a heavy bundle of long arcs crossing the middle of the board.",
+     "where": "ShapeSchemaChecking.swift top strips (PropertyTable, Registry, Capabilities, Erasure, Geometry; AddedProperty, Identity, ShapeRecord, BoardCodec, OpaqueProps); SchemaValidator to JSONSchema arc",
+     "severity": 2,
+     "rule": "Pills must not make a fan: put pills where each line leaves the note almost straight, split large strips across more than one side, and keep a note's pills off the side where its own arrows leave."
+    },
+    {
+     "what": "The pills for JSONValue, JSON and Identity repeat beside SchemaDefined, JSONSchema, SchemaValidator and JSONEncoder. The same hub appears four to five times, so a hub used by most notes is not drawn as a note.",
+     "where": "JSONValue.swift, JSON.swift, BoardCodec.swift, Identity.swift pills beside SchemaDefined, JSONSchema, SchemaValidator, JSONValueEncoder",
+     "severity": 1,
+     "rule": "A file that a large share of the board's notes point at becomes a hub note, or a pill strip shared by those notes, instead of one pill per user."
+    }
+   ]
+  },
+  {
+   "board": "CanvasUI",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "The board splits into three loose islands: Minimap/Card/Zoom/Popover top left, ShapeElements/CanvasUIStyle/CanvasView bottom left, and the central window cluster, with a keyboard/settings window top right. The islands are joined by only a few long thin lines (MinimapView to MinimapPicture arcs, ShapeElements down to CanvasView, BoardMenus to KeyboardShortcutsWindow). The board is 3575x2554 but mostly empty between islands.",
+     "where": "MinimapView, MinimapPicture, CardView, ZoomIndicator, PopoverView, ShapeElements, CanvasView",
+     "severity": 3,
+     "rule": "Pack connected components (or loosely connected clusters) into a tight arrangement with a gap sized to their pills, and place smaller components in the empty space beside the larger ones, not on a loose grid."
+    },
+    {
+     "what": "Long lines cross the whole board: BoardWindow to BoardWindowController runs diagonally, BoardDocument to CommandServer runs the board's width, and BoardMenus to KeyboardShortcutsWindow runs as a long arc. Notes are placed far from what they connect to.",
+     "where": "BoardWindow to BoardWindowController, BoardMenus to KeyboardShortcutsWindow, BoardDocument to CommandServer",
+     "severity": 2,
+     "rule": "Penalize edge length in placement (a post-pass that moves a note next to its most-connected neighbour when it has room) so strongly connected notes sit adjacent."
+    },
+    {
+     "what": "CommandServer and BoardDocument have twelve or more pills on their top strips. Their lines fan and hatch in dense bundles above the notes, and pills sit nearly on top of other notes' pills (BoardID, CanvasDocument, BoardDocument label).",
+     "where": "CommandServer.swift and BoardDocument.swift top strips",
+     "severity": 2,
+     "rule": "Cap a strip's length lower (about 5-6) and spread the remaining pills to other sides; do not set a note's pill strips so close to a neighbour that their lines cross."
+    },
+    {
+     "what": "Several notes sit apart from the rest with pills on both sides and little relation to the nearby notes. CanvasUIStyle and BoardChrome are single boxes with no visible pills, and sit without any clear purpose.",
+     "where": "CanvasUIStyle.swift, BoardChrome.swift, SecondaryWindow.swift",
+     "severity": 1,
+     "rule": "Place a loose note next to the note it is most related to (or in a compact leftover grid), never in open space."
+    }
+   ]
+  },
+  {
+   "board": "DecisionCommands",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "DecisionCommands.swift has 14 pills in two columns on either side, tight against its edges, and the lines hatch at the note's edge. Several pills (RuleChecks, QueryBudget, QueryResult, QueryState) are strongly offset, so their lines run at a steep slant.",
+     "where": "DecisionCommands.swift left and right columns",
+     "severity": 1,
+     "rule": "Spread a note's pills over a longer strip or more sides, and leave a gap between the pill column and the note, so the connecting lines are short and fan out without crossing the edge."
+    },
+    {
+     "what": "The Plugin system frame sits at the right, lower than the notes. Its one connection, a long gray arc from the bottom of DecisionCommands to DecisionCommandsPlugin, goes under the whole frame. The frame holds one note and one pill and is mostly empty.",
+     "where": "Plugin system frame, DecisionCommandsPlugin; arc from DecisionCommands.swift",
+     "severity": 2,
+     "rule": "Place the Plugin system frame beside the note it declares (same row, close), and size it to its contents; a lone arrow should leave from the facing sides."
+    }
+   ]
+  },
+  {
+   "board": "Frames",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Two long lines cross the board: FrameLinks to FrameDefinition (874) and CreateFrame to FrameStyle (775). CreateFrame sits at the bottom right with a big fan of 16 pills, and its lines are long arcs. FrameLinks is placed alone at the top, far from its neighbours.",
+     "where": "FrameLinks.swift, CreateFrame.swift, FrameDefinition.swift, FrameStyle.swift",
+     "severity": 2,
+     "rule": "Place a note next to its most-connected note, not at the periphery; leaves belong beside their one neighbour."
+    },
+    {
+     "what": "Frames.swift has 28 pills in strips on all four sides: the left and right columns are close against the note, and the line hatching is dense. CreateFrame's two strips of 8 curve in a tight bundle onto the top of the note.",
+     "where": "Frames.swift columns; CreateFrame.swift top fan",
+     "severity": 2,
+     "rule": "Fan pills are a defect: when a strip has more than about 5 pills, put them in columns beside the note, with pills at the same height as their attachment points, so lines are straight."
+    },
+    {
+     "what": "Plugin system frame: FramesPlugin has 19 orange pills around it, in lines that hatch over the note, and the frame is placed at the far right, with a single gray line to the 'frame' type note below. The frame's inside is crowded around one note.",
+     "where": "Plugin system frame, FramesPlugin",
+     "severity": 1,
+     "rule": "In the plugin frame, lay the declared items in two clean columns beside the plugin note, not around it in a ring."
+    },
+    {
+     "what": "The notes are scattered across the board's left half with large gaps (FrameHeader, FrameRow, FrameSkeleton, FrameTool), so the aspect is 1.78 and the board's middle is empty.",
+     "where": "Left column notes",
+     "severity": 1,
+     "rule": "Pack the layout to the window aspect (about 1.5): after the layout, compress empty gaps wider than a pill strip."
+    }
+   ]
+  },
+  {
+   "board": "Keyboard",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Keyboard.swift has 13 pills above it in two staggered strips, and the lines fan in curved bundles (Tool, ShippedList, Registry, Order double-line) onto its top. Two lines are drawn doubled, and Identity.swift sits in the middle of the strips and breaks the rows.",
+     "where": "Keyboard.swift top strips: Order, Registry, ShippedList, Tool, CanvasEditor, EditorService, CanvasPlugin, Commands, ExtensionPoint, HostSlots, MenuBarSections, Identity",
+     "severity": 2,
+     "rule": "Spread a large pill set over several sides of the note (the right side is bare), with each strip at most 5-6, and keep a strip's rows aligned."
+    },
+    {
+     "what": "The Plugin system frame is placed beside Keyboard.swift, but its contents connect by three long gray lines (including a long arc under PressFocused). PressFocused is the longest arrow (652) and runs from the bottom of the board.",
+     "where": "Plugin system frame, PressFocused, KeyboardShortcuts",
+     "severity": 1,
+     "rule": "Place declared notes in a frame next to the note that declares them, with arrows leaving the facing sides, not wrapping around."
+    }
+   ]
+  },
+  {
+   "board": "Neighbors",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "The notes are scattered: NeighborState at the top left, Neighbors below it, NeighborStyle alone in the middle top, NeighborDetails, NeighborList at the right. Pills lead to the board's edge, and NeighborStyle appears as a loose note with no pills or arrows, placed in the middle of nothing.",
+     "where": "NeighborStyle.swift, NeighborState.swift",
+     "severity": 2,
+     "rule": "A note with no visible edges sits with the rest in a leftover grid or next to its nearest connected note, not in the middle of other notes."
+    },
+    {
+     "what": "NeighborState and NeighborList have pills in three strips, with lines in tight bundles that hatch over their own pills. NeighborState's lines come down in a fan at the top and an arc at the right leads to Neighbors.",
+     "where": "NeighborState.swift top fan; NeighborList.swift left column",
+     "severity": 2,
+     "rule": "Keep a note's pill strips off the side where its arrows leave, and limit strips to about 5-6 pills so the lines do not fan."
+    },
+    {
+     "what": "The Plugin system frame sits at the bottom, with long diagonal gray lines (from NeighborDetails and Neighbors) running across the notes' pills down to NeighborDetailsPlugin and NeighborLights.",
+     "where": "Plugin system frame; lines from Neighbors.swift and NeighborDetails.swift",
+     "severity": 2,
+     "rule": "Place the plugin frame adjacent to the notes that declare into it, on the side facing them, so its lines are short."
+    }
+   ]
+  },
+  {
+   "board": "QueryLanguage",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Eight notes with 21 arrows between them are arranged with several long lines running across the board: an arc from Parser over to QueryError, a long curve from Parser down to Printer, KnownInventions to Printer on a diagonal, and Printer to Lexer along the bottom. Nothing reads as a hub, though Parser, Syntax and Lexer clearly have the most links.",
+     "where": "Parser.swift, Printer.swift, Lexer.swift, QueryError.swift, KnownInventions.swift",
+     "severity": 2,
+     "rule": "Place notes by a force- or layer-based layout that minimizes total edge length for dense graphs with few pills; do not keep the pill grid's slot positions for notes with direct arrows."
+    },
+    {
+     "what": "Pills are scattered: the QueryError and Syntax pills sit above KnownInventions, the Lexer and QueryLanguage pills right of Parser, and a Parser pill below Printer. They are few and fine, but each sits on a different side with no pattern.",
+     "where": "KnownInventions, Parser, Printer pills",
+     "severity": 1,
+     "rule": "Place a note's few pills on the side facing their target note's direction."
+    }
+   ]
+  },
+  {
+   "board": "Snapping",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "Snapping.swift has 17 pills in two fans above it, and lines curve in a bundle into the top of the note, hatching over each other and over the pills' own row (Input, CanvasDocument, ChangeSet). Strips are ragged and staggered at three heights.",
+     "where": "Snapping.swift top strips",
+     "severity": 3,
+     "rule": "Cap a strip at 5-6 pills and spread the rest to the free sides; keep each strip's pills in one straight row so the lines run straight."
+    },
+    {
+     "what": "The board is wide (aspect 1.97) and has large empty areas at the top left and bottom right. The Plugin system frame sits at the far right, joined by one long straight line.",
+     "where": "Plugin system frame, SnapTargets",
+     "severity": 1,
+     "rule": "Fit the layout to the window aspect by arranging a hub's pill strips on all four sides, not only above."
+    },
+    {
+     "what": "SnapTargets, SnappingStyle and Snapping are connected by long lines, and SnapTargets is a tall note. Lines from SnapTargets to Snapping cross the area of the Geometry/Camera pills.",
+     "where": "SnapTargets.swift, Geometry.swift pill",
+     "severity": 1,
+     "rule": "Keep a note's pills off the side facing its note neighbours."
+    }
+   ]
+  },
+  {
+   "board": "Topology",
+   "verdict": "ok",
+   "issues": [
+    {
+     "what": "The board is tall and narrow (aspect 0.76, 2102x2774), and notes are in a long chain down the left (Containment, Preparing, Forwarding, EdgeSources, TopologyIndex), with the Plugin system frame wedged in the middle. The window shows it very small.",
+     "where": "Whole board; left chain Containment, Preparing, Forwarding, EdgeSources, TopologyIndex",
+     "severity": 2,
+     "rule": "Fit a chain of notes into a wider shape (bend it into columns) to approach the window's aspect of about 1.5."
+    },
+    {
+     "what": "The longest arrow, TopologySnapshot to Containment (1202), runs as a large arc across the top of the board, and a second arc runs from Forwarding to EdgeSources. TopologyPlugin to EdgeTypes is an arc, too.",
+     "where": "TopologySnapshot.swift to Containment.swift; Forwarding.swift to EdgeSources.swift",
+     "severity": 2,
+     "rule": "Penalize an arrow's length when placing notes so the most-connected neighbours are adjacent; put long arrows between facing sides."
+    },
+    {
+     "what": "Forwarding.swift has a fan of 8 curved pill lines at its top meeting at one point, and TopologyIndex has 12 pills in two columns and a bottom row.",
+     "where": "Forwarding.swift top strip; TopologyIndex.swift",
+     "severity": 2,
+     "rule": "Spread pills over several sides, at most 5-6 per strip, with lines straight."
+    },
+    {
+     "what": "The Plugin system frame has long gray lines running through the notes' pills (EdgeTypes to EdgeForwarding, Forwarding to EdgeSources) and sits in the middle of the board.",
+     "where": "Plugin system frame",
+     "severity": 1,
+     "rule": "Put the plugin frame at the edge of the board on the side facing the notes it connects to."
+    }
+   ]
+  },
+  {
+   "board": "TypesForm",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "Twenty-nine notes and 341 pills are spread over 4054x4483. The board is too big and busy to read: it is a dense field of small clusters with large empty gaps between them, and the pills outnumber everything else. At the window zoom, it is unreadable.",
+     "where": "Whole board",
+     "severity": 3,
+     "rule": "Pack clusters tightly, and where a note has more than about 20 pills, collect them into a pill list or hub notes; a board's size must follow its note count (a cap on area per note)."
+    },
+    {
+     "what": "Very long lines cross the board: DefinitionAccessibility to CardAccessibility (1119), FieldFormJSON to FieldForm (1045), and large arcs at the bottom between DefinitionView, FieldFormAccessibility and FieldSheet. The notes are placed far from their neighbours.",
+     "where": "DefinitionAccessibility.swift, CardAccessibility.swift, FieldFormJSON.swift, FieldForm.swift",
+     "severity": 3,
+     "rule": "Place notes near the notes they are connected to (minimize total edge length across the board) and reject layouts whose longest edge is more than about a third of the board."
+    },
+    {
+     "what": "Many notes have 30-40 pills in bundles around them (FieldFormView, FieldFormKeys, FieldGridView, FieldSheet, FieldsPanel), and the lines hatch over their own pills and each other. FieldFormKeys and FieldFormAccessibility have a fan of curved lines meeting at one point.",
+     "where": "FieldFormView.swift, FieldFormKeys.swift, FieldFormAccessibility.swift, FieldSheet.swift, FieldsPanel.swift",
+     "severity": 3,
+     "rule": "Cap pills per note (about 12-16), and make the rest hubs, reached through one shared pill row; stop fans by placing pills level with their attachment points."
+    },
+    {
+     "what": "The Plugin system frame sits alone at the bottom with one note and one pill, far from everything that it connects to.",
+     "where": "Plugin system frame, DefinitionWalks",
+     "severity": 1,
+     "rule": "Place the plugin frame next to the note it declares into (or at the board's edge, closest to that note)."
+    }
+   ]
+  },
+  {
+   "board": "Validation",
+   "verdict": "bad",
+   "issues": [
+    {
+     "what": "At 3714x4045 the board is tall and sparse. The notes are scattered across the top half with large empty areas, and the Plugin system frame is a wide band along the bottom, with IssueRowValues placed below it, out of the frame.",
+     "where": "Whole board; Plugin system frame, IssueRowValues",
+     "severity": 3,
+     "rule": "Pack the notes tight and keep a frame's contents inside it; a frame's size must follow its contents, not become a band under the board."
+    },
+    {
+     "what": "Many long arrows cross the board: IssuesTab to IssueLinePlaces (1620), IssueList to IssueWalkStyle (1419), IssueWalk to IssueLights, and long lines from IssueWalkStyle to IssueList. Strongly connected notes (IssueWalk, IssueList, IssueLinePlaces) are far apart.",
+     "where": "IssuesTab.swift, IssueLinePlaces.swift, IssueList.swift, IssueWalkStyle.swift",
+     "severity": 3,
+     "rule": "Place notes with the most arrows between them adjacent; penalize total edge length and reject layouts with arrows over about a quarter of the board's width."
+    },
+    {
+     "what": "IssueWalk, Validation, IssueList, IssueTab and IssueWalkPanel have 12-18 pills in dense fans and bundles above and below. Lines from ValidationQueries to ValidationChecks and from IssueWalk to IssueLinePlaces hatch over pills of other notes.",
+     "where": "IssueWalk.swift, Validation.swift, IssueTab.swift, IssueList.swift",
+     "severity": 2,
+     "rule": "Cap a strip at 5-6, keep the strips on the sides not used by arrows, and spread to the four sides."
+    },
+    {
+     "what": "The frame has six plugin notes in a row, with only a gray line from ValidationChecksPlugin and ValidationDetailsPlugin to the notes above, which cross the board; several of the plugin notes are not connected to anything.",
+     "where": "Plugin system frame; ValidationChecksPlugin, ValidationDetailsPlugin",
+     "severity": 2,
+     "rule": "Put the plugin frame next to the notes that connect to it and arrange its inside as a star around the plugin that declares most of it."
+    }
+   ]
+  }
+ ]
+}

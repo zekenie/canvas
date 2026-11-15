@@ -1,0 +1,696 @@
+{
+  "board": {
+    "id": 1,
+    "name": "Untitled",
+    "shows": "root",
+    "showsPath": ["root"]
+  },
+  "constants": {
+    "defaultGap": 80,
+    "frameInset": 40,
+    "gaps": {
+      "none": 0,
+      "normal": 80,
+      "tight": 40,
+      "wide": 160
+    },
+    "horizontalClearance": 40,
+    "listStep": 64,
+    "referenceStep": 16,
+    "smallest": {
+      "frame": [96, 64]
+    },
+    "verticalClearance": 64
+  },
+  "edges": [],
+  "nodes": {
+    "Admin console": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 93
+    },
+    "Alerts": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 46
+    },
+    "Auth": {
+      "above": 9,
+      "size": [640, 400],
+      "titleWidth": 54
+    },
+    "Backend": {
+      "above": 27,
+      "size": [240, 160],
+      "titleWidth": 75
+    },
+    "Billing": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 47
+    },
+    "Cache": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 48
+    },
+    "Catalog": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 56
+    },
+    "Catalog DB": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 75
+    },
+    "Clients": {
+      "above": 9,
+      "size": [640, 400],
+      "titleWidth": 66
+    },
+    "Dashboards": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 79
+    },
+    "Gateway": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 61
+    },
+    "Login": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 44
+    },
+    "Logs": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 40
+    },
+    "Metrics": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 55
+    },
+    "Mobile app": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 74
+    },
+    "Monitoring": {
+      "above": 9,
+      "size": [640, 400],
+      "titleWidth": 86
+    },
+    "Notifications": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 83
+    },
+    "Orders": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 51
+    },
+    "Orders DB": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 70
+    },
+    "Passwords": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 72
+    },
+    "Runbook": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 62
+    },
+    "Search": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 52
+    },
+    "Search index": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 84
+    },
+    "Services": {
+      "above": 9,
+      "size": [640, 400],
+      "titleWidth": 75
+    },
+    "Sessions": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 62
+    },
+    "Stores": {
+      "above": 9,
+      "size": [640, 400],
+      "titleWidth": 63
+    },
+    "Tokens": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 52
+    },
+    "Web app": {
+      "above": 27,
+      "size": [260, 200],
+      "titleWidth": 61
+    }
+  },
+  "pills": [
+    {
+      "for": "Gateway",
+      "from": "Clients",
+      "size": [121, 40]
+    },
+    {
+      "for": "Web app",
+      "size": [122, 40]
+    },
+    {
+      "for": "Mobile app",
+      "size": [137, 40]
+    },
+    {
+      "for": "Admin console",
+      "size": [161, 40]
+    },
+    {
+      "for": "Orders",
+      "size": [150, 40]
+    },
+    {
+      "for": "Gateway",
+      "from": "Services",
+      "size": [121, 40]
+    },
+    {
+      "for": "Billing",
+      "size": [150, 40]
+    },
+    {
+      "for": "Catalog",
+      "size": [150, 40]
+    },
+    {
+      "for": "Search",
+      "size": [150, 40]
+    },
+    {
+      "for": "Notifications",
+      "size": [150, 40]
+    },
+    {
+      "for": "Login",
+      "from": "Services",
+      "size": [100, 40]
+    },
+    {
+      "for": "Orders",
+      "from": "Auth",
+      "size": [109, 40]
+    },
+    {
+      "for": "Billing",
+      "from": "Auth",
+      "size": [104, 40]
+    },
+    {
+      "for": "Catalog",
+      "from": "Auth",
+      "size": [115, 40]
+    },
+    {
+      "for": "Search",
+      "from": "Auth",
+      "size": [110, 40]
+    },
+    {
+      "for": "Notifications",
+      "from": "Auth",
+      "size": [148, 40]
+    },
+    {
+      "for": "Login",
+      "size": [187, 40]
+    },
+    {
+      "for": "Gateway",
+      "from": "Auth",
+      "size": [121, 40]
+    },
+    {
+      "for": "Sessions",
+      "from": "Auth",
+      "size": [123, 40]
+    },
+    {
+      "for": "Login",
+      "from": "Auth",
+      "size": [100, 40]
+    },
+    {
+      "for": "Passwords",
+      "from": "Auth",
+      "size": [135, 40]
+    },
+    {
+      "for": "Tokens",
+      "from": "Auth",
+      "size": [110, 40]
+    },
+    {
+      "for": "Orders DB",
+      "from": "Services",
+      "size": [132, 40]
+    },
+    {
+      "for": "Orders",
+      "from": "Stores",
+      "size": [109, 40]
+    },
+    {
+      "for": "Catalog DB",
+      "from": "Services",
+      "size": [138, 40]
+    },
+    {
+      "for": "Catalog",
+      "from": "Stores",
+      "size": [115, 40]
+    },
+    {
+      "for": "Search index",
+      "from": "Services",
+      "size": [149, 40]
+    },
+    {
+      "for": "Search",
+      "from": "Stores",
+      "size": [110, 40]
+    },
+    {
+      "for": "Cache",
+      "from": "Services",
+      "size": [105, 40]
+    },
+    {
+      "for": "Orders",
+      "from": "Services",
+      "size": [109, 40]
+    },
+    {
+      "for": "Billing",
+      "from": "Services",
+      "size": [104, 40]
+    },
+    {
+      "for": "Metrics",
+      "from": "Services",
+      "size": [147, 40]
+    },
+    {
+      "for": "Orders",
+      "from": "Monitoring",
+      "size": [150, 40]
+    },
+    {
+      "for": "Billing",
+      "from": "Monitoring",
+      "size": [150, 40]
+    },
+    {
+      "for": "Catalog",
+      "from": "Monitoring",
+      "size": [150, 40]
+    },
+    {
+      "for": "Search",
+      "from": "Monitoring",
+      "size": [150, 40]
+    },
+    {
+      "for": "Notifications",
+      "from": "Monitoring",
+      "size": [150, 40]
+    },
+    {
+      "for": "Metrics",
+      "size": [113, 40]
+    },
+    {
+      "for": "Gateway",
+      "from": "Monitoring",
+      "size": [121, 40]
+    },
+    {
+      "for": "Metrics",
+      "from": "Auth",
+      "size": [147, 40]
+    },
+    {
+      "for": "Login",
+      "from": "Monitoring",
+      "size": [187, 40]
+    },
+    {
+      "for": "Alerts",
+      "from": "Monitoring",
+      "size": [103, 40]
+    },
+    {
+      "for": "Metrics",
+      "from": "Monitoring",
+      "size": [113, 40]
+    },
+    {
+      "for": "Dashboards",
+      "from": "Monitoring",
+      "size": [143, 40]
+    },
+    {
+      "for": "Runbook",
+      "from": "Monitoring",
+      "size": [122, 40]
+    },
+    {
+      "for": "Alerts",
+      "size": [103, 40]
+    },
+    {
+      "for": "Logs",
+      "from": "Monitoring",
+      "size": [95, 40]
+    },
+    {
+      "for": "Logs",
+      "size": [103, 40]
+    },
+    {
+      "for": "Billing",
+      "from": "Stores",
+      "size": [104, 40]
+    },
+    {
+      "for": "Notifications",
+      "from": "Stores",
+      "size": [148, 40]
+    },
+    {
+      "for": "Cache",
+      "from": "Auth",
+      "size": [105, 40]
+    },
+    {
+      "for": "Login",
+      "from": "Stores",
+      "size": [128, 40]
+    },
+    {
+      "for": "Sessions",
+      "from": "Stores",
+      "size": [128, 40]
+    },
+    {
+      "for": "Tokens",
+      "from": "Stores",
+      "size": [128, 40]
+    },
+    {
+      "for": "Cache",
+      "from": "Stores",
+      "size": [105, 40]
+    },
+    {
+      "for": "Orders DB",
+      "from": "Stores",
+      "size": [132, 40]
+    },
+    {
+      "for": "Catalog DB",
+      "from": "Stores",
+      "size": [138, 40]
+    },
+    {
+      "for": "Search index",
+      "from": "Stores",
+      "size": [149, 40]
+    },
+    {
+      "for": "Tokens",
+      "from": "Services",
+      "size": [110, 40]
+    },
+    {
+      "for": "Search index",
+      "from": "Auth",
+      "size": [149, 40]
+    }
+  ],
+  "tightness": {
+    "asked": 23,
+    "model": "scripted",
+    "pairs": [
+      {
+        "a": "Admin console",
+        "b": "Gateway",
+        "tightness": -0.18963649497059643
+      },
+      {
+        "a": "Alerts",
+        "b": "Dashboards",
+        "tightness": -0.11000300932050523
+      },
+      {
+        "a": "Alerts",
+        "b": "Metrics",
+        "tightness": 0.08545060927736761
+      },
+      {
+        "a": "Alerts",
+        "b": "Runbook",
+        "tightness": -0.5155668603602022
+      },
+      {
+        "a": "Billing",
+        "b": "Cache",
+        "board": "Backend",
+        "tightness": 0.229016795048403
+      },
+      {
+        "a": "Billing",
+        "b": "Login",
+        "board": "Backend",
+        "tightness": -0.2775359687173075
+      },
+      {
+        "a": "Billing",
+        "b": "Orders",
+        "board": "Backend",
+        "tightness": -0.20910242833027365
+      },
+      {
+        "a": "Billing",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": -0.23655985802497426
+      },
+      {
+        "a": "Cache",
+        "b": "Catalog",
+        "board": "Backend",
+        "tightness": -0.18102396648967156
+      },
+      {
+        "a": "Cache",
+        "b": "Catalog DB",
+        "board": "Backend",
+        "tightness": 0.6671685628952615
+      },
+      {
+        "a": "Cache",
+        "b": "Login",
+        "board": "Backend",
+        "tightness": -0.2196232976834413
+      },
+      {
+        "a": "Cache",
+        "b": "Notifications",
+        "board": "Backend",
+        "tightness": -0.6642858331886167
+      },
+      {
+        "a": "Cache",
+        "b": "Orders",
+        "board": "Backend",
+        "tightness": -0.4523847760258567
+      },
+      {
+        "a": "Cache",
+        "b": "Orders DB",
+        "board": "Backend",
+        "tightness": 0.1857212946016405
+      },
+      {
+        "a": "Cache",
+        "b": "Search",
+        "board": "Backend",
+        "tightness": 0.11751361245109582
+      },
+      {
+        "a": "Cache",
+        "b": "Search index",
+        "board": "Backend",
+        "tightness": -0.1487724819348652
+      },
+      {
+        "a": "Cache",
+        "b": "Sessions",
+        "board": "Backend",
+        "tightness": 0.6836137558182652
+      },
+      {
+        "a": "Cache",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": -0.39356048756335504
+      },
+      {
+        "a": "Catalog",
+        "b": "Catalog DB",
+        "board": "Backend",
+        "tightness": 0.1717668096026294
+      },
+      {
+        "a": "Catalog",
+        "b": "Login",
+        "board": "Backend",
+        "tightness": -0.4764790527244682
+      },
+      {
+        "a": "Catalog",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": -0.24926828235242154
+      },
+      {
+        "a": "Catalog DB",
+        "b": "Search",
+        "board": "Backend",
+        "tightness": 0.0226991347124796
+      },
+      {
+        "a": "Dashboards",
+        "b": "Logs",
+        "tightness": -0.10204795844063075
+      },
+      {
+        "a": "Gateway",
+        "b": "Logs",
+        "tightness": 0.09827326768298306
+      },
+      {
+        "a": "Gateway",
+        "b": "Metrics",
+        "tightness": 0.2907356612635922
+      },
+      {
+        "a": "Gateway",
+        "b": "Mobile app",
+        "tightness": -0.5395295965489559
+      },
+      {
+        "a": "Gateway",
+        "b": "Web app",
+        "tightness": -0.31636993694880455
+      },
+      {
+        "a": "Login",
+        "b": "Notifications",
+        "board": "Backend",
+        "tightness": -0.16657670825976362
+      },
+      {
+        "a": "Login",
+        "b": "Orders",
+        "board": "Backend",
+        "tightness": -0.007449498666438903
+      },
+      {
+        "a": "Login",
+        "b": "Passwords",
+        "board": "Backend",
+        "tightness": 0.23533791312260272
+      },
+      {
+        "a": "Login",
+        "b": "Search",
+        "board": "Backend",
+        "tightness": -0.5956624176152876
+      },
+      {
+        "a": "Login",
+        "b": "Sessions",
+        "board": "Backend",
+        "tightness": -0.324073501296222
+      },
+      {
+        "a": "Login",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": 0.74082498796309
+      },
+      {
+        "a": "Notifications",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": 0.30109032320809853
+      },
+      {
+        "a": "Orders",
+        "b": "Orders DB",
+        "board": "Backend",
+        "tightness": 0.3009232048553415
+      },
+      {
+        "a": "Orders",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": -0.3783270793336933
+      },
+      {
+        "a": "Passwords",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": -0.0940621028814678
+      },
+      {
+        "a": "Search",
+        "b": "Search index",
+        "board": "Backend",
+        "tightness": -0.09014932408058082
+      },
+      {
+        "a": "Search index",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": -0.025000133936179364
+      },
+      {
+        "a": "Sessions",
+        "b": "Tokens",
+        "board": "Backend",
+        "tightness": -0.4028928077767227
+      }
+    ],
+    "texts": 23
+  }
+}

@@ -19,8 +19,9 @@ function smallestHolder(model, smallest) {
 }
 
 /**
- * The sizes the layout uses, from `canvas measure`'s JSON for the document: {shapes: {key: {w, h, above}} for every node that holds no shapes,
- * frames: {key: {min: {w, h}|null, titleWidth}} for the rest, pillWidth: {pillKey: w}, constants}.
+ * The sizes the layout uses, from `canvas measure`'s JSON for the document: {shapes: {key: {w, h, above, titleWidth}} for every node that holds no shapes,
+ * frames: {key: {min: {w, h}|null, titleWidth, above}} for the rest, pillWidth: {pillKey: w}, constants, lines: [{through, first: [from, to],
+ * second: [from, to]}]}: `lines` the edges the app draws as one arc through a node (measure's `lines`), each half by its ends.
  */
 export function sizesFrom(model, measure) {
   const nodes = (measure && measure.nodes) || {};
@@ -29,11 +30,11 @@ export function sizesFrom(model, measure) {
   for (const n of model.nodes.values()) {
     const m = nodes[n.key];
     if (holdsShapes(n)) {
-      frames[n.key] = { min: m && m.size ? { w: m.size[0], h: m.size[1] } : null, titleWidth: (m && m.titleWidth) || 0 };
+      frames[n.key] = { min: m && m.size ? { w: m.size[0], h: m.size[1] } : null, titleWidth: (m && m.titleWidth) || 0, above: (m && m.above) || 0 };
       continue;
     }
     if (!m || !m.size) { missing.push(n.key); continue; }
-    shapes[n.key] = { w: m.size[0], h: m.size[1], above: m.above || 0 };
+    shapes[n.key] = { w: m.size[0], h: m.size[1], above: m.above || 0, titleWidth: m.titleWidth || 0 };
   }
   if (missing.length) throw new Error('the measurement has no size for: ' + missing.slice(0, 10).join(', ') + (missing.length > 10 ? ` and ${missing.length - 10} more` : '') + '; measure again');
   const pillWidth = {};
@@ -53,7 +54,17 @@ export function sizesFrom(model, measure) {
     tightGap: gaps.tight != null ? gaps.tight : DEFAULT_CONSTANTS.tightGap,
     frameMin: smallestHolder(model, c.smallest) || DEFAULT_CONSTANTS.frameMin,
   };
-  return { shapes, frames, pillWidth, constants };
+  // the edges the app draws as the halves of one line through a node (a relationship type's two ends): each half by its ends, the node
+  // between them; an edge the model left out leaves the line out
+  const byItem = new Map();
+  for (const e of model.edges) for (const i of e.items) byItem.set(i, e);
+  const lines = [];
+  for (const l of (measure && measure.lines) || []) {
+    if (!l || !model.node(l.through) || !Array.isArray(l.edges) || l.edges.length !== 2) continue;
+    const [a, b] = l.edges.map((i) => byItem.get(i));
+    if (a && b) lines.push({ through: l.through, first: [a.from, a.to], second: [b.from, b.to] });
+  }
+  return { shapes, frames, pillWidth, constants, lines };
 }
 
 /** The edges the app would refuse to draw between their ends, from measure's answer: a Map from an edge's place in the document's list to {reason, message, hint}. */
@@ -61,4 +72,21 @@ export function refusedEdges(measure) {
   const out = new Map();
   for (const e of (measure && measure.edges) || []) if (e && e.refused && Number.isInteger(e.edge)) out.set(e.edge, e.refused);
   return out;
+}
+
+/**
+ * How alike each link's two notes are, from measure's `tightness` member (asked for with `--tightness`): {by, why, of}. `by` is the embedding model's
+ * name; `of` a Map from the two keys of a pair (the lesser first, in code-unit order, whichever order the app gave them) joined by a NUL, to the
+ * pair's tightness. Where the app has none to give (no key, no model, or an older app that has no member at all) `by` is null and `why` says why.
+ */
+export function tightnessFrom(measure) {
+  const t = measure && measure.tightness;
+  if (!t || typeof t !== 'object') return { by: null, why: 'canvas measure gave no tightness', of: new Map() };
+  if (typeof t.unavailable === 'string' || !Array.isArray(t.pairs)) return { by: null, why: typeof t.unavailable === 'string' ? t.unavailable : 'canvas measure gave no tightness', of: new Map() };
+  const of = new Map();
+  for (const p of t.pairs) {
+    if (!p || typeof p.a !== 'string' || typeof p.b !== 'string' || typeof p.tightness !== 'number' || !isFinite(p.tightness)) continue;
+    of.set((p.a < p.b ? p.a + '\u0000' + p.b : p.b + '\u0000' + p.a), p.tightness);
+  }
+  return { by: typeof t.model === 'string' && t.model ? t.model : 'an embedding', why: null, of };
 }

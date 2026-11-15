@@ -230,7 +230,7 @@ private func warnings(_ run: DigestRun) -> String {
         let run = try runDigest("all", fixture("acme"), server: server, target: ["--board", "\(board.number)", "--on", "Home"], out: folder)
         expectEqual(run.process.status, 0, run.said)
         let ids = try expectDrawn(run, in: board, top: top, "Acme")
-        expect(try (run.drawing["edges"]?.arrayValue ?? []).contains { $0["place"]?["pill"] != nil }, "Acme has hubs worth a pill")
+        expect(try (run.drawing["edges"]?.arrayValue ?? []).contains { $0["place"]?["pill"] != nil }, "Acme has links its boards can't draw as arrows: pills")
         expectEqual(board.editor.file.shapeCount, before + ids.count + (try (run.drawing["edges"]?.arrayValue ?? []).filter { $0["place"]?["pill"]?["at"] != nil }.count)
                     + (try (run.drawing["edges"]?.arrayValue ?? []).count), "the shapes of the drawing, its pills and its arrows")
         // every shape is public, so a pill stands for its target as it is: nothing is made public or private
@@ -362,7 +362,7 @@ private func warnings(_ run: DigestRun) -> String {
         expect(!board.editor.canUndo, "and it was the only step")
     },
 
-    test("digest all on a flat graph of 60 notes, into a new file (canvas new, then --board its id): hubs promoted, every node, pill and arrow on its plan") {
+    test("digest all on a flat graph of 60 notes, into a new file (canvas new, then --board its id): links cut into pills, every node, pill and arrow on its plan") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -389,13 +389,13 @@ private func warnings(_ run: DigestRun) -> String {
         expectEqual(run.process.status, 0, run.said)
         let ids = try expectDrawn(run, in: board, top: .root, "flat60")
         expectEqual(ids.count, 60)
-        expect(try (run.drawing["edges"]?.arrayValue ?? []).contains { $0["place"]?["pill"] != nil }, "hubs promoted")
+        expect(try (run.drawing["edges"]?.arrayValue ?? []).contains { $0["place"]?["pill"] != nil }, "links cut into pills")
         try expectNothingPrivate(run, in: board.editor, "flat60")
         expectEqual(first.editor.file.shapeCount, 0, "the other board is as it was")
     },
 ])
 
-@MainActor let digestRedrawTests = Suite("canvas-digest: drawing again with the same document, a changed one, and one with a node gone", [
+@MainActor let digestRedrawTests = Suite("canvas-digest: drawing again with the same document, a changed one, one with a node gone, and after a person's move", [
     test("drawing the same document again changes nothing and makes no undo step; one node's text changed is updated alone; a node gone is deleted with its edges, and a shape the test drew on that board stays") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -474,6 +474,223 @@ private func warnings(_ run: DigestRun) -> String {
         // the board is the new document, drawn
         try expectDrawn(fourth, in: board, top: top, fresh: false, "fourth")   // every pill where the new plan puts it: the app moves those drawn before
         expect(allRecords(board.editor).contains { $0.propertiesJSON?["title"]?.stringValue == "Mine" }, "the shape the test drew stays")
+    },
+
+    test("a note a person put on another stays where they put it on the next drawing, the note it covers gets out of its way and nothing else moves; drawn again after, nothing changes") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("moved")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let top = try boardWithHome(server, board)
+        let target = ["--board", "\(board.number)", "--on", "Home"]
+        let editor = board.editor
+
+        let first = try runDigest("all", fixture("tree"), server: server, target: target, out: folder.appendingPathComponent("one"))
+        expectEqual(first.process.status, 0, first.said)
+        let ids = try expectDrawn(first, in: board, top: top, "first")
+        // every shape, frames too, stays where it is but the note the person's note covers: it goes to the room the person's note left
+        let boxKeys = try (first.drawing["nodes"]?.arrayValue ?? []).compactMap { node -> String? in
+            node["kind"]?.stringValue == "frame" ? nil : node["key"]?.stringValue
+        }
+        let frameKeys = try (first.drawing["nodes"]?.arrayValue ?? []).compactMap { node -> String? in
+            node["kind"]?.stringValue == "frame" ? node["key"]?.stringValue : nil
+        }
+        @MainActor func box(_ key: String) -> CGRect? {
+            guard let id = ids[key] else { return nil }
+            return editor.file.record(id)?.box
+        }
+        func near(_ a: CGRect?, _ b: CGRect?) -> Bool {
+            guard let a, let b else { return false }
+            return abs(a.minX - b.minX) <= 1 && abs(a.minY - b.minY) <= 1 && abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
+        }
+
+        // a person puts one note of the Clients frame on another, as a drag does
+        let moved = "Admin console", covered = "Mobile app"
+        let movedID = try require(ids[moved]), from = try require(box(moved)), onto = try require(box(covered))
+        editor.transact(on: top, "Move") { $0.translate([movedID], by: CGPoint(x: onto.minX - from.minX, y: onto.minY - from.minY)) }
+        let placed = Dictionary(uniqueKeysWithValues: boxKeys.compactMap { key in box(key).map { (key, $0) } })
+        let frames = Dictionary(uniqueKeysWithValues: frameKeys.compactMap { key in box(key).map { (key, $0) } })
+        expect(placed[moved]?.origin == onto.origin, "the person's note is on the other: \(String(describing: placed[moved])), onto \(onto)")
+
+        let second = try runDigest("all", fixture("tree"), server: server, target: target, out: folder.appendingPathComponent("two"))
+        expectEqual(second.process.status, 0, second.said)
+        expect(second.said.contains("a person changed 1 of the drawing's shapes"), "the driver asked what a person changed: \(second.said)")
+        try expectDrawn(second, in: board, top: top, fresh: false, "second")
+        expect(near(box(moved), placed[moved]), "the person's note is where they put it, at its size: \(String(describing: box(moved))), put at \(String(describing: placed[moved]))")
+        let away = try require(box(covered)), held = try require(box(moved))
+        expect(!away.intersects(held), "the note it covered got out of its way: \(away) and \(held)")
+        let movedSaid = try (second.report["boards"]?.objectValue ?? [:]).values.flatMap { $0["moved"]?.arrayValue ?? [] }.map(\.compactText)
+        for key in boxKeys where key != moved && key != covered {
+            expect(near(box(key), placed[key]), "\(key) stays where it was: \(String(describing: box(key))), was \(String(describing: placed[key])); moved: \(movedSaid)")
+        }
+        // the room the person's note left is the covered note's to take, so no frame grows or moves
+        for (key, was) in frames {
+            expect(near(box(key), was), "\(key) is as it was, not grown nor moved: \(String(describing: box(key))), was \(was); moved: \(movedSaid)")
+        }
+        expectEqual(try (second.apply["nodes"]?.arrayValue ?? []).compactMap { $0["overrode"] }, [], "nothing a person changed is changed again")
+        let boards = try require(second.report["boards"]?.objectValue)
+        expect(boards.values.contains { ($0["held"]?.arrayValue ?? []).contains(.string(moved)) }, "the report says the person's note is held")
+        expect(boards.values.contains { ($0["moved"]?.arrayValue ?? []).contains { $0["key"]?.stringValue == covered } }, "and that the note it covered moved, and why")
+        for (name, report) in boards { expectEqual(report["health"]?["status"], "clean", "\(name) is clean") }
+
+        // drawn again with nothing changed since: the drawing holds what the person did, and nothing moves
+        let drawn = snapshot(editor)
+        let third = try runDigest("all", fixture("tree"), server: server, target: target, out: folder.appendingPathComponent("three"))
+        expectEqual(third.process.status, 0, third.said)
+        expectEqual(Set(try (third.apply["nodes"]?.arrayValue ?? []).compactMap { $0["did"]?.stringValue }), ["unchanged"], "every node unchanged")
+        expectEqual(Set(try (third.apply["edges"]?.arrayValue ?? []).compactMap { $0["did"]?.stringValue }), ["unchanged"], "every edge unchanged")
+        expectEqual(snapshot(editor), drawn, "nothing on the board changed")
+    },
+])
+
+// The layout strategy's tests are a suite of their own: the redraw suite is as many tests as the compiler will type-check in one array literal (past that it gives
+// up on a line of it that has not changed).
+@MainActor let digestLayoutStrategyTests = Suite("canvas-digest: the links weighed by the app's tightness, no shape added, a new note put down where the document has it, and by the links alone with no embedding key", [
+    test("digest all weighs the links by the app's tightness and adds no shape, and digest all again changes nothing") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("weighed")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let top = try boardWithHome(server, board)
+        let target = ["--board", "\(board.number)", "--on", "Home"]
+
+        let first = try runDigest("all", fixture("acme"), server: server, target: target, out: folder.appendingPathComponent("one"))
+        expectEqual(first.process.status, 0, first.said)
+        try expectDrawn(first, in: board, top: top, "first")
+        // the driver asked the app's embedding model (the shipped list's scripted one here) how alike each link's two notes are, and the links are weighed by what it answered: a driver or a measure
+        // that always fell back to the links alone would still draw, so this is where it is held
+        expect(first.said.contains("linked pairs of notes, by scripted"), "the driver said the tightness came from the scripted model: \(first.said)")
+        expect(first.said.contains("(tightness: scripted)"), "and the clusters line says it: \(first.said)")
+        expect(!first.said.contains("no tightness") && !first.said.contains("by the links alone"), "and not that the groups are by the links alone: \(first.said)")
+        expectEqual(try first.report["clusters"]?["by"], "scripted", "the drawing records the model its groups are by")
+
+        // no shape is added: the drawing's nodes are the document's, each in the container the document has it in
+        func holders(_ nodes: [JSON]) -> [String: String] { Dictionary(uniqueKeysWithValues: nodes.compactMap { node in node["key"]?.stringValue.map { ($0, node["in"]?.stringValue ?? "") } }) }
+        let drawn = try first.drawing
+        let document = try json(fixture("acme"))
+        expectEqual(holders(drawn["nodes"]?.arrayValue ?? []), holders(document["nodes"]?.arrayValue ?? []), "the same keys, each in the container the document has it in: nothing added, nothing moved across")
+        expectEqual((drawn["nodes"]?.arrayValue ?? []).count, (document["nodes"]?.arrayValue ?? []).count, "and no node twice")
+
+        // every link between two notes on a board is weighed
+        let kinds = Dictionary(uniqueKeysWithValues: (drawn["nodes"]?.arrayValue ?? []).compactMap { node in node["key"]?.stringValue.map { ($0, node["kind"]?.stringValue ?? "") } })
+        let held = holders(drawn["nodes"]?.arrayValue ?? [])
+        func boardOf(_ key: String) -> String {
+            guard let holder = held[key], !holder.isEmpty else { return "" }
+            return kinds[holder] == "subboard" ? holder : boardOf(holder)
+        }
+        let links = (drawn["edges"]?.arrayValue ?? []).filter { edge in
+            guard let from = edge["from"]?.stringValue, let to = edge["to"]?.stringValue else { return false }
+            return kinds[from] == "sticky-note" && kinds[to] == "sticky-note" && boardOf(from) == boardOf(to)
+        }
+        expect(!links.isEmpty, "Acme has links between notes on a board")
+        for edge in links {
+            let weight = edge["layout"]?["weight"]?.numberValue
+            expect(weight != nil && (1...100).contains(weight ?? 0), "the link \(edge["from"] ?? .null) to \(edge["to"] ?? .null) has a layout.weight: \(edge.compactText)")
+        }
+        let snapshotDrawn = snapshot(board.editor)
+
+        let second = try runDigest("all", fixture("acme"), server: server, target: target, out: folder.appendingPathComponent("two"))
+        expectEqual(second.process.status, 0, second.said)
+        let verdicts = try second.apply
+        expectEqual(Set((verdicts["nodes"]?.arrayValue ?? []).compactMap { $0["did"]?.stringValue }), ["unchanged"], "every node unchanged")
+        expectEqual(Set((verdicts["edges"]?.arrayValue ?? []).compactMap { $0["did"]?.stringValue }), ["unchanged"], "every edge unchanged")
+        expectEqual(snapshot(board.editor), snapshotDrawn, "nothing on the board changed")
+    },
+
+    test("a note added to the document is put down in the container the document has it in, and nothing the first drawing has moves") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("added")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let top = try boardWithHome(server, board)
+        let target = ["--board", "\(board.number)", "--on", "Home"]
+
+        let first = try runDigest("all", fixture("acme"), server: server, target: target, out: folder.appendingPathComponent("one"))
+        expectEqual(first.process.status, 0, first.said)
+        let ids = try expectDrawn(first, in: board, top: top, "first")
+        let firstNodes = try first.drawing["nodes"]?.arrayValue ?? [], firstEdges = try first.drawing["edges"]?.arrayValue ?? []
+        let boxes = Dictionary(uniqueKeysWithValues: ids.compactMap { key, id in board.editor.file.record(id)?.box.map { (key, $0) } })
+        expectEqual(boxes.count, firstNodes.count, "a box for every shape of the first drawing")
+
+        // a new note in Engineering, linked to the CTO
+        var graph = try json(fixture("acme"))
+        graph["nodes"] = .array((graph["nodes"]?.arrayValue ?? []) + [["key": "Newcomer", "in": "Engineering", "kind": "sticky-note", "props": ["title": "Newcomer", "text": "A new team, led by the CTO."]]])
+        graph["edges"] = .array((graph["edges"]?.arrayValue ?? []) + [["from": "CTO", "to": "Newcomer"]])
+        let second = try runDigest("all", try graphFile("added", graph, in: folder), server: server, target: target, out: folder.appendingPathComponent("two"))
+        expectEqual(second.process.status, 0, second.said)
+        let secondIDs = try expectDrawn(second, in: board, top: top, fresh: false, "second")
+        let nodes = try second.drawing["nodes"]?.arrayValue ?? []
+        expectEqual(nodes.first { $0["key"] == "Newcomer" }?["in"]?.stringValue, "Engineering", "the note is in the container the document has it in")
+        expectEqual(Set(nodes.compactMap { $0["key"]?.stringValue }), Set(firstNodes.compactMap { $0["key"]?.stringValue } + ["Newcomer"]), "nothing is added to the drawing's nodes but the note")
+        // Engineering has no room left for a note and its pill, so its frame grows, as little as it must, and the frames laid out among the shapes it links to are put down again
+        // with what they hold: the report names each shape that moved and says why. Every other shape of the first drawing keeps its box.
+        let inEngineering = Dictionary(uniqueKeysWithValues: nodes.compactMap { node in node["key"]?.stringValue.map { ($0, node["in"]?.stringValue ?? "") } })
+        let moved = try (second.report["boards"]?.objectValue ?? [:]).values.flatMap { $0["moved"]?.arrayValue ?? [] }
+        let whys = Dictionary(uniqueKeysWithValues: moved.compactMap { m in m["key"]?.stringValue.map { ($0, m["why"]?.stringValue ?? "") } })
+        for (key, was) in boxes {
+            let now = try require(secondIDs[key].flatMap { board.editor.file.record($0)?.box }, "\(key) is on the board")
+            expect(secondIDs[key] == ids[key], "\(key) is the same shape")
+            if key == "Engineering" {
+                expect(now.origin == was.origin && now.width >= was.width && now.height >= was.height, "Engineering grew where it was, and did not shrink: \(now), was \(was)")
+                continue
+            }
+            let same = abs(now.minX - was.minX) <= 1 && abs(now.minY - was.minY) <= 1 && abs(now.width - was.width) <= 1 && abs(now.height - was.height) <= 1
+            if same { continue }
+            expect(["a frame grew", "it is in a container that moved"].contains(whys[key] ?? ""), "\(key) moved (\(now), was \(was)) and the report says why: \(whys[key] ?? "nothing")")
+            func inside(_ k: String) -> Bool { guard let h = inEngineering[k], !h.isEmpty else { return false }; return h == "Engineering" || inside(h) }
+            expect(!inside(key), "\(key) is a shape of Engineering, at some depth: those keep their boxes")
+        }
+        for (name, report) in try require(second.report["boards"]?.objectValue) { expect(report["afresh"] != .bool(true), "\(name) is drawn in place, not afresh") }
+        let verdicts = try second.apply
+        let changed = Set((verdicts["nodes"]?.arrayValue ?? []).filter { $0["did"] != "unchanged" }.compactMap { $0["key"]?.stringValue })
+        expect(changed.contains("Newcomer") && changed.contains("Engineering"), "the new note and the frame that grew are what changed: \(changed.sorted())")
+        expect(changed.isSubset(of: Set(["Newcomer", "Engineering"] + moved.compactMap { $0["key"]?.stringValue })), "and no node else but what the report says moved: \(changed.sorted())")
+        let edges = try second.drawing["edges"]?.arrayValue ?? []
+        expectEqual(edges.count, firstEdges.count + 1, "one link more")
+        expectEqual((verdicts["edges"]?.arrayValue ?? []).filter { $0["did"] != "unchanged" }.count, 1, "and it is the only edge that is not unchanged")
+    },
+
+    test("with no embedding key the driver says why and the groups are by the links alone: the drawing records it, and adds nothing to the document's nodes") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("no-key")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let top = try boardWithHome(server, board)
+        let target = ["--board", "\(board.number)", "--on", "Home"]
+
+        // the model has no key: the next request it is asked is refused as OpenAI's would be, and measure answers `unavailable` with that reason
+        try queueNoEmbeddingKey(on: board.editor)
+        let run = try runDigest("all", fixture("acme"), server: server, target: target, out: folder.appendingPathComponent("one"))
+        expectEqual(run.process.status, 0, run.said)
+        expect(run.said.contains("tightness: unavailable") && run.said.contains("by the links alone"), "the tightness line says why: \(run.said)")
+        expect(run.said.contains("no tightness") && run.said.contains("grouped by the links alone"), "and so does the clusters line: \(run.said)")
+        try expectDrawn(run, in: board, top: top, "by the links alone")
+        let clustered = try run.report["clusters"]
+        expect(clustered?.objectValue != nil && clustered?["by"]?.stringValue == nil, "the drawing is not grouped by a model: \(clustered?.compactText ?? "nil")")
+        expect(clustered?["why"]?.stringValue?.isEmpty == false, "it says why")
+        let drawn = Set(try (run.drawing["nodes"]?.arrayValue ?? []).compactMap { $0["key"]?.stringValue })
+        let document = Set(try (json(fixture("acme"))["nodes"]?.arrayValue ?? []).compactMap { $0["key"]?.stringValue })
+        expectEqual(drawn, document, "nothing is added to the document's nodes")
     },
 ])
 

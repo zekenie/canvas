@@ -58,6 +58,21 @@ struct KindVocabulary {
         }.keys)
     }
 
+    /// The properties that hold a shape's words, the first the one it is said by: `text` when the schema has it (a note's), else
+    /// the others in code-unit order (a subboard's `description`). Those of `textKeys`, which a format that writes mention text
+    /// writes: the kind's schema says them, so no kind is named. The one name the engine prefers is `text`, and only when the
+    /// schema has it.
+    var wordsKeys: [String] {
+        let rest = textKeys.filter { $0 != Self.firstWordsKey }.sorted { $0.utf16.lexicographicallyPrecedes($1.utf16) }
+        return (textKeys.contains(Self.firstWordsKey) ? [Self.firstWordsKey] : []) + rest
+    }
+
+    /// The property a shape's words are first looked for in: `wordsKeys`' first; nil when the kind has none.
+    var wordsKey: String? { wordsKeys.first }
+
+    /// The property a note's words are in, the one `wordsKeys` puts first.
+    private static let firstWordsKey = "text"
+
     /// The kind's whole schema, whose `$defs` its properties refer to.
     var root: JSONObject { schema.root }
     /// Each property of the schema, own and added, by name.

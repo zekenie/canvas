@@ -7,15 +7,15 @@ var io = {
   readText: function (p) { return isNode ? fsr.readFileSync(p, 'utf8') : readFile(p); },
   print: function (s) { isNode ? console.log(s) : print(s); },
 };
-Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../lib/sizes.mjs'), import('../lib/elk.mjs'), import('../lib/plan.mjs'), import('../lib/cli.mjs'), import('../lib/util.mjs'), import('../lib/layout.mjs'), import('../lib/promote.mjs'), import('../lib/cost.mjs'), import('../lib/noise.mjs'), import('../lib/check.mjs'), import('./helpers.mjs'), import('../lib/emit.mjs')]).then(async function (mods) {
-  var dialm = mods[0], sizes = mods[2], elkm = mods[3], clim = mods[5], util = mods[6], layoutm = mods[7], promm = mods[8], costm = mods[9], noisem = mods[10], helpers = mods[12];
+Promise.all([import('../lib/model.mjs'), import('../lib/sizes.mjs'), import('../lib/elk.mjs'), import('../lib/plan.mjs'), import('../lib/cli.mjs'), import('../lib/util.mjs'), import('../lib/layout.mjs'), import('../lib/check.mjs'), import('./helpers.mjs'), import('../lib/health.mjs'), import('../lib/geom.mjs'), import('../lib/planarity.mjs'), import('../lib/stars.mjs'), import('../lib/cut.mjs'), import('../lib/cluster.mjs')]).then(async function (mods) {
+  var sizes = mods[1], elkm = mods[2], clim = mods[4], util = mods[5], layoutm = mods[6], helpers = mods[8], healthm = mods[9], geomm = mods[10], planarm = mods[11], starsm = mods[12], cutm = mods[13], clusterm = mods[14];
   var base = util.TOOL_DIR;
   // The app's kinds as the tool reads them (`canvas kinds`): the tool names no kind, and the driver gives them to every command that reads a document.
   // This copy is what the tests read them by (CompositionTests' DigestTests hold it to the app's answer).
   var KINDS = JSON.parse(io.readText(base + '/test/fixtures/kinds.json'));
-  var model = Object.assign({}, mods[1], { buildModel: function (d, mess, kinds, opts) { return mods[1].buildModel(d, mess, kinds === undefined ? KINDS : kinds, opts); } });
-  var checkm = Object.assign({}, mods[11], { checkGraph: function (d, opts) { return mods[11].checkGraph(d, Object.assign({ kinds: KINDS }, opts || {})); } });
-  var planm = Object.assign({}, mods[4], { planGraph: function (d, sz, opts, e) { return mods[4].planGraph(d, sz, Object.assign({ kinds: KINDS }, opts || {}), e); } });
+  var model = Object.assign({}, mods[0], { buildModel: function (d, kinds, opts) { return mods[0].buildModel(d, kinds === undefined ? KINDS : kinds, opts); } });
+  var checkm = Object.assign({}, mods[7], { checkGraph: function (d, opts) { return mods[7].checkGraph(d, Object.assign({ kinds: KINDS }, opts || {})); } });
+  var planm = Object.assign({}, mods[3], { planGraph: function (d, sz, opts, e) { return mods[3].planGraph(d, sz, Object.assign({ kinds: KINDS }, opts || {}), e); } });
   var elk = await elkm.loadElk(io, base);
   var RECORD = isNode && process.argv[2] === 'record';
   var results = [], failed = 0;
@@ -93,21 +93,265 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   var edgeRows = function (r, board) { return r.drawing.edges.filter(function (e) { return r.model.node(e.from).board === board; }); };
   var pillOf = function (e) { return e.place && e.place.pill; };
 
-  await test('no edges: the notes are packed, nothing promoted, nothing overlaps', async function () {
+  await test('no edges: the notes are packed, nothing cut, nothing overlaps', async function () {
     var nodes = [{ title: 'F', kind: 'frame' }];
     for (var i = 0; i < 12; i++) nodes.push(note('Note ' + (i < 10 ? '0' : '') + i, i < 8 ? 'F' : null, 'Text ' + i));
     var r = await planOf(digest(nodes, []));
-    eq(r.report.promotions.length, 0, 'promotions');
     var rep = r.report.boards.root;
     assert(rep.algorithms.every(function (a) { return a.algorithm === 'rectpacking'; }), 'algorithms ' + JSON.stringify(rep.algorithms));
-    eq(rep.end.arrows + rep.end.pills, 0, 'arrows and pills');
-    assert(rep.end.aspect <= 3, 'aspect ' + rep.end.aspect);
+    eq([rep.end.arrows, rep.end.pills, rep.cut, rep.cutFurther, rep.stop], [0, 0, 0, 0, 'clean'], 'arrows, pills, cuts and where it stopped');
+    var size = rep.health.size;
+    assert(Math.max(size[0] / size[1], size[1] / size[0]) <= 3, 'the board\'s shape: ' + size);
     checkPlan(r.plan);
   });
 
-  function ring(prefix, n, nodes, edges) { var t = []; for (var i = 1; i <= n; i++) { t.push(prefix + i); nodes.push(note(prefix + i)); } for (var j = 0; j < n; j++) edges.push({ from: t[j], to: t[(j + 1) % n] }); return t; }
+  // ---- planarity, stars and the cut ----
+  var complete = function (n) { var e = []; for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) e.push([i, j]); return e; };
+  await test('planarity: K4, the octahedron, the icosahedron, a wheel and a triangulated grid are planar; K5, K3,3 and the Petersen graph, and either subdivided, are not; a loop or an edge given twice changes nothing', async function () {
+    var P = planarm.isPlanar;
+    eq(P(4, complete(4)), true, 'K4');
+    eq(P(5, complete(5)), false, 'K5');
+    eq(P(5, complete(5).slice(1)), true, 'K5 less an edge');
+    var k33 = []; for (var a = 0; a < 3; a++) for (var b = 3; b < 6; b++) k33.push([a, b]);
+    eq(P(6, k33), false, 'K3,3');
+    eq(P(6, k33.slice(1)), true, 'K3,3 less an edge');
+    eq(P(7, k33.slice(1).concat([[0, 6], [6, 3]])), false, 'K3,3 with an edge subdivided');
+    var k5s = []; complete(5).forEach(function (e, i) { k5s.push([e[0], 5 + i], [5 + i, e[1]]); });
+    eq(P(15, k5s), false, 'K5 with every edge subdivided (20 edges, under Euler\'s 39)');
+    var petersen = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0], [0, 5], [1, 6], [2, 7], [3, 8], [4, 9], [5, 7], [7, 9], [9, 6], [6, 8], [8, 5]];
+    eq(P(10, petersen), false, 'the Petersen graph');
+    var octahedron = complete(6).filter(function (e) { return !(e[0] % 2 === 0 && e[1] === e[0] + 1); });
+    eq([octahedron.length, P(6, octahedron)], [12, true], 'the octahedron: 3n - 6 edges, planar');
+    var ico = [];
+    for (var i = 0; i < 5; i++) { var u = 1 + i, u2 = 1 + (i + 1) % 5, l = 6 + i, l2 = 6 + (i + 1) % 5; ico.push([0, u], [u, u2], [u, l], [u, l2], [l, l2], [l, 11]); }
+    eq([ico.length, P(12, ico)], [30, true], 'the icosahedron: 3n - 6 edges, planar');
+    var wheel = []; for (var w = 1; w <= 8; w++) wheel.push([0, w], [w, w % 8 + 1]);
+    eq(P(9, wheel), true, 'a wheel');
+    var grid = [], at = function (r, c) { return r * 5 + c; };
+    for (var r = 0; r < 5; r++) for (var c = 0; c < 5; c++) { if (c < 4) grid.push([at(r, c), at(r, c + 1)]); if (r < 4) grid.push([at(r, c), at(r + 1, c)]); if (r < 4 && c < 4) grid.push([at(r, c), at(r + 1, c + 1)]); }
+    eq(P(25, grid), true, 'a triangulated grid');
+    eq(P(25, grid.concat([[at(0, 0), at(4, 4)], [at(0, 4), at(4, 0)]])), false, 'and with two chords across it that must cross');
+    eq(P(4, complete(4).concat(complete(4), [[0, 0], [2, 2]])), true, 'K4 with every edge twice and two loops');
+    eq(P(9, complete(4).concat(complete(5).map(function (e) { return [e[0] + 4, e[1] + 4]; }))), false, 'K4 beside K5: one part that is not');
+    eq(P(9, complete(4).concat(complete(5).slice(1).map(function (e) { return [e[0] + 4, e[1] + 4]; }))), true, 'K4 beside K5 less an edge');
+  });
 
-  var viaTo = function (plan, target) { var out = []; plan.boards.forEach(function (b) { b.edges.forEach(function (e) { if (e.via && e.to === target) out.push(e); }); }); return out; };
+  await test('the planar cut: what it leaves out of K6 is three edges or more, never the first, and what it keeps is planar and takes none of them back; edges it may not cut are kept', async function () {
+    var k6 = complete(6), cut = planarm.planarCut(6, [], k6);
+    assert(cut.length >= 3, 'K6 has 15 edges, and a planar graph of 6 vertices 12 at most: ' + cut);
+    assert(cut.indexOf(0) < 0, 'the most wanted is kept');
+    var kept = k6.filter(function (e, i) { return cut.indexOf(i) < 0; });
+    eq(planarm.isPlanar(6, kept), true, 'what is kept is planar');
+    cut.forEach(function (i) { eq(planarm.isPlanar(6, kept.concat([k6[i]])), false, 'taking ' + k6[i] + ' back makes it not planar'); });
+    eq(planarm.planarCut(5, complete(4), [[0, 4], [1, 4], [2, 4], [3, 4]]), [3], 'K4 kept: of the fifth vertex\'s four, the least wanted is cut');
+    eq(planarm.planarCut(4, [], complete(4)), [], 'a planar graph loses nothing');
+  });
+
+  await test('the planar drawing: a cycle, a wheel, a triangulated grid, a tree, two parts apart and two triangles at one vertex are drawn straight with no two edges crossing and every vertex apart; K5 and K3,3 have no embedding and no drawing', async function () {
+    var cycle = []; for (var i = 0; i < 7; i++) cycle.push([i, (i + 1) % 7]);
+    var wheel = []; for (var w = 1; w <= 8; w++) wheel.push([0, w], [w, w % 8 + 1]);
+    var grid = [], at = function (r, c) { return r * 5 + c; };
+    for (var r = 0; r < 5; r++) for (var c = 0; c < 5; c++) { if (c < 4) grid.push([at(r, c), at(r, c + 1)]); if (r < 4) grid.push([at(r, c), at(r + 1, c)]); if (r < 4 && c < 4) grid.push([at(r, c), at(r + 1, c + 1)]); }
+    var tree = [[0, 1], [0, 2], [1, 3], [1, 4], [2, 5], [2, 6], [6, 7]];
+    var parts = complete(4).concat([[4, 5], [5, 6], [6, 7], [7, 8], [8, 4]]);
+    var bowtie = [[0, 1], [1, 2], [2, 0], [2, 3], [3, 4], [4, 2]];
+    [['a cycle', 7, cycle], ['a wheel', 9, wheel], ['a triangulated grid', 25, grid], ['a tree', 8, tree], ['two parts apart', 9, parts], ['two triangles at one vertex', 5, bowtie]].forEach(function (g) {
+      var X = planarm.planarDrawing(g[1], g[2]);
+      assert(X && X.length === g[1], g[0] + ' is drawn');
+      eq(planarm.countCrossings(X, g[2]), 0, g[0] + ': no two edges cross');
+      for (var a = 0; a < g[1]; a++) for (var b = a + 1; b < g[1]; b++) assert(Math.abs(X[a][0] - X[b][0]) + Math.abs(X[a][1] - X[b][1]) > 1e-6, g[0] + ': ' + a + ' and ' + b + ' are apart');
+      eq(JSON.stringify(planarm.planarDrawing(g[1], g[2])), JSON.stringify(X), g[0] + ': the same twice');
+    });
+    var k33 = []; for (var a = 0; a < 3; a++) for (var b = 3; b < 6; b++) k33.push([a, b]);
+    eq([planarm.planarEmbedding(5, complete(5)), planarm.planarDrawing(5, complete(5))], [null, null], 'K5');
+    eq([planarm.planarEmbedding(6, k33), planarm.planarDrawing(6, k33)], [null, null], 'K3,3');
+  });
+
+  await test('a note\'s pills in strips: in every arrangement but a column, each line from the note to a pill passes no other of its pills within the margin, a row or a column of a strip holds 8 at most, and no pill is on the note or on another; a side alone is offered wherever its pills fit there', async function () {
+    var stripsm = await import('../lib/strips.mjs');
+    var K = sizes.DEFAULT_CONSTANTS, noteBox = { w: 300, h: 200, above: 30 };
+    var pillsOf = function (n) { var ps = []; for (var i = 0; i < n; i++) ps.push({ w: 80 + (i * 37) % 200 }); return ps; };
+    var overlap = function (p, q) { return p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h; };
+    [1, 5, 8, 9, 17, 40, 62].forEach(function (n) {
+      var alts = stripsm.stripAlts(noteBox, pillsOf(n), K).filter(function (a) { return a && a.side && !/^column/.test(a.side); });
+      assert(alts.length > 0, n + ' pills: some strips hold them');
+      alts.forEach(function (a) {
+        var N = { x: a.nx, y: a.ny, w: a.nw, h: a.nh }, name = n + ' pills, ' + a.side;
+        eq(a.pills.length, n, name + ': every pill');
+        a.pills.forEach(function (p, i) {
+          var s = geomm.arrowBetween(N, p);
+          a.pills.forEach(function (q, j) { if (j !== i) assert(!geomm.segHitsBox(s, q, -8), name + ': the line to pill ' + i + ' passes pill ' + j); });
+          assert(!overlap(p, N), name + ': pill ' + i + ' is on the note');
+          a.pills.forEach(function (q, j) { if (j > i) assert(!overlap(p, q), name + ': pills ' + i + ' and ' + j + ' overlap'); });
+        });
+        eq(a.own, 0, name + ': it counts no line over its own pills');
+        (a.strips || []).forEach(function (b) {
+          var inside = a.pills.filter(function (p) { var cx = p.x + p.w / 2, cy = p.y + p.h / 2; return cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h; });
+          var lines = {}; inside.forEach(function (p) { var k = b.w >= b.h ? Math.round(p.y) : Math.round(p.x); lines[k] = (lines[k] || 0) + 1; });
+          Object.keys(lines).forEach(function (k) { assert(lines[k] <= 8, name + ': ' + lines[k] + ' pills in one ' + (b.w >= b.h ? 'row' : 'column')); });
+        });
+      });
+    });
+    [6, 9, 10, 14, 17, 22, 23, 26].forEach(function (n) {
+      var sides = stripsm.stripAlts(noteBox, pillsOf(n), K).filter(Boolean).map(function (a) { return a.side; });
+      ['below', 'above'].forEach(function (side) { assert(sides.indexOf(side) >= 0, n + ' pills: ' + side + ' alone is offered: ' + sides.join(', ')); });
+    });
+  });
+
+  await test('stars: a hub among its users and a ring, drawn with no crossing, no arrow over a box and nothing overlapping, the same twice, and kept where it is when it starts from there', async function () {
+    var items = [], edges = [];
+    for (var i = 0; i < 13; i++) items.push({ w: 200 + 10 * (i % 3), h: 90 });
+    for (var u = 1; u <= 6; u++) edges.push({ a: 0, b: u, w: 1 });                            // 0 the hub of 1 to 6
+    for (var k = 0; k < 6; k++) edges.push({ a: 7 + k, b: 7 + (k + 1) % 6, w: 1 });           // 7 to 12 a ring
+    edges.push({ a: 6, b: 7, w: 1 });
+    var pos = starsm.starsLayout(items, edges, { aspect: 1.5 });
+    var boxes = pos.map(function (p, i) { return { x: p.x, y: p.y, w: items[i].w, h: items[i].h }; });
+    for (var a = 0; a < 13; a++) for (var b = a + 1; b < 13; b++) assert(!(boxes[a].x < boxes[b].x + boxes[b].w && boxes[b].x < boxes[a].x + boxes[a].w && boxes[a].y < boxes[b].y + boxes[b].h && boxes[b].y < boxes[a].y + boxes[a].h), a + ' overlaps ' + b);
+    var seg = function (e) { var p = boxes[e.a], q = boxes[e.b]; return { x1: p.x + p.w / 2, y1: p.y + p.h / 2, x2: q.x + q.w / 2, y2: q.y + q.h / 2 }; };
+    edges.forEach(function (e, i) { edges.slice(i + 1).forEach(function (f) { if (e.a === f.a || e.a === f.b || e.b === f.a || e.b === f.b) return; assert(!geomm.segCross(seg(e), seg(f)), JSON.stringify(e) + ' crosses ' + JSON.stringify(f)); }); });
+    edges.forEach(function (e) { boxes.forEach(function (bx, j) { if (j !== e.a && j !== e.b) assert(!geomm.segHitsBox(seg(e), bx), JSON.stringify(e) + ' runs over ' + j); }); });
+    eq(starsm.starsLayout(items, edges, { aspect: 1.5 }), pos, 'the same again');
+    var from = boxes.map(function (bx) { return [bx.x + bx.w / 2, bx.y + bx.h / 2]; });
+    // the compaction after may nudge a box a few units, never more
+    var stayed = starsm.starsLayout(items, edges, { aspect: 1.5, fromNotes: from });
+    stayed.forEach(function (p, i) { assert(Math.abs(p.x - pos[i].x) <= 4 && Math.abs(p.y - pos[i].y) <= 4, 'started from where it is, ' + i + ' stays: ' + JSON.stringify([p, pos[i]])); });
+    // a note with a column of pills, which may go on its right or its left (strips.mjs's arrangements: its box, its note in it, its strips and pills)
+    var withColumn = function (w, h, nw, nh, ny) {
+      var side = function (left) {
+        var pills = [];
+        for (var j = 0; j * 52 + 40 <= h; j++) pills.push({ x: left ? 0 : nw, y: j * 52, w: w - nw, h: 40 });
+        return { w: w, h: h, nx: left ? w - nw : 0, ny: ny, nw: nw, nh: nh, strips: [{ x: left ? 0 : nw, y: 0, w: w - nw, h: h }], pills: pills };
+      };
+      return { w: w, h: h, alts: [side(false), side(true)], alt: 0 };
+    };
+    // a hub with a column of pills: its arrows leave the note on the side the column is not
+    var hub = [withColumn(420, 90, 200, 90, 0), { w: 200, h: 90 }, { w: 200, h: 90 }, { w: 200, h: 90 }], spokes = [{ a: 0, b: 1, w: 1 }, { a: 0, b: 2, w: 1 }, { a: 0, b: 3, w: 1 }];
+    // four notes in a chain and a note with a column of pills: no arrow runs over a box or a column
+    var five = [{ w: 200, h: 100 }, { w: 200, h: 100 }, { w: 200, h: 100 }, { w: 200, h: 100 }, withColumn(440, 280, 200, 100, 90)];
+    var chain = [[1, 0], [2, 1], [3, 2], [4, 0]].map(function (p) { return { a: p[0], b: p[1], w: 1 }; });
+    var overs = function (items, links, at) {
+      var note = function (i) { var it = items[i], p = at[i]; if (!it.alts) return { x: p.x, y: p.y, w: it.w, h: it.h }; var a = it.alts[p.alt]; return { x: p.x + a.nx, y: p.y + a.ny, w: a.nw, h: a.nh }; };
+      var column = function (i) { var it = items[i], p = at[i]; if (!it.alts) return null; var s = it.alts[p.alt].strips[0]; return { x: p.x + s.x, y: p.y + s.y, w: s.w, h: s.h }; };
+      var count = 0;
+      links.forEach(function (e) {
+        var a = note(e.a), b = note(e.b), s = { x1: a.x + a.w / 2, y1: a.y + a.h / 2, x2: b.x + b.w / 2, y2: b.y + b.h / 2 };
+        items.forEach(function (it, j) { if (j !== e.a && j !== e.b && geomm.segHitsBox(s, note(j))) count++; if (column(j) && geomm.segHitsBox(s, column(j))) count++; });
+      });
+      return count;
+    };
+    eq(overs(five, chain, starsm.starsLayout(five, chain, { aspect: 1.5 })), 0, 'no arrow runs over a box or a column');
+    var hp = starsm.starsLayout(hub, spokes, { aspect: 1.5 });
+    var ha = hub[0].alts[hp[0].alt], note0 = { x: hp[0].x + ha.nx, y: hp[0].y + ha.ny, w: 200, h: 90 }, column = { x: hp[0].x + ha.strips[0].x, y: hp[0].y + ha.strips[0].y, w: ha.strips[0].w, h: ha.strips[0].h };
+    spokes.forEach(function (e) { var s = { x1: note0.x + 100, y1: note0.y + 45, x2: hp[e.b].x + 100, y2: hp[e.b].y + 45 }; assert(!geomm.segHitsBox(s, column), 'the arrow to ' + e.b + ' runs over its start\'s own pills: ' + JSON.stringify(hp)); });
+  });
+
+  await test('stars: a child with no link is shelved beside the rest every time, never left where an earlier layout put it', async function () {
+    // a chain of five and a note with no link, which an earlier round of the cut left far off (as Selection's Accessibility.swift was, 7,000 units away)
+    var items = [0, 1, 2, 3, 4, 5].map(function () { return { w: 200, h: 100 }; }), edges = [[0, 1], [1, 2], [2, 3], [3, 4]].map(function (p) { return { a: p[0], b: p[1], w: 1 }; });
+    var from = [[0, 0], [300, 0], [600, 0], [600, 200], [300, 200], [-5000, 4000]];
+    var nearest = function (pos) {
+      var a = { x: pos[5].x, y: pos[5].y, w: 200, h: 100 };
+      return Math.min.apply(null, [0, 1, 2, 3, 4].map(function (i) { return gapOf(a, { x: pos[i].x, y: pos[i].y, w: 200, h: 100 }); }));
+    };
+    var kept = starsm.starsLayout(items, edges, { aspect: 1.5, fromNotes: from });
+    assert(nearest(kept) <= 300, 'started from where it was: ' + nearest(kept) + ' from the nearest: ' + JSON.stringify(kept));
+    var fresh = starsm.starsLayout(items, edges, { aspect: 1.5 });
+    assert(nearest(fresh) <= 300, 'laid out afresh: ' + nearest(fresh) + ' from the nearest: ' + JSON.stringify(fresh));
+    // exactly where: below the rest when they are wider than the shape wanted, under the one that reaches lowest (else right of the one that
+    // reaches furthest right), 56 clear
+    var spot = function (pos) {
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      [0, 1, 2, 3, 4].forEach(function (i) { x0 = Math.min(x0, pos[i].x); y0 = Math.min(y0, pos[i].y); x1 = Math.max(x1, pos[i].x + 200); y1 = Math.max(y1, pos[i].y + 100); });
+      var below = (x1 - x0) / Math.max(1, y1 - y0) >= 1.5;
+      var far = [0, 1, 2, 3, 4].reduce(function (f, i) { return (below ? pos[i].y > pos[f].y : pos[i].x > pos[f].x) ? i : f; }, 0);
+      return below ? { x: pos[far].x, y: y1 + 56 } : { x: x1 + 56, y: pos[far].y };
+    };
+    [['started from where it was', kept], ['laid out afresh', fresh]].forEach(function (c) {
+      var s = spot(c[1]);
+      assert(Math.abs(c[1][5].x - s.x) <= 1 && Math.abs(c[1][5].y - s.y) <= 1, c[0] + ': the shelf hangs from the shape that reaches furthest: ' + JSON.stringify([c[1][5], s]));
+    });
+  });
+
+  await test('the cut: K5 of notes is no planar graph, so a link becomes a pill and the board draws clean; a link marked direct, or into a shape kept off pills, is never cut', async function () {
+    var five = ['A', 'B', 'C', 'D', 'E'], nodes = five.map(function (t) { return note(t); }), edges = [];
+    five.forEach(function (a, i) { five.slice(i + 1).forEach(function (b) { edges.push({ from: a, to: b }); }); });
+    var r = await planOf(digest(nodes, edges)), rep = r.report.boards.root;
+    assert(rep.cut >= 1, 'the planar cut takes a link: ' + rep.cut);
+    eq([rep.stop, rep.health.status, rep.health.crossings, rep.health.overShapes, rep.health.links], ['clean', 'clean', 0, 0, 10], 'and the board is clean');
+    eq(rep.health.cut, rep.cut + rep.cutFurther - rep.restored, 'the links with no arrow are the ones cut, less those put back');
+    var pilled = r.drawing.edges.filter(pillOf);
+    eq(pilled.length, rep.cut + rep.cutFurther - rep.restored, 'each an edge through a pill');
+    pilled.forEach(function (e) { assert(r.plan.boards[0].pills.some(function (p) { return p.for === e.to; }), 'a pill stands for its far end: ' + e.to); });
+    var text = clim.summarize(r), said = /\ncut: (\d+) of 10 links made pills, (\d+) so each board's links are planar and (\d+) more where a drawing still crossed or ran over a shape/.exec(text);
+    assert(said && +said[1] === rep.cut + rep.cutFurther && +said[2] === rep.cut && +said[3] === rep.cutFurther, 'the summary says the cut: ' + text);
+    // every link direct: nothing can be cut, and the board is not clean
+    var direct = (await planOf(digest(nodes, edges.map(function (e) { return Object.assign({ direct: true }, e); })))).report.boards.root;
+    eq([direct.cut, direct.cutFurther, direct.stop, direct.end.pills], [0, 0, 'not clean', 0], 'direct links are kept');
+    // E kept off pills: no link into it is cut, and K4's take the cut
+    var never = nodes.slice(0, 4).concat([{ title: 'E', kind: 'sticky-note', text: '', pill: false }]);
+    var n = await planOf(digest(never, edges));
+    eq(n.drawing.edges.filter(function (e) { return pillOf(e) && e.to === 'E'; }).length, 0, 'no pill stands for E');
+    var left = n.report.boards.root.health;
+    assert(left.status === 'clean' || left.examples.every(function (x) { return /-> "E"/.test(x); }), 'what is left unclean is a link into E, which no cut may take: ' + JSON.stringify(left.examples));
+  });
+
+  await test('the planar cut keeps the most wanted first: the heavier link, then the one at the busier shape, then key order; ranked, the nearer ranks first', async function () {
+    var five = ['A', 'B', 'C', 'D', 'E'], k5 = [];
+    five.forEach(function (a, i) { five.slice(i + 1).forEach(function (b) { k5.push({ from: a, to: b }); }); });
+    var cutOf = function (nodes, edges) { var d = digest(nodes, edges); var L = new layoutm.Layouter(model.buildModel(d), 'root', sizesOf(d), {}, elk); return [...cutm.planarLinks(L).cut].sort().map(function (k) { return k.replace('\u0000', '>'); }); };
+    eq(cutOf(five.map(function (t) { return note(t); }), k5), ['D>E'], 'all alike: the last by key is cut');
+    eq(cutOf(five.map(function (t) { return note(t); }), k5.map(function (e) { return e.from === 'D' && e.to === 'E' ? Object.assign({ weight: 3 }, e) : e; })), ['C>E'], 'a heavier link is kept: the last of the rest goes');
+    eq(cutOf(five.map(function (t) { return note(t); }).concat([note('F')]), k5.concat([{ from: 'E', to: 'F' }])), ['C>D'], 'links at the busier shape (E, now with five) are kept: the last of the others goes');
+    eq(cutOf(five.map(function (t, i) { return { title: t, kind: 'sticky-note', text: '', rank: i }; }), k5), ['A>E'], 'ranked: the longest span goes');
+    // what the drawing still crosses: the link in the most conflicts first, the least wanted on a tie, and a conflict with nothing to cut passed over
+    var lines = [{ key: 'a', cuttable: true }, { key: 'b', cuttable: true }, { key: 'c', cuttable: true }, { key: 'd', cuttable: false }];
+    eq(cutm.conflictCuts([[0, 1], [1, 2], [3]], lines, function () { return 1; }), ['b'], 'b is in two conflicts: cutting it mends both');
+    eq(cutm.conflictCuts([[0, 1]], lines, function (k) { return k === 'a' ? 5 : 3; }), ['b'], 'a tie: the least wanted');
+  });
+
+  await test('placement: rows where the links have no cycle (a tree where they are one), stars where they have one, ranks where there are ranks, and layout.placement over it, on the document or a node', async function () {
+    var algoOf = function (r, c) { var a = r.report.boards.root.algorithms.find(function (x) { return x.container === c; }); return a && a.algorithm; };
+    var four = ['A', 'B', 'C', 'D'].map(function (t) { return note(t); });
+    var dag = [{ from: 'A', to: 'B' }, { from: 'A', to: 'C' }, { from: 'B', to: 'D' }, { from: 'C', to: 'D' }];
+    var tree = [{ from: 'A', to: 'B' }, { from: 'A', to: 'C' }, { from: 'C', to: 'D' }];
+    var cycle = [{ from: 'A', to: 'B' }, { from: 'B', to: 'C' }, { from: 'C', to: 'D' }, { from: 'D', to: 'A' }];
+    eq(algoOf(await planOf(digest(four, dag)), 'root'), 'layered', 'no cycle: rows');
+    eq(algoOf(await planOf(digest(four, tree)), 'root'), 'mrtree', 'a tree');
+    eq(algoOf(await planOf(digest(four, cycle)), 'root'), 'stars', 'a cycle: stars');
+    eq(algoOf(await planOf(digest(four, dag, { layout: { placement: 'stars' } })), 'root'), 'stars', 'the document asks for stars');
+    eq(algoOf(await planOf(digest(four, cycle, { layout: { placement: 'rows' } })), 'root'), 'layered', 'the document asks for rows');
+    var framed = [{ title: 'F', kind: 'frame', layout: { placement: 'rows' } }].concat(['A', 'B', 'C', 'D'].map(function (t) { return note(t, 'F'); }));
+    eq(algoOf(await planOf(digest(framed, cycle, { layout: { placement: 'stars' } })), 'F'), 'layered', 'a frame\'s own over the document\'s');
+    eq(algoOf(await planOf(rankedDigest()), 'root'), 'ranked', 'ranked children are rows or columns');
+    var threw = ''; try { model.buildModel(digest(four, dag, { layout: { placement: 'grid' } })); } catch (e) { threw = e.message; }
+    assert(/layout\.placement is stars or rows/.test(threw), 'another word is refused: ' + threw);
+  });
+
+  await test('a container in rows kept unclean only by arrows the cut may not take (between frames) is placed as stars instead, and draws clean', async function () {
+    // the frames fixture: in rows, the arrow from the frame api to the frame store ran over the subboard Billing between them
+    var r = await planOf(fixture('frames')), rep = r.report.boards.root;
+    eq([rep.stop, rep.asStars], ['clean', ['b:root']], 'placed as stars, and clean');
+    eq(rep.algorithms.find(function (a) { return a.container === 'root'; }).algorithm, 'stars');
+    var plain = await planOf(fixture('acme'));
+    eq(plain.report.boards.root.asStars, [], 'a board the cut makes clean keeps its placements');
+    var asked = fixture('frames'); asked.layout = { placement: 'rows' };
+    var kept = (await planOf(asked)).report.boards.root;
+    eq([kept.asStars, kept.stop], [[], 'not clean'], 'rows the document asks for stay rows, and the board is said not clean');
+  });
+
+  await test('a cut link is a pill of its own beside its start, in its start\'s column alone', async function () {
+    var nodes = [{ title: 'F', kind: 'frame' }, note('Hub')].concat(['u1', 'u2', 'u3'].map(function (t) { return note(t, 'F'); }));
+    var d = digest(nodes, ['u1', 'u2', 'u3'].map(function (u) { return { from: u, to: 'Hub' }; }));
+    var L = new layoutm.Layouter(model.buildModel(d), 'root', sizesOf(d), {}, elk);
+    var none = L.pillPlan({ cut: new Set() });
+    eq([none.direct.length, none.groups.length], [3, 0], 'three arrows and no pill');
+    var two = L.pillPlan({ cut: new Set(['u2\u0000Hub', 'u3\u0000Hub']) });
+    eq(two.direct.map(function (e) { return e.from; }), ['u1'], 'u1 keeps its arrow');
+    eq(two.groups.map(function (g) { return [g.target, g.froms]; }), [['Hub', ['u2']], ['Hub', ['u3']]], 'a pill each');
+    eq(two.members.length, 0, 'no arrow runs to another\'s pill');
+    ['u2', 'u3'].forEach(function (u) { eq((two.byStart.get(u) || []).map(function (en) { return en.e.to; }), ['Hub'], u + '\'s pill is in its own column'); });
+  });
+
 
   // frames of users in a ring, each user using the hub, which is in a frame of its own
   function hubFixture(nFrames, per, back) {
@@ -120,294 +364,6 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     if (back) edges.push({ from: 'Hub', to: back });
     return { nodes: nodes, edges: edges, users: users };
   }
-
-  await test('a hub of four frames: promoted first; each frame\'s users share one pill, whose host\'s edge is drawn first', async function () {
-    var fx = hubFixture(4, 5);
-    var r = await planOf(digest(fx.nodes, fx.edges));
-    var p = r.report.promotions;
-    assert(p.length >= 1 && p[0].node === 'Hub', 'first promotion ' + (p[0] && p[0].node));
-    assert(p[0].after < p[0].before, 'cost fell');
-    var via = viaTo(r.plan, 'Hub');
-    eq(via.length, 20, 'twenty users convert');
-    var pills = r.plan.boards[0].pills.filter(function (x) { return x.for === 'Hub'; });
-    eq(pills.length, 4, 'a pill per frame: sharing makes one pill per container');
-    assert(pills.every(function (x) { return x.users === 5; }), 'each pill is for the 5 users of its frame');
-    assert(via.every(function (e) { return e.share === true; }), 'every edge of a group says share: true');
-    var rows = edgeRows(r, 'root');
-    pills.forEach(function (pl) {
-      var frame = 'Team ' + pl.start.charAt(1);
-      var mine = rows.filter(function (e) { return e.to === 'Hub' && e.from.charAt(1) === pl.start.charAt(1) && e.from.charAt(0) === 'u'; });
-      eq(mine.length, 5, 'five edges for ' + frame);
-      var host = mine.filter(function (e) { return pillOf(e).at; });
-      eq(host.map(function (e) { return e.from; }), [pl.start], 'one edge makes the pill, the host\'s: ' + frame);
-      assert(pillOf(host[0]).in === frame, 'in its frame');
-      mine.filter(function (e) { return !pillOf(e).at; }).forEach(function (e) { eq(pillOf(e), { share: pl.start }, 'the others share the host\'s pill'); assert(rows.indexOf(e) > rows.indexOf(host[0]), 'after the host\'s'); });
-    });
-    checkPlan(r.plan);
-  });
-
-  await test('a user its hub uses back converts like the rest (the tie is only in the order candidates are tried)', async function () {
-    var fx = hubFixture(3, 6, 'u1-1');
-    var r = await planOf(digest(fx.nodes, fx.edges), { marginPills: 2 });   // the margin given: this test is about the tie, not about the layout's noise
-    assert(r.report.promotions.length >= 1 && r.report.promotions[0].node === 'Hub', 'hub promoted: ' + JSON.stringify(r.report.promotions.map(function (x) { return x.node; })) + ' ' + r.report.boards.root.stop + ' ' + JSON.stringify(r.report.boards.root.lastBest) + ' cap ' + JSON.stringify(r.report.boards.root.budget));
-    var ps = pillSet(r.plan);
-    assert(ps.indexOf('root|u1-1>Hub') >= 0, 'u1-1 has a pill edge');
-    eq(r.plan.boards[0].edges.filter(function (e) { return !e.via && e.from === 'u1-1' && e.to === 'Hub'; }).length, 0, 'u1-1 -> Hub is not a plain arrow');
-    eq(viaTo(r.plan, 'Hub').length, 18, 'all eighteen users convert');
-    eq(r.plan.boards[0].edges.filter(function (e) { return !e.via && e.from === 'Hub' && e.to === 'u1-1'; }).length, 1, 'the hub\'s own arrow to u1-1 stays plain');
-  });
-
-  await test('sharing: one pill per container, and a lone user a plain pill', async function () {
-    var nodes = [{ title: 'Sub', kind: 'subboard' }, note('Hub', 'Sub'), { title: 'F', kind: 'frame' }, { title: 'G', kind: 'frame' }, note('F1', 'F'), note('F2', 'F'), note('F3', 'F'), note('G1', 'G'), note('G2', 'G'), note('Loose')];
-    var edges = ['F1', 'F2', 'F3', 'G1', 'G2', 'Loose'].map(function (t) { return { from: t, to: 'Hub' }; });
-    var r = await planOf(digest(nodes, edges), { promote: false });
-    var root = r.plan.boards.find(function (b) { return b.board === 'root'; });
-    var pills = root.pills.filter(function (x) { return x.for === 'Hub'; });
-    eq(pills.map(function (x) { return x.users; }).sort(), [1, 2, 3], 'a pill for F\'s three, one for G\'s two, one for Loose');
-    var byContainer = {}; pills.forEach(function (x) { byContainer[x.users] = x.start; });
-    assert(['F1', 'F2', 'F3'].indexOf(byContainer[3]) >= 0, 'F\'s pill is beside one of F\'s users: ' + byContainer[3]);
-    assert(['G1', 'G2'].indexOf(byContainer[2]) >= 0, 'G\'s pill is beside one of G\'s users');
-    eq(byContainer[1], 'Loose', 'a lone user has a plain pill');
-    var shared = viaTo(r.plan, 'Hub').filter(function (e) { return e.share; });
-    eq(shared.length, 5, 'five edges say share: true, and Loose\'s does not');
-    assert(edgeRows(r, 'root').filter(function (e) { return e.from === 'Loose' && e.to === 'Hub'; }).every(function (e) { return pillOf(e).share == null && pillOf(e).at; }), 'Loose\'s pill is its own');
-    eq(r.report.boards.root.end.pills, 3, 'three pills in the cost');
-    checkPlan(r.plan);
-  });
-
-  await test('the host is the user that keeps the group\'s arrows shortest', async function () {
-    var box = function (x, y) { return { x: x, y: y, w: 300, h: 200 }; };
-    var boxes = new Map([['a', box(0, 0)], ['b', box(0, 400)], ['c', box(0, 800)], ['d', box(0, 1200)], ['e', box(0, 1600)]]);
-    eq(layoutm.bestHost(boxes, ['a', 'b', 'c', 'd', 'e'], 150), 'c', 'the middle of a column');
-    eq(layoutm.bestHost(boxes, ['d', 'e'], 150), 'd', 'a tie goes to the first title');
-    // beside a cluster: the host is the one nearest the others, not the first title
-    var b2 = new Map([['a', box(2000, 0)], ['b', box(0, 0)], ['c', box(0, 300)], ['d', box(400, 150)]]);
-    var h = layoutm.bestHost(b2, ['a', 'b', 'c', 'd'], 150);
-    assert(h !== 'a', 'not the outlier: ' + h);
-    // and in a plan: the host named by the group is the one whose pill is nearest the others
-    var nodes = [{ title: 'Sub', kind: 'subboard' }, note('Hub', 'Sub'), { title: 'F', kind: 'frame' }], edges = [];
-    ['U1', 'U2', 'U3', 'U4', 'U5'].forEach(function (t, i) { nodes.push(note(t, 'F')); edges.push({ from: t, to: 'Hub' }); if (i) edges.push({ from: 'U' + i, to: t }); });
-    var r = await planOf(digest(nodes, edges), { promote: false });
-    var root = r.plan.boards.find(function (b) { return b.board === 'root'; });
-    var pill = root.pills.find(function (x) { return x.for === 'Hub'; });
-    var shapes = {}; root.shapes.forEach(function (s) { shapes[s.key] = s; });
-    var len = function (host) { var p = { x: shapes[host].x + shapes[host].w + 80, y: shapes[host].y + shapes[host].h / 2 - 16, w: pill.w, h: 32 }; var t = 0; ['U1', 'U2', 'U3', 'U4', 'U5'].forEach(function (u) { if (u !== host) { var a = shapes[u]; t += Math.hypot(a.x + a.w / 2 - (p.x + p.w / 2), a.y + a.h / 2 - (p.y + 16)); } }); return t; };
-    var best = Math.min.apply(null, ['U1', 'U2', 'U3', 'U4', 'U5'].map(len));
-    assert(len(pill.start) <= best * 1.15, 'the host ' + pill.start + ' is within 15% of the best: ' + len(pill.start) + ' vs ' + best);
-    var rows = edgeRows(r, 'root').filter(function (e) { return e.to === 'Hub'; });
-    eq(rows[0].from, pill.start, 'the host\'s edge is listed first'); assert(pillOf(rows[0]).at, 'and makes the pill');
-  });
-
-  await test('every user of a promoted hub converts to a pill: those in the hub\'s own frame too, and those the hub uses back (D17)', async function () {
-    var nodes = [{ title: 'F', kind: 'frame' }, { title: 'G', kind: 'frame' }, note('Hub', 'F')], edges = [];
-    var inF = ['f1', 'f2', 'f3'], inG = [];
-    inF.forEach(function (t) { nodes.push(note(t, 'F')); edges.push({ from: t, to: 'Hub' }); });
-    for (var i = 1; i <= 12; i++) { var t = 'g' + (i < 10 ? '0' : '') + i; inG.push(t); nodes.push(note(t, 'G')); edges.push({ from: t, to: 'Hub' }); }
-    for (var j = 0; j < 12; j++) edges.push({ from: inG[j], to: inG[(j + 5) % 12] });
-    edges.push({ from: 'Hub', to: 'f1' });
-    var r = await planOf(digest(nodes, edges), { marginPills: 2 });
-    assert(r.report.promotions.length >= 1 && r.report.promotions[0].node === 'Hub', 'the hub is promoted: ' + JSON.stringify(r.report.promotions.map(function (x) { return x.node; })));
-    var plain = r.plan.boards[0].edges.filter(function (e) { return !e.via && e.to === 'Hub'; });
-    eq(plain.length, 0, 'no plain arrow into the hub is left');
-    eq(viaTo(r.plan, 'Hub').map(function (e) { return e.from; }).sort(), inF.concat(inG), 'F\'s users and G\'s have pill edges');
-    eq(r.plan.boards[0].edges.filter(function (e) { return !e.via && e.from === 'Hub' && e.to === 'f1'; }).length, 1, 'the hub\'s own arrow out stays plain');
-    checkPlan(r.plan);
-  });
-
-  // the board laid out the way the loop does: a Layouter, the state with nothing promoted, and its first layout
-  async function layouterOf(d, opts) {
-    var m = model.buildModel(d), sz = sizesOf(d);
-    var L = new layoutm.Layouter(m, 'root', sz, opts || {}, elk);
-    var state = { promoted: new Set(), order: [], fanned: new Set(), fans: [], apart: new Set(), hosts: new Map(), splits: new Map() };
-    var layout = await L.layout(state);
-    return { m: m, L: L, state: state, layout: layout, ev: costm.evaluate(m, layout, m.mu) };
-  }
-
-  await test('the gain rule is absolute: a node that is not popular is promoted when that cuts C by more than the margin, and not otherwise', async function () {
-    var fx = hubFixture(4, 5);
-    var d = digest(fx.nodes, fx.edges, { policy: { mess: 0.5 } });   // a pill costs 4 at 0.5, as the arithmetic below assumes
-    var planOf0 = planOf;
-    // no node is popular here: every move is a judgment call; and the view is square, where the hub's twenty arrows cross enough for promoting it to pay (in a wide view the frames go around the hub, and it does not)
-    planOf = function (dd, opts) { return planOf0(dd, Object.assign({ popular: 100000, view: { w: 1000, h: 1000 } }, opts || {})); };
-    try {
-    var r = await planOf(d);
-    var rep = r.report.boards.root, mu = 4;
-    assert(rep.noise && rep.noise.n > 0, 'the margin was measured: ' + JSON.stringify(rep.noise));
-    eq(rep.margin, rep.noise.margin, 'the margin is the measured one');
-    assert(rep.margin >= 2 * mu && rep.margin % mu === 0, 'a whole number of pills, at least two: ' + rep.margin);
-    assert(r.report.promotions.length >= 1, 'something is promoted');
-    r.report.promotions.forEach(function (p) { assert(!p.popular, p.node + ' is under the dial\'s popular'); assert(p.gainC > rep.margin, p.node + ' gained ' + p.gainC + ', not over the margin ' + rep.margin); });
-    var g1 = r.report.promotions[0].gainC;
-    // a margin over the best gain: nothing is promoted, and the report says what the best candidate gained
-    var tight = await planOf(d, { marginPills: Math.ceil(g1 / mu) + 1 });
-    eq(tight.report.promotions.length, 0, 'no promotion');
-    eq(tight.report.boards.root.stop, 'little-gain', 'stop');
-    assert(tight.report.boards.root.lastBest && tight.report.boards.root.lastBest.gain <= tight.report.boards.root.margin, 'lastBest ' + JSON.stringify(tight.report.boards.root.lastBest));
-    eq(tight.report.boards.root.margin, (Math.ceil(g1 / mu) + 1) * mu, 'the margin given is the margin used');
-    // no margin: every promotion that cuts C at all
-    var loose = await planOf(d, { marginPills: 0 });
-    assert(loose.report.promotions.length >= r.report.promotions.length, 'a margin of 0 promotes at least as much');
-    loose.report.promotions.forEach(function (p) { assert(p.gainC > 0, p.node + ' gained ' + p.gainC); });
-    } finally { planOf = planOf0; }
-  });
-
-  await test('candidates: a node with two users, or one user in another container; not one user beside it, nor none', async function () {
-    var nodes = [{ title: 'F', kind: 'frame' }, { title: 'G', kind: 'frame' }, note('Two', 'F'), note('One far', 'F'), note('One near', 'F'), note('None', 'F'),
-      note('t1', 'F'), note('t2', 'F'), note('f1', 'G'), note('n1', 'F')];
-    var edges = [{ from: 't1', to: 'Two' }, { from: 't2', to: 'Two' }, { from: 'f1', to: 'One far' }, { from: 'n1', to: 'One near' }];
-    var x = await layouterOf(digest(nodes, edges));
-    var names = promm.candidates(x.m, x.L, x.layout, x.ev, x.state).map(function (c) { return c.node; });
-    assert(names.indexOf('Two') >= 0, 'two users, both beside it: ' + names);
-    assert(names.indexOf('One far') >= 0, 'one user in another container: ' + names);
-    eq(names.indexOf('One near'), -1, 'one user beside it is not');
-    eq(names.indexOf('None'), -1, 'no users is not');
-  });
-
-  await test('a shared pill far from some of its users is split between nearer clusters, only if C drops, and the plan has a pill for each', async function () {
-    // two rings of users at the two ends of a long chain, inside one frame, all using a hub in another frame
-    var nodes = [{ title: 'Hub frame', kind: 'frame' }, note('Hub', 'Hub frame'), { title: 'Wide', kind: 'frame' }], edges = [], users = [];
-    var ringOf = function (p, n) { var t = []; for (var i = 1; i <= n; i++) { t.push(p + i); users.push(p + i); nodes.push(note(p + i, 'Wide')); edges.push({ from: p + i, to: 'Hub' }); } for (var j = 0; j < n; j++) edges.push({ from: t[j], to: t[(j + 1) % n] }); return t; };
-    var A = ringOf('a', 4), B = ringOf('b', 4), prev = A[0];
-    for (var c = 1; c <= 11; c++) { nodes.push(note('c' + c, 'Wide')); edges.push({ from: prev, to: 'c' + c }); prev = 'c' + c; }
-    edges.push({ from: prev, to: B[0] });
-    var d = digest(nodes, edges);
-    var on = await planOf(d), off = await planOf(d, { split: false });
-    var rep = on.report.boards.root;
-    assert(rep.promoted.indexOf('Hub') >= 0, 'the hub is promoted: ' + rep.promoted);
-    assert(rep.splits.length >= 1, 'the far group is split: ' + JSON.stringify(rep.splits));
-    rep.splits.forEach(function (sp) { assert(sp.after < sp.before, 'a split is kept only if C drops: ' + JSON.stringify(sp)); assert(sp.into.length >= 2, 'into clusters'); });
-    var pillsIn = function (r) { return r.plan.boards[0].pills.filter(function (x) { return x.for === 'Hub' && users.indexOf(x.start) >= 0; }).length; };
-    var sp0 = rep.splits[0];
-    assert(pillsIn(on) > pillsIn(off), 'more pills with the split: ' + pillsIn(on) + ' against ' + pillsIn(off));
-    eq(off.report.boards.root.splits.length, 0, 'split off: none');
-    assert(rep.end.cost < off.report.boards.root.end.cost, 'C is lower with the split: ' + rep.end.cost + ' against ' + off.report.boards.root.end.cost);
-    // every edge of a cluster says share: true, with a host among the cluster's own users
-    var viaHub = viaTo(on.plan, 'Hub').filter(function (e) { return users.indexOf(e.from) >= 0; });
-    viaHub.filter(function (e) { return e.share; }).forEach(function (e) { assert(users.indexOf(e.host) >= 0, 'the host is a user: ' + e.host); });
-    checkPlan(on.plan);
-  });
-
-  // a frame "Wide" of users of a hub in another frame: groups of `n` users in rings, joined by chains of `gap` notes (none: one ring of n users)
-  function wideFixture(rings, n, gap) {
-    var nodes = [{ title: 'Hub frame', kind: 'frame' }, note('Hub', 'Hub frame'), { title: 'Wide', kind: 'frame' }], edges = [], users = [], rs = [];
-    for (var r = 0; r < rings; r++) {
-      var t = [], p = String.fromCharCode(97 + r);
-      for (var i = 1; i <= n; i++) { t.push(p + i); users.push(p + i); nodes.push(note(p + i, 'Wide')); edges.push({ from: p + i, to: 'Hub' }); }
-      for (var j = 0; j < n; j++) edges.push({ from: t[j], to: t[(j + 1) % n] });
-      rs.push(t);
-    }
-    for (var q = 1; q < rings; q++) {
-      var prev = rs[q - 1][0];
-      for (var c = 1; c <= gap; c++) { var cn = 'c' + q + '-' + c; nodes.push(note(cn, 'Wide')); edges.push({ from: prev, to: cn }); prev = cn; }
-      edges.push({ from: prev, to: rs[q][0] });
-    }
-    return { nodes: nodes, edges: edges, users: users };
-  }
-  var hubPills = function (r, users) { return r.plan.boards[0].pills.filter(function (x) { return x.for === 'Hub' && users.indexOf(x.start) >= 0; }); };
-
-  await test('two far-apart groups of users in a frame get a shared pill each: the host\'s edge plain and first, the others saying share: "<host>"', async function () {
-    var fx = wideFixture(2, 4, 8);
-    var r2 = await planOf(digest(fx.nodes, fx.edges), { view: { w: 800, h: 4000 } });   // a view five times as tall as wide: the frame runs down it, its two rings at its ends
-    var pills = hubPills(r2, fx.users);
-    eq(pills.map(function (x) { return x.users; }).sort(), [4, 4], 'two shared pills of four users: ' + JSON.stringify(pills));
-    var rows = edgeRows(r2, 'root');
-    pills.forEach(function (pl) {
-      var mine = rows.filter(function (e) { return e.to === 'Hub' && /^[ab]\d$/.test(e.from) && (e.from === pl.start || pillOf(e).share === pl.start); });
-      eq(mine.length, 4, 'four edges for the cluster of ' + pl.start);
-      var host = rows.find(function (e) { return e.from === pl.start && e.to === 'Hub'; });
-      assert(pillOf(host).at && pillOf(host).share == null, 'the host\'s edge makes the pill: ' + JSON.stringify(host.place));
-      mine.filter(function (e) { return e !== host; }).forEach(function (e) { eq(pillOf(e), { share: pl.start }, 'a member says share: the host'); assert(rows.indexOf(e) > rows.indexOf(host), 'after the host\'s'); });
-    });
-    var rep = r2.report.boards.root;
-    eq(rep.pillsPerHub.filter(function (x) { return x.target === 'Hub' && x.container === 'Wide'; })[0].perPill, [4, 4], 'the report: pills and users per pill for (Wide, Hub)');
-    checkPlan(r2.plan);
-  });
-
-  await test('a tight group of the same size keeps one pill', async function () {
-    var fx = wideFixture(1, 8, 0);
-    for (var f = 1; f <= 3; f++) {   // three other frames of users make the hub worth promoting
-      fx.nodes.push({ title: 'Team ' + f, kind: 'frame' });
-      var t = []; for (var i = 1; i <= 5; i++) { var u = 't' + f + '-' + i; t.push(u); fx.nodes.push(note(u, 'Team ' + f)); fx.edges.push({ from: u, to: 'Hub' }); }
-      for (var j = 0; j < 5; j++) fx.edges.push({ from: t[j], to: t[(j + 1) % 5] });
-    }
-    var r = await planOf(digest(fx.nodes, fx.edges));
-    assert(r.report.promotions.length >= 1 && r.report.promotions[0].node === 'Hub', 'the hub is promoted');
-    var pills = hubPills(r, fx.users);
-    eq(pills.length, 1, 'one pill: ' + JSON.stringify(pills.map(function (x) { return x.users; })));
-    eq(pills[0].users, 8, 'for the eight');
-    var rows = edgeRows(r, 'root').filter(function (e) { return e.to === 'Hub' && /^[a-z]\d$/.test(e.from); });
-    assert(rows.filter(function (e) { return pillOf(e).share != null; }).length === 7 && rows.filter(function (e) { return pillOf(e).at; }).length === 1, 'seven share the host\'s pill, one makes it');
-  });
-
-  await test('a higher --prefer never makes more pills', async function () {
-    var fx = wideFixture(2, 4, 14), d = digest(fx.nodes, fx.edges);
-    var counts = [];
-    for (var pf of [0, 2, 8, 1000]) counts.push(hubPills(await planOf(d, { prefer: pf }), fx.users).length);
-    for (var i = 1; i < counts.length; i++) assert(counts[i] <= counts[i - 1], 'pills by prefer 0, 2, 8, 1000: ' + counts);
-    eq(counts[counts.length - 1], 1, 'a huge preference: one pill');
-    assert(counts[0] >= 2, 'no preference: more than one: ' + counts);
-  });
-
-  await test('the split is never more than ceil(users / 3) pills, and a cluster of one is a plain pill', async function () {
-    var fx = wideFixture(3, 4, 8), d = digest(fx.nodes, fx.edges);
-    var r = await planOf(d, { prefer: 0 });
-    assert(hubPills(r, fx.users).length <= Math.ceil(12 / 3), 'at most four pills for twelve users: ' + hubPills(r, fx.users).length);
-    var rows = edgeRows(r, 'root');
-    hubPills(r, fx.users).filter(function (x) { return x.users === 1; }).forEach(function (x) { assert(pillOf(rows.find(function (e) { return e.from === x.start && e.to === 'Hub'; })).share == null, 'a lone user\'s pill is its own'); });
-  });
-
-  await test('laid out again from where it is, a settled board stays: the same layout, the same C', async function () {
-    var fx = hubFixture(3, 5);
-    var x = await layouterOf(digest(fx.nodes, fx.edges));
-    x.state.promoted.add('Hub'); x.state.order.push('Hub');
-    var l1 = await x.L.layout(x.state);
-    x.L.warm = true;
-    var cv = await x.L.converge(x.state, l1, costm.evaluate, x.m.mu);
-    var again = await x.L.layout(x.state), e2 = costm.evaluate(x.m, again, x.m.mu);
-    assert(Math.abs(e2.cost - cv.ev.cost) < 0.5, 'C ' + e2.cost + ' against ' + cv.ev.cost);
-    var boxes = function (l) { return JSON.stringify([...l.boxes].sort().map(function (e) { return [e[0], e[1].x, e[1].y]; })); };
-    eq(boxes(again), boxes(cv.cur), 'the boxes');
-    // and a nudge of a few units in some widths moves C by a small part of it
-    x.L.nudge = function (cid) { return 4; };
-    var nudged = costm.evaluate(x.m, await x.L.layout(x.state), x.m.mu);
-    assert(Math.abs(nudged.cost - cv.ev.cost) < 0.25 * cv.ev.cost, 'a nudge moved C from ' + cv.ev.cost + ' to ' + nudged.cost);
-    x.L.nudge = null;
-  });
-
-  await test('the noise: a measured spread, and a margin that is a whole number of pills, at least two', async function () {
-    var fx = hubFixture(4, 5);
-    var x = await layouterOf(digest(fx.nodes, fx.edges, { policy: { mess: 0.5 } })); x.L.warm = true;
-    var cv = await x.L.converge(x.state, x.layout, costm.evaluate, x.m.mu);
-    var cands = promm.candidates(x.m, x.L, cv.cur, cv.ev, x.state);
-    var nz = await noisem.measureNoise(x.m, x.L, x.state, cv.cur, cv.ev, cands, x.m.mu, promm.ext, 4, 3);
-    assert(nz.candidates >= 1 && nz.n === nz.candidates * 3 && nz.sd >= 0 && nz.margin >= 8 && nz.margin % 4 === 0, JSON.stringify(nz));
-    assert(nz.margin >= noisem.NOISE_SIGMAS * nz.sd - 1e-9, 'the margin covers ' + noisem.NOISE_SIGMAS + ' sd: ' + JSON.stringify(nz));
-    var none = await noisem.measureNoise(x.m, x.L, x.state, cv.cur, cv.ev, [], x.m.mu, promm.ext);
-    eq(none.margin, 8, 'no candidates: the floor of two pills');
-  });
-
-  await test('the safety cap: 25% of the leaves, and the report calls it out when it, not the board, ends the loop', async function () {
-    // seven hubs of eight users each, and users of eight uses each: none popular at mess 0.5 (9 arrows), so each move is a judgment call
-    var nodes = [{ title: 'Hubs', kind: 'frame' }], edges = [], hubs = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7'];
-    hubs.forEach(function (h) { nodes.push(note(h, 'Hubs')); });
-    for (var f = 1; f <= 2; f++) {
-      nodes.push({ title: 'Team ' + f, kind: 'frame' });
-      var t = []; for (var i = 1; i <= 4; i++) { t.push('u' + f + i); nodes.push(note('u' + f + i, 'Team ' + f)); }
-      t.forEach(function (u, j) { edges.push({ from: u, to: t[(j + 1) % 4] }); hubs.forEach(function (h) { edges.push({ from: u, to: h }); }); });
-    }
-    var r = await planOf(digest(nodes, edges), { marginPills: 2, mess: 0.5 });   // the margin given, so the layout's noise does not stop the loop before the cap
-    var b = r.report.boards.root;
-    eq(b.budget.cap, 3, '25% of 15 leaves, rounded down (the dial at 0.5)');
-    assert(r.report.promotions.every(function (p) { return !p.popular; }), 'no node here is popular');
-    var capped = await planOf(digest(nodes, edges), { marginPills: 2, mess: 0.5, cap: 0.1 });   // the cap given: one move, which still pays
-    b = capped.report.boards.root;
-    eq(b.budget.cap, 1, '10% of 15 leaves');
-    eq(capped.report.promotions.length, 1, 'one promotion, the cap');
-    eq(b.stop, 'safety-cap', 'stopped by the cap');
-    assert(b.safetyCap.hit === true && /SAFETY CAP/.test(b.safetyCap.note) && b.safetyCap.wouldHaveGained >= 0.02, 'the report calls it out: ' + JSON.stringify(b.safetyCap));
-    var small = await planOf(digest([note('A'), note('B')], [{ from: 'A', to: 'B' }]));
-    assert(small.report.boards.root.safetyCap === null, 'a board that stops of itself does not claim the cap');
-  });
 
   await test('the same input gives byte-identical output, and the same in another order of nodes and edges', async function () {
     var d = fixture('acme'), s0 = sizesOf(d);
@@ -476,17 +432,11 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(placesOf(reversed), placesOf(r), 'the places with the input reversed');
   });
 
-  await test('a frame whose cards point at each other is no spine, and its shared pills are in a host\'s column as ever; nor is any with promote off or at mess 1', async function () {
+  await test('a frame whose cards point at each other is no spine, and its links are pills only where the cut makes them', async function () {
     var r = await planOf(spineFixture([{ from: 'A', to: 'B' }]));
     assert(algorithmOf(r, 'Band') !== 'spine', 'Band is laid out as any frame is: ' + algorithmOf(r, 'Band'));
     assert(rootOf(r.plan).pills.every(function (p) { return !p.free; }), 'none free');
     checkPlan(r.plan);
-    // nor is one where no arrow on a board is to be a pill: --promote off, and the dial at 1
-    var off = await planOf(spineFixture(), { promote: false }), loose = await planOf(spineFixture(), { mess: 1 });
-    [off, loose].forEach(function (x) {
-      assert(algorithmOf(x, 'Band') !== 'spine', 'no spine: ' + algorithmOf(x, 'Band'));
-      eq(rootOf(x.plan).pills.length, 0, 'every arrow plain');
-    });
   });
 
   await test('a spine is three rows at most, and a shape that points at nothing pairs last, so the pill every other uses is still one', async function () {
@@ -529,11 +479,11 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(r.plan);
   });
 
-  await test('promote off: every arrow plain, only the pills between boards; edges between boards are pills', async function () {
+  await test('edges between boards are pills; a board that draws clean as it is cuts nothing', async function () {
     var nodes = [{ title: 'Sub', kind: 'subboard' }, note('Inner A', 'Sub'), note('Inner B', 'Sub'), note('Top A'), note('Top B')];
     var edges = [{ from: 'Top A', to: 'Top B' }, { from: 'Top A', to: 'Inner B' }, { from: 'Inner A', to: 'Top B' }, { from: 'Inner A', to: 'Inner B' }];
-    var r = await planOf(digest(nodes, edges), { promote: false });
-    eq(r.report.promotions.length, 0);
+    var r = await planOf(digest(nodes, edges));
+    eq([r.report.totals.cut, r.report.totals.cutFurther], [0, 0], 'nothing cut');
     var ps = pillSet(r.plan);
     eq(ps, ['Sub|Inner A>Top B', 'root|Top A>Inner B'], 'pills');
     // the document keeps the nodes and the edges as given, an edge through a pill saying where its pill is
@@ -544,98 +494,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
 
-  // ---- the dial and the packing ----
+  // ---- the packing ----
   function gapOf(a, b) { var dx = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w), 0), dy = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h), 0); return Math.hypot(dx, dy); }
   function rootOf(plan) { return plan.boards.find(function (b) { return b.board === 'root'; }); }
-
-  await test('the dial: every setting moves one way with mess (mu up, cap down, margin up, thresholds looser), 0.5 is the middle', async function () {
-    var ds = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9, 1].map(dialm.dial);
-    for (var i = 1; i < ds.length; i++) {
-      var a = ds[i - 1], b = ds[i];
-      assert(b.mu >= a.mu && b.capShare <= a.capShare && b.marginPills >= a.marginPills, 'mu, cap, margin at ' + b.mess);
-      assert(b.good.xPerArrow >= a.good.xPerArrow && b.good.fxPerArrow >= a.good.fxPerArrow && b.good.nePerArrow >= a.good.nePerArrow && b.good.aspect >= a.good.aspect, 'thresholds at ' + b.mess);
-    }
-    var m = dialm.dial(0.5);
-    eq([m.mu, m.capShare, m.marginPills, m.good.xPerArrow, m.good.fxPerArrow, m.good.nePerArrow, m.good.aspect], [4, 0.25, 2, 0.1, 0.05, 0, 3], 'the middle');
-    eq(dialm.dial(-3).mess, 0, 'clamped'); eq(dialm.dial(7).mess, 1, 'clamped'); eq(dialm.dial(null).mess, 0.1, 'the default is 0.1');
-    // good enough is looser as mess grows: the same terms may pass at a higher mess and never the other way
-    var terms = { NE: 2, X: 5, Fx: 1, aspect: 2.5 }, was = false;
-    ds.forEach(function (d) { var g = dialm.isGood(d, terms, 50); assert(g || !was, 'good enough turned off as mess grew'); was = g; });
-  });
-
-  await test('the dial and the model: the flag wins over layout.mess; mu comes from mess', async function () {
-    var d = digest([note('A'), note('B')], [{ from: 'A', to: 'B' }], { policy: { mess: 0.2, references: 'fewer' } });
-    eq(model.buildModel(d).dial.mess, 0.2, 'policy.mess');
-    eq(model.buildModel(d, 0.9).dial.mess, 0.9, 'the flag wins');
-    eq(model.buildModel(d).mu, dialm.dial(0.2).mu, 'mu is the dial\'s');
-    eq(model.buildModel(digest([note('A')], [])).dial.mess, 0.1, 'no policy: 0.1');
-  });
-
-  await test('the dial is monotone: a lower mess never promotes fewer, on the same input', async function () {
-    var inputs = [];
-    var fx = hubFixture(4, 5); inputs.push(['hub of four frames', digest(fx.nodes, fx.edges)]);
-    var fx2 = hubFixture(3, 6, 'u1-1'); inputs.push(['hub with a back edge', digest(fx2.nodes, fx2.edges)]);
-    inputs.push(['acme', fixture('acme')]);
-    inputs.push(['tree', fixture('tree')]);
-    for (var k = 0; k < inputs.length; k++) {
-      var counts = [];
-      for (var mess of [0, 0.2, 0.4, 0.5, 0.6, 0.8, 1]) {
-        var r = await planOf(inputs[k][1], { mess: mess });
-        counts.push(r.report.promotions.length);
-        checkPlan(r.plan);
-      }
-      for (var i = 1; i < counts.length; i++) assert(counts[i] <= counts[i - 1], inputs[k][0] + ': promotions by mess 0..1 ' + JSON.stringify(counts));
-      assert(counts[counts.length - 1] === 0 || inputs[k][0] === 'x', inputs[k][0] + ': at mess 1 nothing is promoted: ' + JSON.stringify(counts));
-      if (inputs[k][0] !== 'hub with a back edge') assert(counts[0] >= 1, inputs[k][0] + ': at mess 0 something is: ' + JSON.stringify(counts));
-    }
-  });
-
-  await test('the dial says how far down the loop goes: the popular moves at a higher mess are the first of a lower mess\'s, a judgment call beats the margin, and Acme at 0.1 goes further than at 0.5, and at 0.5 further than at 0.8', async function () {
-    var inputs = [['acme', fixture('acme')]], by = {};
-    for (var k = 0; k < inputs.length; k++) {
-      var orders = [];
-      for (var mess of [0, 0.1, 0.2, 0.5, 0.8, 1]) {
-        var r = await planOf(inputs[k][1], { mess: mess });
-        // the popular moves, in the order they were made: the same list at every mess, cut where the dial's `popular` says
-        orders.push(r.report.promotions.filter(function (p) { return p.popular; }).map(function (p) { return p.mode + ' ' + p.node; }));
-        by[inputs[k][0] + mess] = r;
-        assert(r.report.boards.root.end.aspect <= dialm.dial(mess).good.aspect, inputs[k][0] + ' ' + mess + ': the board is ' + r.report.boards.root.end.aspect + ' times as long as it is wide');
-        r.report.promotions.forEach(function (p) {
-          if (p.popular) assert(p.arrows >= dialm.dial(mess).popular, inputs[k][0] + ' ' + mess + ': ' + p.node + ' was moved as popular with ' + p.arrows + ' arrows');
-          else assert(p.gainAtDial >= r.report.boards.root.marginKept - 1e-6, inputs[k][0] + ' ' + mess + ': ' + p.node + ' was accepted at ' + p.gainAtDial + ' against ' + r.report.boards.root.marginKept);
-        });
-      }
-      for (var i = 1; i < orders.length; i++) eq(orders[i], orders[i - 1].slice(0, orders[i].length), inputs[k][0] + ': the popular moves at a higher mess are the first of a lower mess\'s');
-    }
-    var n = function (key) { return by[key].report.promotions.length; };
-    assert(n('acme0.1') > n('acme0.5'), 'acme: 0.1 promotes ' + n('acme0.1') + ', 0.5 promotes ' + n('acme0.5'));
-    assert(n('acme0.5') > n('acme0.8'), 'acme: 0.5 promotes ' + n('acme0.5') + ', 0.8 promotes ' + n('acme0.8'));
-    // more pills at the tidy end, fewer plain arrows
-    var plain = function (key) { return by[key].report.totals.arrows; };
-    assert(plain('acme0.1') < plain('acme0.5') && plain('acme0.5') < plain('acme0.8'), 'plain arrows rise with mess: ' + [plain('acme0.1'), plain('acme0.5'), plain('acme0.8')]);
-  });
-
-  await test('without the safety cap the gain alone ends the loop, and a lower mess never stops earlier (Acme)', async function () {
-    var canvas = fixture('acme'), counts = [];
-    for (var mess of [0, 0.1, 0.2, 0.5, 0.8]) {
-      var r = await planOf(canvas, { mess: mess, cap: 1 });
-      eq(r.report.boards.root.stop, 'little-gain', 'stop at ' + mess);
-      counts.push(r.report.promotions.length);
-    }
-    for (var i = 1; i < counts.length; i++) assert(counts[i] <= counts[i - 1], 'uncapped counts by mess ' + JSON.stringify(counts));
-    assert(counts[1] > counts[3], 'uncapped: 0.1 goes further than 0.5: ' + JSON.stringify(counts));
-  });
-
-  await test('the dial moves the cap, and --cap / --margin override it', async function () {
-    var fx = hubFixture(3, 6); var d = digest(fx.nodes, fx.edges);
-    var lo = await planOf(d, { mess: 0 }), hi = await planOf(d, { mess: 1 });
-    eq(lo.report.boards.root.budget.cap, Math.floor(0.5 * 19), 'cap at mess 0');
-    eq(hi.report.boards.root.budget.cap, 0, 'cap at mess 1');
-    eq(hi.report.promotions.length, 0, 'mess 1 promotes nothing');
-    var ov = await planOf(d, { mess: 1, cap: 0.25 });
-    eq(ov.report.boards.root.budget.cap, 4, 'an explicit cap wins');
-    eq(ov.report.boards.root.overrides.cap, 0.25, 'and the report says so');
-  });
 
   await test('pack: no box stranded from its nearest mate, boxes never overlap, the same input gives the same positions', async function () {
     var seed = 7; var rnd = function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
@@ -646,163 +507,49 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
       for (var i = 0; i < n; i++) pos.push({ x: Math.floor(rnd() * 6000), y: Math.floor(rnd() * 6000) });
       pos = elkm.removeOverlaps(items, pos, 64, 64);
       var edges = []; for (var i = 1; i < n; i += 2) edges.push({ a: i, b: Math.floor(rnd() * i), n: 1 });
-      [false, true].forEach(function (squeeze) {
-        var r = elkm.pack(items, pos, edges, 64, 64, squeeze), r2 = elkm.pack(items, pos, edges, 64, 64, squeeze);
+      [0].forEach(function () {
+        var r = elkm.pack(items, pos, edges, 64, 64), r2 = elkm.pack(items, pos, edges, 64, 64);
         eq(r.pos, r2.pos, 'deterministic');
         var boxes = items.map(function (it, i) { return { x: r.pos[i].x, y: r.pos[i].y, w: it.w, h: it.h }; });
         for (var i = 0; i < n; i++) {
           var near = Infinity;
           for (var j = 0; j < n; j++) { if (i === j) continue; assert(!(boxes[i].x < boxes[j].x + boxes[j].w && boxes[j].x < boxes[i].x + boxes[i].w && boxes[i].y < boxes[j].y + boxes[j].h && boxes[j].y < boxes[i].y + boxes[i].h), 'overlap'); near = Math.min(near, gapOf(boxes[i], boxes[j])); }
-          assert(near <= 160, 'trial ' + trial + ' squeeze ' + squeeze + ': box ' + i + ' is ' + Math.round(near) + ' from its nearest mate');
+          assert(near <= 160, 'trial ' + trial + ': box ' + i + ' is ' + Math.round(near) + ' from its nearest mate');
         }
       });
     }
   });
 
-  await test('packing in a plan: no frame member far from its nearest frame mate, frames close together, at every mess', async function () {
+  await test('packing in a plan: no frame member far from its nearest frame mate, frames close together', async function () {
     var d = fixture('acme');
     var fx = hubFixture(4, 5); var hub = digest(fx.nodes, fx.edges);
     for (var input of [d, hub]) {
-      for (var mess of [0.2, 0.5, 0.8]) {
-        var r = await planOf(input, { mess: mess });
-        checkPlan(r.plan);
-        var b = rootOf(r.plan);
-        var units = b.shapes.filter(function (s) { return s.kind !== 'frame' && s.in; }).map(function (s) {
-          var ps = b.pills.filter(function (p) { return p.start === s.key; });
-          var x1 = Math.max.apply(null, [s.x + s.w].concat(ps.map(function (p) { return p.x + p.w; })));
-          var y0 = Math.min.apply(null, [s.y].concat(ps.map(function (p) { return p.y; }))), y1 = Math.max.apply(null, [s.y + s.h].concat(ps.map(function (p) { return p.y + p.h; })));
-          return { t: s.key, in: s.in, x: s.x, y: y0, w: x1 - s.x, h: y1 - y0 };
-        });
-        units.forEach(function (u) {
-          var mates = units.filter(function (v) { return v.in === u.in && v !== u; });
-          if (!mates.length) return;
-          var near = Math.min.apply(null, mates.map(function (v) { return gapOf(u, v); }));
-          assert(near <= 200, 'mess ' + mess + ': ' + u.t + ' is ' + Math.round(near) + ' from its nearest mate in ' + u.in);
-        });
-        var frames = b.shapes.filter(function (s) { return s.kind === 'frame' && !s.in; });
-        frames.forEach(function (f) {
-          var others = frames.filter(function (g) { return g !== f; });
-          if (!others.length) return;
-          var near = Math.min.apply(null, others.map(function (g) { return gapOf(f, g); }));
-          assert(near >= 60 && near <= 160, 'mess ' + mess + ': ' + f.key + ' is ' + Math.round(near) + ' from the nearest frame (draw\'s gaps: 40, 80)');
-        });
-      }
+      var r = await planOf(input);
+      checkPlan(r.plan);
+      var b = rootOf(r.plan);
+      var units = b.shapes.filter(function (s) { return s.kind !== 'frame' && s.in; }).map(function (s) {
+        var ps = b.pills.filter(function (p) { return p.start === s.key; });
+        var x0 = Math.min.apply(null, [s.x].concat(ps.map(function (p) { return p.x; }))), x1 = Math.max.apply(null, [s.x + s.w].concat(ps.map(function (p) { return p.x + p.w; })));
+        var y0 = Math.min.apply(null, [s.y].concat(ps.map(function (p) { return p.y; }))), y1 = Math.max.apply(null, [s.y + s.h].concat(ps.map(function (p) { return p.y + p.h; })));
+        return { t: s.key, in: s.in, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      });
+      units.forEach(function (u) {
+        var mates = units.filter(function (v) { return v.in === u.in && v !== u; });
+        if (!mates.length) return;
+        var near = Math.min.apply(null, mates.map(function (v) { return gapOf(u, v); }));
+        assert(near <= 200, u.t + ' is ' + Math.round(near) + ' from its nearest mate in ' + u.in);
+      });
+      var frames = b.shapes.filter(function (s) { return s.kind === 'frame' && !s.in; });
+      frames.forEach(function (f) {
+        var others = frames.filter(function (g) { return g !== f; });
+        if (!others.length) return;
+        var near = Math.min.apply(null, others.map(function (g) { return gapOf(f, g); }));
+        assert(near >= 40 && near <= 200, f.key + ' is ' + Math.round(near) + ' from the nearest frame');
+      });
     }
-  });
-
-  await test('packing: a hub whose arrows all became pills sits with its frame mates, not a board away', async function () {
-    // Hub is promoted (it has pills for every user), so it has no plain arrow left in its own frame
-    var fx = hubFixture(3, 6); var r = await planOf(digest(fx.nodes, fx.edges), { mess: 0.2 });
-    assert(r.report.promotions.length >= 1, 'hub promoted');
-    var b = rootOf(r.plan), hubS = b.shapes.find(function (s) { return s.key === 'Hub'; });
-    var frame = b.shapes.find(function (s) { return s.key === 'Hub frame'; });
-    assert(hubS.x >= frame.x + 40 && hubS.y >= frame.y + 40, 'the hub is inside its frame');
-    assert(frame.w * frame.h <= 4 * hubS.w * hubS.h + 1, 'the hub\'s frame is not a mostly-empty field around a lone note: ' + frame.w + 'x' + frame.h);
   });
 
   // ---- the build: the digest checks, the measure script and JSON, the fixtures, the commands ----
-  await test('a popular node is promoted whatever the layout measures: the most arrows first, by the dial\'s count, never at mess 1', async function () {
-    var fx = hubFixture(4, 5);   // 20 users point at Hub
-    var d = digest(fx.nodes, fx.edges);
-    eq([dialm.dial(0).popular, dialm.dial(0.1).popular, dialm.dial(0.5).popular, dialm.dial(1).popular], [4, 5, 9, 14], 'the dial\'s popular');
-    var r = await planOf(d, { marginPills: 100000 });   // a margin no measured gain beats
-    eq(r.report.promotions.map(function (p) { return [p.mode, p.node, !!p.popular, p.arrows]; }), [['in', 'Hub', true, 20]], 'the hub, as popular, with its 20 arrows');
-    eq(r.plan.boards[0].edges.filter(function (e) { return !e.via && e.to === 'Hub'; }).length, 0, 'no plain arrow into it is left');
-    assert(r.plan.boards[0].pills.some(function (p) { return p.for === 'Hub'; }), 'and its users have pills for it');
-    // under the count, it is a judgment call again: with that margin, nothing
-    var few = hubFixture(1, 4);   // 4 users, under the 5 of mess 0.1, on a board that isn't good enough as it is (two arrows over notes)
-    eq((await planOf(digest(few.nodes, few.edges), { marginPills: 100000 })).report.promotions.length, 0, 'four arrows are not popular at 0.1');
-    eq((await planOf(digest(few.nodes, few.edges), { marginPills: 100000, mess: 0 })).report.promotions.map(function (p) { return p.node; }), ['Hub'], 'and are at mess 0');
-    eq((await planOf(d, { mess: 1 })).report.promotions.length, 0, 'at mess 1 nothing moves');
-    eq((await planOf(d, { promote: false })).report.promotions.length, 0, 'nor with promotion off');
-    // the most arrows first
-    var two = digest([note('Big'), note('Small')].concat(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(function (t) { return note(t); })),
-      ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(function (t) { return { from: t, to: 'Big' }; }).concat(['a', 'b', 'c', 'd', 'e'].map(function (t) { return { from: t, to: 'Small' }; })));
-    eq((await planOf(two, { marginPills: 100000 })).report.promotions.map(function (p) { return p.node + ' ' + p.arrows; }), ['Big 7', 'Small 5'], 'by arrows');
-    // pills are for a mess: a star of eight lays out with nothing crossing, good enough as it is, and is left with its arrows, popular hub or not
-    var star = digest([note('Hub')].concat(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(function (x) { return note(x); })), ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(function (x) { return { from: x, to: 'Hub' }; }));
-    var left = await planOf(star, {});
-    eq([left.report.promotions.length, left.report.boards.root.stop, left.report.boards.root.end.good], [0, 'good-enough', true], 'a board good enough as it is: ' + JSON.stringify(left.report.boards.root.goodTerms));
-    eq(left.plan.boards[0].edges.filter(function (e) { return !e.via; }).length, 8, 'its eight arrows stay arrows');
-    // on a tie, the first node by title, whichever way its move goes: A (or Z) points at B and four more in a frame, and four more in another point
-    // at B (the frames make it a mess: arrows run over notes)
-    var ties = [];
-    for (var k = 0; k < 2; k++) {
-      var src = ['A', 'Z'][k];
-      var tie = digest([{ title: 'F', kind: 'frame' }, { title: 'G', kind: 'frame' }, note(src), note('B')].concat(['t1', 't2', 't3', 't4'].map(function (x) { return note(x, 'F'); })).concat(['u1', 'u2', 'u3', 'u4'].map(function (x) { return note(x, 'G'); })),
-        [{ from: src, to: 'B' }].concat(['t1', 't2', 't3', 't4'].map(function (x) { return { from: src, to: x }; })).concat(['u1', 'u2', 'u3', 'u4'].map(function (x) { return { from: x, to: 'B' }; })));
-      var first = (await planOf(tie, { marginPills: 100000 })).report.promotions[0];
-      ties.push([first.mode, first.node, first.arrows]);
-    }
-    eq(ties, [['out', 'A', 5], ['in', 'B', 5]], 'five point at B and five leave the other: the first by title is moved first');
-    checkPlan(r.plan);
-  });
-
-  await test('the summary names the moves the plan keeps: one the loop took back is not said to be promoted or fanned out', async function () {
-    var rep = { totals: { pills: 0, sharedArrows: 0, arrows: 0 }, warnings: [],
-      promotions: [{ board: 'root', mode: 'in', node: 'Kept' }, { board: 'root', mode: 'in', node: 'Back' }, { board: 'Part', mode: 'out', node: 'Fan' }, { board: 'Part', mode: 'out', node: 'Fan back' }, { board: 'Part', mode: 'in', node: 'Back' }],
-      boards: { root: { stop: 'little-gain', demotions: [{ board: 'root', mode: 'in', node: 'Back' }] }, Part: { stop: 'good-enough', demotions: [{ board: 'Part', mode: 'out', node: 'Fan back' }] } } };
-    var text = clim.summarize({ report: rep, plan: { boards: [] }, model: { dial: { mess: 0.1, longest: 1300 } } });
-    assert(/promoted 2: Kept, Back;/.test(text), 'the promotion taken back on the root is left out; the one of that name on another board stays: ' + text);
-    assert(/fanned out 1: Fan$/m.test(text), 'and so is the fan-out taken back: ' + text);
-  });
-
-  await test('a node that points at many is fanned out: each of its uses a pill beside it; never to a shape kept off pills, nor an edge that is never a pill', async function () {
-    var targets = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'];
-    var nodes = [note('Joiner')].concat(targets.map(function (t) { return note(t); })).concat([{ title: 'Private', kind: 'sticky-note', text: 'x', pill: false }, note('Plain')]);
-    var edges = targets.map(function (t) { return { from: 'Joiner', to: t }; }).concat([{ from: 'Joiner', to: 'Private' }, { from: 'Joiner', to: 'Plain', direct: true }]);
-    var r = await planOf(digest(nodes, edges), { marginPills: 100000 });
-    eq(r.report.promotions.map(function (p) { return [p.mode, p.node, !!p.popular, p.arrows]; }), [['out', 'Joiner', true, 8]], 'the joiner, fanned out, for its 8 uses that may be pills');
-    eq(r.report.boards.root.fanned, ['Joiner']); eq(r.report.boards.root.promoted, [], 'nothing is promoted');
-    var out = r.plan.boards[0].edges.filter(function (e) { return e.from === 'Joiner'; });
-    eq(out.filter(function (e) { return e.via; }).map(function (e) { return e.to; }).sort(), targets, 'each use is an edge through a reference');
-    eq(out.filter(function (e) { return !e.via; }).map(function (e) { return e.to; }).sort(), ['Plain', 'Private'], 'the direct edge and the one to a shape kept off pills stay arrows');
-    eq(r.plan.boards[0].pills.filter(function (p) { return p.start === 'Joiner'; }).length, 8, 'eight pills beside it');
-    eq(r.plan.boards[0].pills.map(function (p) { return p.for; }).sort(), targets, 'the pills stand for the uses, and none for the joiner');
-    assert(r.drawing.edges.filter(function (e) { return e.from === 'Joiner' && pillOf(e); }).length === 8, 'drawn that way: eight edges through pills');
-    assert(/fanned out 1: Joiner/.test(clim.summarize(r)), 'the summary says so');
-    // the same node, pointed at by many, is promoted instead: the two ways round are counted apart
-    var both = digest(nodes, targets.map(function (t) { return { from: t, to: 'Joiner' }; }));
-    eq((await planOf(both, { marginPills: 100000 })).report.promotions.map(function (p) { return p.mode + ' ' + p.node; }), ['in Joiner']);
-    checkPlan(r.plan);
-  });
-
-  await test('no arrow runs longer than the dial allows: it becomes a pill of its own beside its start, unless the digest says it never is one', async function () {
-    eq([dialm.dial(0).longest, dialm.dial(0.1).longest, dialm.dial(0.5).longest, dialm.dial(1).longest], [1000, 1300, 2500, 4000], 'the dial\'s longest');
-    // seven bands, a note in each: the top one points at the bottom one, six bands away
-    var nodes = [], bands = [0, 1, 2, 3, 4, 5, 6];
-    bands.forEach(function (i) { nodes.push({ title: 'Band ' + i, kind: 'frame', rank: i }); nodes.push(note('n' + i, 'Band ' + i, 'a note\nof three\nlines')); });
-    var d = digest(nodes, [{ from: 'n0', to: 'n6' }, { from: 'n0', to: 'n1' }]);
-    var r = await planOf(d, { marginPills: 100000 });
-    var b = r.report.boards.root;
-    eq(b.long.map(function (x) { return x.from + '>' + x.to; }), ['n0>n6'], 'the long one');
-    assert(b.long[0].length > 1300 && b.longLeft === 0, JSON.stringify(b.long));
-    eq(r.plan.boards[0].edges.map(function (e) { return e.from + '>' + e.to + (e.via ? ' via' : ''); }).sort(), ['n0>n1', 'n0>n6 via'], 'the long arrow is a pill, the short one an arrow');
-    assert(r.plan.boards[0].pills.some(function (p) { return p.for === 'n6'; }), 'n6 has a pill');
-    assert(/long arrows: 1 made pills/.test(clim.summarize(r)), 'the summary says so');
-    // an edge the digest says is never a pill stays an arrow, however long
-    var keep = digest(nodes, [{ from: 'n0', to: 'n6', direct: true }]);
-    var k = await planOf(keep, { marginPills: 100000 });
-    eq(k.report.boards.root.long, []); eq(k.plan.boards[0].edges.map(function (e) { return !!e.via; }), [false], 'direct stays');
-    // loose enough, and it is an arrow again
-    eq((await planOf(d, { marginPills: 100000, mess: 0.8 })).report.boards.root.long, [], 'at 0.8 an arrow may run 3400');
-    checkPlan(r.plan);
-  });
-
-  await test('an edge set apart is a pill of its own: it leaves the pill its container shares', async function () {
-    var fx = hubFixture(1, 4);
-    var m = model.buildModel(digest(fx.nodes, fx.edges)), sz = sizesOf(digest(fx.nodes, fx.edges));
-    var L = new layoutm.Layouter(m, 'root', sz, {}, elk);
-    var state = { promoted: new Set(['Hub']), order: ['Hub'], fanned: new Set(), fans: [], apart: new Set(), hosts: new Map(), splits: new Map() };
-    var shared = L.pillPlan(state);
-    eq(shared.groups.filter(function (g) { return g.target === 'Hub'; }).map(function (g) { return g.edges.length; }), [4], 'four users, one pill');
-    state.apart = new Set(['u1-2' + '\u0000' + 'Hub']);
-    var apart = L.pillPlan(state);
-    eq(apart.groups.filter(function (g) { return g.target === 'Hub'; }).map(function (g) { return g.edges.length; }).sort(), [1, 3], 'one of its own, three still sharing');
-    eq(apart.members.filter(function (x) { return x.e.from === 'u1-2'; }).length, 0, 'and its arrow runs to no one else\'s pill');
-    assert((apart.byStart.get('u1-2') || []).some(function (en) { return en.e.to === 'Hub' && !en.shared; }), 'its pill is in its own column');
-  });
-
   function rankedDigest() {
     var nodes = [{ title: 'Low', kind: 'frame', rank: 2 }, { title: 'Top', kind: 'frame', rank: 0 }, { title: 'Mid', kind: 'frame', rank: 1 }, note('Loose', null, 'no rank')];
     ['A', 'B', 'C', 'D'].forEach(function (x) { nodes.push(note('Top ' + x, 'Top', 'x')); });
@@ -813,8 +560,35 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   var isRows = function (by) { return by.Top.y + by.Top.h < by.Mid.y && by.Mid.y + by.Mid.h < by.Low.y; };
   var isColumns = function (by) { return by.Top.x + by.Top.w < by.Mid.x && by.Mid.x + by.Mid.w < by.Low.x; };
 
+  await test('ranked frames holding stars: the next round starts from the layout of the width chosen, not the last one tried', async function () {
+    // three ranked frames of five notes each in a ring with a chord (stars), and links between them, in a tall view (rows, a band of many
+    // widths tried); the state stars leaves for the next round (each frame's middles) is the chosen width's: what is drawn, moved as a block
+    var nodes = [], edges = [];
+    ['P', 'Q', 'R'].forEach(function (f, r) {
+      nodes.push({ title: f, kind: 'frame', rank: r });
+      var ring = [1, 2, 3, 4, 5].map(function (i) { return f + i; });
+      ring.forEach(function (t, i) { nodes.push(note(t, f, 'a note\nof two lines')); edges.push({ from: t, to: ring[(i + 1) % 5] }); });
+      edges.push({ from: ring[0], to: ring[2] });
+    });
+    edges.push({ from: 'P1', to: 'Q1' }, { from: 'Q3', to: 'R1' }, { from: 'P2', to: 'R2' });
+    var d = digest(nodes, edges), m = model.buildModel(d);
+    var L = new layoutm.Layouter(m, 'root', sizesOf(d), { view: { w: 800, h: 1600 }, spines: true }, elk);
+    var first = await L.layout({ cut: new Set() });
+    var frames = first.containers.filter(function (c) { return c.algorithm === 'stars' && c.cid[0] === 'f'; });
+    eq(frames.map(function (c) { return c.container; }), ['P', 'Q', 'R'], 'three stars frames');
+    frames.forEach(function (c) {
+      var mids = L.starsAt.get(c.cid), off = null;
+      first.boxes.forEach(function (bx, k) {
+        if (m.node(k).container !== c.cid) return;
+        var o = [bx.x + bx.w / 2 - mids.get(k)[0], bx.y + bx.h / 2 - mids.get(k)[1]];
+        if (!off) off = o;
+        assert(Math.abs(o[0] - off[0]) <= 1 && Math.abs(o[1] - off[1]) <= 1, c.container + "'s " + k + ' is not where the state it leaves says: ' + JSON.stringify([o, off]));
+      });
+    });
+  });
+
   await test('ranked frames as rows are in rank order, each as wide as the widest, what they hold centred; an unranked shape goes below them', async function () {
-    var r = await planOf(rankedDigest(), { promote: false, ranks: 'rows' });
+    var r = await planOf(rankedDigest(), { ranks: 'rows' });
     var by = shapesOf(r);
     assert(isRows(by), 'top, mid, low: ' + [by.Top.y, by.Mid.y, by.Low.y]);
     assert(by.Low.y + by.Low.h < by.Loose.y, 'the unranked note is below the bands');
@@ -827,7 +601,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
   await test('ranked frames as columns are in rank order left to right, each as tall as the tallest, what they hold at the top; an unranked shape goes after them', async function () {
-    var r = await planOf(rankedDigest(), { promote: false, ranks: 'columns' });
+    var r = await planOf(rankedDigest(), { ranks: 'columns' });
     var by = shapesOf(r);
     assert(isColumns(by), 'top, mid, low: ' + [by.Top.x, by.Mid.x, by.Low.x]);
     assert(by.Low.x + by.Low.w < by.Loose.x, 'the unranked note is right of the bands');
@@ -839,24 +613,24 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
   await test('ranked frames run whichever way the view shows larger: columns in a wide view, rows in a tall one, and a band is laid out to its slot', async function () {
-    var wide = await planOf(rankedDigest(), { promote: false, view: { w: 2400, h: 800 } }), tall = await planOf(rankedDigest(), { promote: false, view: { w: 800, h: 2400 } });
+    var wide = await planOf(rankedDigest(), { view: { w: 2400, h: 800 } }), tall = await planOf(rankedDigest(), { view: { w: 800, h: 2400 } });
     var w = shapesOf(wide), t = shapesOf(tall);
     assert(isColumns(w), 'a wide view: columns');
     assert(isRows(t), 'a tall view: rows');
     // the band of four notes is laid out to its slot: narrower as a column of the wide view than as a row of it would be
-    var rowsOfWide = shapesOf(await planOf(rankedDigest(), { promote: false, view: { w: 2400, h: 800 }, ranks: 'rows' }));
+    var rowsOfWide = shapesOf(await planOf(rankedDigest(), { view: { w: 2400, h: 800 }, ranks: 'rows' }));
     assert(w.Top.w < rowsOfWide.Top.w, 'a column is narrower than the row: ' + w.Top.w + ' against ' + rowsOfWide.Top.w);
     eq([wide.report.view.from, wide.report.view.w], ['given', 2400], 'the report says the view the plan is for');
     checkPlan(wide.plan); checkPlan(tall.plan);
   });
 
-  await test('a board is laid out to the shape of the view: wider than tall for a wide view, taller than wide for a tall one, and the report says how far off it is', async function () {
+  await test('a board is laid out to the shape of the view: wider than tall for a wide view, taller than wide for a tall one', async function () {
     var d = fixture('acme');
     var wide = await planOf(d, { view: { w: 1600, h: 800 } }), tall = await planOf(d, { view: { w: 800, h: 1600 } });
-    var sizeOf = function (r) { return r.report.boards.root.end.size; };
+    var sizeOf = function (r) { return r.report.boards.root.health.size; };
     assert(sizeOf(wide)[0] > sizeOf(wide)[1], 'a wide view: ' + sizeOf(wide));
     assert(sizeOf(tall)[1] > sizeOf(tall)[0], 'a tall view: ' + sizeOf(tall));
-    [wide, tall].forEach(function (r) { assert(r.report.boards.root.end.aspect <= 1.5, 'within half again of the view\'s shape: ' + r.report.boards.root.end.aspect); checkPlan(r.plan); });
+    [[wide, 2], [tall, 0.5]].forEach(function (x) { var s = sizeOf(x[0]); assert(elkm.offShape(s[0], s[1], x[1]) <= 1.6, 'near the view\'s shape: ' + s); checkPlan(x[0].plan); });
     // the same digest, the same view: the same plan
     var again = await planOf(d, { view: { w: 1600, h: 800 } });
     eq(JSON.stringify(again.plan), JSON.stringify(wide.plan), 'the same again');
@@ -864,9 +638,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   await test('layout.ranks says which way ranked children run, and --ranks says it over the document', async function () {
     var d = Object.assign(rankedDigest(), { layout: { ranks: 'rows' } }), wide = { w: 2400, h: 800 };
-    assert(isRows(shapesOf(await planOf(d, { promote: false, view: wide }))), 'the digest says rows, in a view that would have columns');
-    assert(isColumns(shapesOf(await planOf(d, { promote: false, view: wide, ranks: 'columns' }))), 'the option says columns over it');
-    assert(isColumns(shapesOf(await planOf(d, { promote: false, view: wide, ranks: 'auto' }))), 'and auto leaves it to the view');
+    assert(isRows(shapesOf(await planOf(d, { view: wide }))), 'the digest says rows, in a view that would have columns');
+    assert(isColumns(shapesOf(await planOf(d, { view: wide, ranks: 'columns' }))), 'the option says columns over it');
+    assert(isColumns(shapesOf(await planOf(d, { view: wide, ranks: 'auto' }))), 'and auto leaves it to the view');
     var threw = ''; try { model.buildModel(Object.assign(rankedDigest(), { layout: { ranks: 'sideways' } })); } catch (e) { threw = e.message; }
     assert(/layout\.ranks is rows or columns/.test(threw), 'another word is refused: ' + threw);
     eq(checkm.checkGraph(Object.assign(rankedDigest(), { layout: { ranks: 'sideways' } })).errors.length, 1, 'and check says so');
@@ -884,21 +658,8 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(Math.abs(part - 1.44) < 1e-9 && part < elkm.offShape(900, 1200, 1.5), 'less than the ratio for a board a little too tall for the view: ' + part);
   });
 
-  await test('a stress layout stretched to a shape keeps its order and comes out the shape; boxes pushed apart move only where they overlap', async function () {
-    var items = [], pos = [];
-    for (var i = 0; i < 9; i++) { items.push({ w: 200, h: 100 }); pos.push({ x: (i % 3) * 260, y: Math.floor(i / 3) * 200 }); }
-    var plain = elkm.stretched(items, pos, { aspect: 780 / 500 });
-    eq(plain.k, 1, 'already the shape: left alone');
-    var wide = elkm.stretched(items, pos, { aspect: 6 });
-    var box = elkm.normalize(items, wide.pos);
-    assert(wide.k > 1 && box.w / box.h > 3, 'stretched wide: ' + box.w + ' x ' + box.h + ', k ' + wide.k);
-    for (var a = 0; a < 9; a++) for (var b = 0; b < 9; b++) if (pos[a].x < pos[b].x) assert(wide.raw[a].x < wide.raw[b].x, 'left of stays left of');
-    for (var p = 0; p < 9; p++) for (var q = p + 1; q < 9; q++) {
-      var A = wide.pos[p], B = wide.pos[q];
-      assert(!(A.x < B.x + 200 && B.x < A.x + 200 && A.y < B.y + 100 && B.y < A.y + 100), 'nothing overlaps');
-    }
-    eq(elkm.stretch(items, elkm.stretch(items, pos, 4), 1 / 4).map(function (z) { return [Math.round(z.x), Math.round(z.y)]; }), pos.map(function (z) { return [z.x, z.y]; }), 'a stretch undone is where it was');
-    // pushApart: two boxes too near are pushed apart along the way they overlap least; a third, clear of both, stays
+  await test('boxes pushed apart move only where they overlap', async function () {
+    // two boxes too near are pushed apart along the way they overlap least; a third, clear of both, stays
     var three = [{ w: 200, h: 100 }, { w: 200, h: 100 }, { w: 200, h: 100 }], at = [{ x: 0, y: 0 }, { x: 150, y: 10 }, { x: 0, y: 600 }];
     var out = elkm.pushApart(three, at, 40, 64);
     eq(out[2], at[2], 'the box clear of the others has not moved');
@@ -906,56 +667,25 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(elkm.pushApart(three, [{ x: 0, y: 0 }, { x: 240, y: 0 }, { x: 0, y: 164 }], 40, 64), [{ x: 0, y: 0 }, { x: 240, y: 0 }, { x: 0, y: 164 }], 'boxes already clear stay where they are');
   });
 
-  await test('too long is as the view sees it: an arrow may run further across a wide view than down it', async function () {
-    var m = { node: function () { return { never: false }; } };
-    var across = { x1: 0, y1: 0, x2: 1200, y2: 0 }, down = { x1: 0, y1: 0, x2: 0, y2: 1200 };
-    var layout = function (aspect) { return { plan: { direct: [{ from: 'a', to: 'b' }, { from: 'c', to: 'd' }], members: [] }, shape: { aspect: aspect } }; };
-    var names = function (aspect) { return promm.tooLong(m, layout(aspect), { segs: [across, down] }, 1000).map(function (x) { return x.from; }); };
-    eq(names(1), ['a', 'c'], 'a square view: both are over 1000');
-    eq(names(2), ['c'], 'a view twice as wide as tall: the arrow across fits, the one down does not');
-    eq(names(0.5), ['a'], 'a view twice as tall as wide: the other way round');
-    eq(promm.tooLong(m, layout(2), { segs: [across, down] }, 1000)[0].length, 1200, 'the length said is the arrow\'s own');
-  });
-
-  await test('while too-long arrows are set apart every shape stays where it is: only what a grown box overlaps is pushed off it', async function () {
-    var x = await layouterOf(fixture('acme'));
-    x.L.setAnchors(x.layout);
-    x.L.hold = true; x.L.warm = true;
-    var same = await x.L.layout(x.state);
-    x.layout.boxes.forEach(function (b, t) { eq(same.boxes.get(t), b, t + ' has not moved'); });
-    // one arrow set apart: its start has a pill beside it now, and no shape has moved further than that pill is wide
-    var e = x.layout.plan.direct[0];
-    var st = Object.assign({}, x.state, { apart: new Set([e.from + '\u0000' + e.to]) });
-    var held = await x.L.layout(st);
-    var pill = held.pills.find(function (p) { return p.start === e.from && p.target === e.to; });
-    assert(pill, 'the arrow is a pill beside its start');
-    var reach = pill.w + 80 + 64 + 32;
-    held.boxes.forEach(function (b, t) { var was = x.layout.boxes.get(t); assert(Math.abs(b.x - was.x) <= reach && Math.abs(b.y - was.y) <= reach, t + ' moved ' + (b.x - was.x) + ', ' + (b.y - was.y)); });
-    x.L.hold = false;
-  });
-
-
-  await test('a board with a container past the crowd is laid out once and not searched: its crowd packed as boxes, the plan held, nothing promoted, and the summary says why and to split it', async function () {
-    var promote = await import('../lib/promote.mjs');
+  await test('a board with a container past the crowd is laid out once and cut no further than planar: its crowd packed as boxes, and the summary says why and to split it', async function () {
     // a frame of an index and CROWD pages it points at: a star, which laid out as a tree runs a row (or a column) as long as the pages
     var nodes = [{ title: 'Pages', kind: 'frame' }, note('Index', 'Pages')], edges = [];
-    for (var i = 0; i < promote.CROWD; i++) { nodes.push(note('Page ' + i, 'Pages')); edges.push({ from: 'Index', to: 'Page ' + i }); }
+    for (var i = 0; i < layoutm.CROWD; i++) { nodes.push(note('Page ' + i, 'Pages')); edges.push({ from: 'Index', to: 'Page ' + i }); }
     var r = await planOf(digest(nodes, edges));
     var rep = r.report.boards.root;
-    eq(rep.stop, 'crowded'); eq(rep.crowded.container, 'Pages'); eq(rep.crowded.children, promote.CROWD + 1);
-    eq(r.report.promotions, [], 'nothing promoted'); eq(rep.layout.layouts, 1, 'laid out once');
+    eq(rep.stop, 'crowded'); eq(rep.crowded.container, 'Pages'); eq(rep.crowded.children, layoutm.CROWD + 1);
+    eq([rep.rounds, rep.cutFurther], [0, 0], 'laid out once, and cut no further');
     eq(rep.algorithms.find(function (a) { return a.container === 'Pages'; }).algorithm, 'rectpacking', 'the crowd packed as boxes');
     var pages = r.plan.boards[0].shapes.find(function (s) { return s.key === 'Pages'; });
     assert(pages.w < 20000 && pages.h < 20000 && Math.max(pages.w / pages.h, pages.h / pages.w) < 4, 'a grid, not a row: ' + pages.w + ' x ' + pages.h);
-    eq(r.plan.boards[0].shapes.length, promote.CROWD + 2, 'every shape planned: the pages, the index and the frame');
+    eq(r.plan.boards[0].shapes.length, layoutm.CROWD + 2, 'every shape planned: the pages, the index and the frame');
     checkPlan(r.plan);
-    assert(r.report.warnings.some(function (w) { return /board "root" was laid out once and not searched: its frame "Pages" holds 151 shapes side by side, past 150.*split it into subboards/.test(w); }), r.report.warnings.join('\n'));
+    assert(r.report.warnings.some(function (w) { return /board "root" was laid out once and cut no further than its links' planar cut: its frame "Pages" holds 151 shapes side by side, past 150.*split it into subboards/.test(w); }), r.report.warnings.join('\n'));
     assert(/warning: board "root" was laid out once/.test(clim.summarize(r)), clim.summarize(r));
-    // one fewer is searched as ever: the index's arrows fanned out as pills
+    // one fewer is laid out by its links, and cut as any board is
     nodes.pop(); edges.pop();
-    var searched = await planOf(digest(nodes, edges));
-    assert(searched.report.boards.root.stop !== 'crowded' && !searched.report.warnings.length, searched.report.boards.root.stop);
-    assert(searched.report.promotions.some(function (p) { return p.node === 'Index'; }), 'the index is moved: ' + JSON.stringify(searched.report.promotions.map(function (p) { return p.node; })));
+    var fewer = await planOf(digest(nodes, edges));
+    assert(fewer.report.boards.root.stop !== 'crowded' && !fewer.report.warnings.length, fewer.report.boards.root.stop);
   });
 
 
@@ -1003,8 +733,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     said(errorsOf(d), /"B" has no kind/);
     d = tiny(); delete d.drawing;
     said(errorsOf(d), /drawing is the drawing's name/);
-    d = tiny(); d.nodes[3].layout = { rank: 'high', pill: 1 }; d.edges[0].layout = { weight: 'heavy', direct: 'yes' }; d.layout = { mess: 3, ranks: 'sideways' };
+    d = tiny(); d.nodes[3].layout = { rank: 'high', pill: 1 }; d.edges[0].layout = { weight: 'heavy', direct: 'yes' }; d.layout = { placement: 'grid', ranks: 'sideways' };
     eq(errorsOf(d).length, 6, 'hints of the wrong type: ' + JSON.stringify(errorsOf(d)));
+    [0, -0.5, 1e7].forEach(function (w) { d = tiny(); d.edges[0].layout = { weight: w }; said(errorsOf(d), /edges\[0\] A -> B: layout\.weight is a number above 0 and at most 1,000,000, not /, 'a weight of ' + w + ', by its ends'); });
     d = tiny(); d.nodes[3].layout = { pill: true }; d.nodes.push({ key: 'Ref', kind: 'reference' }); d.nodes[4].layout = { pill: true };
     said(errorsOf(d), /"Ref" is layout.pill: true, and no pill can stand for the kind reference/, 'pill: true where no pill stands');
     d = tiny(); d.nodes.push({ key: 'root', kind: 'subboard' });
@@ -1027,8 +758,8 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var m = model.buildModel(d), me = helpers.estimateMeasure(m, d);
     me.nodes.A.size = [411, 222]; me.nodes.Fr.titleWidth = 700; me.nodes.Fr.size = [150, 90];
     var sz = sizes.sizesFrom(m, me);
-    eq(sz.shapes.A, { w: 411, h: 222, above: 30 }, 'size and above, by key');
-    eq(sz.frames.Fr, { min: { w: 150, h: 90 }, titleWidth: 700 }, 'a frame\'s smallest and its title');
+    eq(sz.shapes.A, { w: 411, h: 222, above: 30, titleWidth: 0 }, 'size, above and the title\'s width, by key');
+    eq(sz.frames.Fr, { min: { w: 150, h: 90 }, titleWidth: 700, above: 9 }, 'a frame\'s smallest, its title and the room the title takes above it');
     assert(sz.pillWidth[sizes.pillKey('B', 'f:Fr')] > 0 && sz.pillWidth[sizes.pillKey('A', 'b:root')] > 0, 'pills by what they stand for and the container their start is in: ' + JSON.stringify(sz.pillWidth));
     eq(sz.constants.pillHeight, 40, 'constants read as before');
     var gone = me.nodes.B; delete me.nodes.B;
@@ -1122,14 +853,46 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(crossing.length >= 1, 'the tree has edges between boards');
     crossing.forEach(function (e) { assert(pillOf(r.drawing.edges.find(function (x) { return x.from === e.from && x.to === e.to; })), e.from + ' > ' + e.to + ' goes through a pill'); });
     // two edges of one pair: the first makes the pill, the second shares it (the start is the host)
-    var two = digest([note('Hub'), note('U1'), note('U2'), note('U3'), note('U4'), note('U5'), note('U6')], ['U1', 'U2', 'U3', 'U4', 'U5', 'U6'].map(function (u) { return { from: u, to: 'Hub' }; }).concat([{ from: 'U1', to: 'Hub', props: { text: 'again' } }]));
-    var t = await planOf(two, { promote: true, popular: 1 });
-    var u1 = t.drawing.edges.filter(function (e) { return e.from === 'U1'; });
+    var two = digest([{ title: 'Sub', kind: 'subboard' }, note('U1', 'Sub'), note('Hub')], [{ from: 'U1', to: 'Hub' }, { from: 'U1', to: 'Hub', props: { text: 'again' } }]);
+    var u1 = (await planOf(two)).drawing.edges.filter(function (e) { return e.from === 'U1'; });
     eq(u1.length, 2);
-    if (pillOf(u1[0])) { assert(pillOf(u1[0]).at || pillOf(u1[0]).share != null, 'a pill'); eq(pillOf(u1[1]) && pillOf(u1[1]).share != null, true, 'the second edge of a pair goes into the first one\'s pill'); }
+    assert(pillOf(u1[0]) && pillOf(u1[0]).at, 'the first makes the pill: ' + JSON.stringify(u1[0].place));
+    eq(pillOf(u1[1]), { share: 'U1' }, 'the second edge of a pair goes into the first one\'s pill');
     // a loop is drawn straight
     var loop = await planOf(digest([note('A'), note('B')], [{ from: 'A', to: 'A' }, { from: 'A', to: 'B' }]));
     assert(loop.drawing.edges.length === 2 && !pillOf(loop.drawing.edges[0]), 'a loop stays in the document, with no pill');
+  });
+
+  await test('links put back by the drawing: a link the cut made a pill that has a clear line on the finished drawing is an arrow again, and the board stays clean; one whose line would cross another stays a pill', async function () {
+    // K5 is no planar graph: the cut takes links, and the drawing has room for some of them again, but not for all
+    var five = ['A', 'B', 'C', 'D', 'E'], nodes = five.map(function (t) { return note(t); }), edges = [];
+    five.forEach(function (a, i) { five.slice(i + 1).forEach(function (b) { edges.push({ from: a, to: b }); }); });
+    var d = digest(nodes, edges), r = await planOf(d), rep = r.report.boards.root;
+    assert(rep.restored >= 1, 'a link is put back: ' + rep.restored);
+    eq([rep.stop, rep.health.status, rep.health.overOwnPills], ['clean', 'clean', 0], 'the board is clean');
+    var cutKeys = r.results.get('root').state.cut, back = r.drawing.edges.filter(function (e) { return !pillOf(e) && cutKeys.has(e.from + '\u0000' + e.to); });
+    eq(back.length, rep.restored, 'each is an edge with no pill, drawn as an arrow');
+    eq(r.report.totals.restored, rep.restored, 'the totals count them');
+    assert(/\n.*put back as arrows/.test(clim.summarize(r)), 'and the summary says so');
+    // each link still a pill would cross another line or run over a shape if it were an arrow: the board would not be clean
+    var m = model.buildModel(d), sz = sizes.sizesFrom(m, helpers.estimateMeasure(m, d)), still = r.drawing.edges.filter(pillOf);
+    assert(still.length >= 1, 'a link is still a pill');
+    still.forEach(function (p) {
+      var as = JSON.parse(JSON.stringify(r.drawing));
+      as.edges.forEach(function (e) { if (e.from === p.from && e.to === p.to) delete e.place; });
+      assert(healthm.healthOf(m, as, sz, { view: r.report.view }).totals.clean === 0, p.from + ' > ' + p.to + ' stays a pill: as an arrow the board would not be clean');
+    });
+  });
+
+  await test('shared pills by the drawing: notes that use one shape on another board share a pill each of them reaches clean, and the board stays clean', async function () {
+    var users = ['A', 'B', 'C', 'D', 'E', 'F'], nodes = users.map(function (t) { return note(t); }).concat([{ title: 'Lib', kind: 'subboard' }, note('X', 'Lib'), note('Y', 'Lib')]), edges = [];
+    users.forEach(function (u, i) { edges.push({ from: u, to: 'X' }); if (i % 2) edges.push({ from: u, to: 'Y' }); if (i) edges.push({ from: users[i - 1], to: u }); });
+    var r = await planOf(digest(nodes, edges)), rep = r.report.boards.root;
+    assert(rep.sharedByDrawing >= 1, 'a pill is shared: ' + rep.sharedByDrawing);
+    eq([rep.health.status, rep.health.overOwnPills], ['clean', 0], 'the board is clean, and no line runs over a pill its note uses');
+    var sharers = r.drawing.edges.filter(function (e) { return pillOf(e) && pillOf(e).share != null; });
+    assert(sharers.length >= 1, 'an edge goes into a pill another note makes');
+    eq(rep.end.arrows, 5, 'sharing costs no arrow');
   });
 
   await test('drawing.json is the same for the same input and for the input in another order, and keeps what a person can read: places are numbers, pills at integers', async function () {
@@ -1142,8 +905,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
   // a hash of each fixture's drawing.json, as the tool wrote it when this was recorded: a change that moves one changes every drawing of such a document.
-  // Recorded after the render layer was rewritten (keys, `canvas apply`'s document): the layout is the one it was, with the app's own measure for sizes.
-  var HASHES = { acme: '7d3435946541b66a', tree: '97bd2262acc4bf10', flat60: 'b2b139a5f51ccf7f', spine: '355749a0468d41be', typed: '445edc977fe8736d', frames: 'b3c3d462c4356684' };
+  // Recorded with the layout of docs/plans/board-layout as built (cut until planar, placed as stars or rows, cut until clean, pills in strips,
+  // links put back where the drawing has a clear line, pills shared where the notes reach a spot by clear lines); jsc and node draw each alike.
+  var HASHES = { acme: 'abf7dca9fb2afcd7', tree: 'cfe3264f23fbc489', flat60: '8e073bcc029ef67a', spine: '3a734d448327b89a', typed: 'f9237a88d58e80a6', frames: '99b1d0e9ce914a2b' };
   var hashOf = function (text) {
     var a = 0x811c9dc5, b = 0x01000193;
     for (var i = 0; i < text.length; i++) { var c = text.charCodeAt(i); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = Math.imul(b ^ c, 0x85ebca6b) >>> 0; }
@@ -1162,7 +926,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   // ---- drawing again in place ----
   // what `canvas query ':drawn-by("NAME")' --brief` answers for a drawing the app holds exactly as drawn: a row for each node with its box in world
   // units, its board, `inside` (the names of the subboards and frames it is inside, outermost first) and `in` (the key of the drawing's shape that holds it)
-  var rowsOf = function (drawing, edit) {
+  var rowsOf = function (drawing, edit, noEdges) {
     var abs = absoluteOf(drawing), by = {};
     drawing.nodes.forEach(function (n) { by[n.key] = n; });
     var rows = drawing.nodes.map(function (n) {
@@ -1172,10 +936,70 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
       if (n.in) row.in = n.in;
       return row;
     });
+    // and a row for each pill an edge made, kept under the edge's key, as the app answers: `in` its frame, else the subboard whose board it is on;
+    // and a row for each edge, with no place: its key (its own, else its ends and what tells a pair's edges apart, then a count), the ends it joins
+    // and the pill it runs through (the pill the edge makes, or the one the host it shares goes into)
+    var insideOf = function (k) { var out = [], p = k; while (p) { out.unshift(p); p = by[p].in; } return out; };
+    var seen = {}, recKeys = drawing.edges.map(function (e) {
+      var k = e.key || e.from + ' -> ' + e.to + (e.props && e.props.is !== undefined ? ' is ' + JSON.stringify(e.props.is) : '');
+      seen[k] = (seen[k] || 0) + 1;
+      return e.key ? k : seen[k] > 1 ? k + ' #' + seen[k] : k;
+    });
+    var makerOf = function (e) { for (var i = 0; i < drawing.edges.length; i++) { var x = drawing.edges[i]; if (x.from === e.place.pill.share && x.to === e.to && x.place && x.place.pill && x.place.pill.at) return recKeys[i]; } return null; };
+    drawing.edges.forEach(function (e, i) {
+      var p = e.place && e.place.pill;
+      if (!p || !p.at) return;
+      var holder = p.in, up = by[e.from].in;
+      while (!holder && up) { if (by[up].kind === 'subboard') holder = up; up = by[up].in; }
+      var f = p.in ? abs[p.in] : { x: 0, y: 0 }, row = { id: 'id:pill:' + recKeys[i], key: 'pill ' + recKeys[i], at: [[f.x + p.at[0], f.y + p.at[1]], [100, 40]], board: 'board:1', inside: holder ? insideOf(holder) : [] };
+      if (holder) row.in = holder;
+      rows.push(row);
+    });
+    if (!noEdges) drawing.edges.forEach(function (e, i) {
+      var p = e.place && e.place.pill, maker = p ? (p.at ? recKeys[i] : makerOf(e)) : null;
+      var c = { type: 'note-link', from: { id: 'id:' + e.from, title: e.from }, to: { id: 'id:' + e.to, title: e.to } };
+      if (maker) c.via = { to: { id: 'id:pill:' + maker } };
+      rows.push({ id: 'id:edge:' + recKeys[i], key: 'edge ' + recKeys[i], kind: 'arrow', board: 'board:1', inside: [], connection: c });
+    });
     if (edit) edit(rows);
     return { rows: rows, absent: [] };
   };
   var placesOfNodes = function (r) { var o = {}; r.drawing.nodes.forEach(function (n) { o[n.key] = JSON.stringify(n.place); }); return o; };
+
+  // a frame of a plugin and its six points, each point used by a file beside the frame, the files in a ring
+  function pointsDigest(extra) {
+    var nodes = [{ title: 'Points', kind: 'frame' }, note('Plugin', 'Points')], edges = [];
+    for (var i = 1; i <= 6; i++) {
+      nodes.push(note('P' + i, 'Points'), note('File' + i));
+      edges.push({ from: 'Plugin', to: 'P' + i }, { from: 'File' + i, to: 'P' + i }, { from: 'File' + i, to: 'File' + (i % 6 + 1) });
+    }
+    (extra || []).forEach(function (n) { nodes.push(n); });
+    return digest(nodes, edges);
+  }
+
+  await test('a frame whose members a shape beside it links to is laid out with its container: the links to its members are arrows, the board clean', async function () {
+    var d = pointsDigest(), r = await planOf(d), rep = r.report.boards.root;
+    var algo = function (c) { var a = rep.algorithms.find(function (x) { return x.container === c; }); return a && a.algorithm; };
+    eq([algo('Points'), algo('root')], ['group', 'stars'], 'the frame is a group of its container\'s stars');
+    eq(rep.stop, 'clean', 'clean');
+    checkPlan(r.plan);
+    var drawn = r.drawing.edges.filter(function (e) { return /^File/.test(e.from) && /^P\d/.test(e.to) && !(e.place && e.place.pill); });
+    assert(drawn.length >= 4, 'most files reach their point by an arrow: ' + drawn.length + ' of 6');
+    // every member inside its frame, the frame's box round them
+    var abs = absoluteOf(r.drawing), f = abs.Points;
+    r.drawing.nodes.filter(function (n) { return n.in === 'Points'; }).forEach(function (n) { var b = abs[n.key]; assert(b.x >= f.x && b.y >= f.y && b.x + b.w <= f.x + f.w && b.y + b.h <= f.y + f.h, n.key + ' is inside its frame'); });
+    // the same again; a frame of notes no shape beside it links to stays one box
+    eq(JSON.stringify((await planOf(d)).drawing), JSON.stringify(r.drawing), 'the same again');
+    var alone = await planOf(digest([{ title: 'Points', kind: 'frame' }, note('A', 'Points'), note('B', 'Points'), note('C')], [{ from: 'A', to: 'B' }, { from: 'B', to: 'A' }, { from: 'C', to: 'C' }]));
+    assert(alone.report.boards.root.algorithms.every(function (a) { return a.algorithm !== 'group'; }), 'no shape beside it links in: one box');
+    // drawn again in place: as the file holds it, it comes out as it is; with a note added beside it, the board is mended clean
+    var same = await planOf(d, { current: rowsOf(r.drawing) });
+    eq(placesOfNodes(same), placesOfNodes(r), 'drawn again, where it is');
+    var grown = await planOf(pointsDigest([note('Newcomer')]), { current: rowsOf(r.drawing) });
+    eq(grown.report.boards.root.stop, 'clean', 'a note added: clean');
+    checkPlan(grown.plan);
+  });
+
 
   await test('drawing again in place: a drawing as the file holds it comes out as it is, a moved shape stays where it was put, and a larger frame stays larger', async function () {
     var d = fixture('acme');
@@ -1214,41 +1038,412 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   await test('drawn again in place as rows, ranked frames drawn as columns are rows: the ranks say which way, and what each band holds is kept', async function () {
     var d = rankedDigest();
-    var columns = await planOf(d, { promote: false, ranks: 'columns' });
-    var rows = await planOf(d, { promote: false, ranks: 'rows', current: rowsOf(columns.drawing) });
+    var columns = await planOf(d, { ranks: 'columns' });
+    var rows = await planOf(d, { ranks: 'rows', current: rowsOf(columns.drawing) });
     assert(isRows(shapesOf(rows)), 'rows: ' + JSON.stringify(shapesOf(rows).Top) + ' ' + JSON.stringify(shapesOf(rows).Mid));
-    var inside = function (r) { var o = {}; r.drawing.nodes.filter(function (n) { return n.in === 'Top'; }).forEach(function (n) { o[n.key] = JSON.stringify(n.place.at); }); return o; };
+    // a band as wide as the widest centres what it holds: each note where it was against the others
+    var inside = function (r) { var o = {}, held = r.drawing.nodes.filter(function (n) { return n.in === 'Top'; }), first = held[0].place.at; held.forEach(function (n) { o[n.key] = JSON.stringify([n.place.at[0] - first[0], n.place.at[1] - first[1]]); }); return o; };
     eq(inside(rows), inside(columns), 'a band keeps where its notes are');
     assert(rows.report.boards.root.kept.indexOf('f:Top') >= 0 && rows.report.boards.root.kept.indexOf('b:root') < 0, 'the band kept, the board laid out by its ranks: ' + JSON.stringify(rows.report.boards.root.kept));
   });
 
-  await test('drawing again in place: a container whose members changed is laid out afresh, one whose members did not keeps them, and a rows answer with absent shapes is read', async function () {
+  await test('drawing again in place: a note added to a container, taken out of it or carried to another is put down beside the shapes that stay, which stay where they are; a rows answer with absent shapes is read', async function () {
     var d = fixture('acme'), first = await planOf(d), rows = rowsOf(first.drawing);
     var frames = first.drawing.nodes.filter(function (n) { return n.kind === 'frame'; }).map(function (n) { return n.key; });
     var target = frames[0], other = frames[1];
     var members = function (key) { return first.drawing.nodes.filter(function (n) { return n.in === key; }).map(function (n) { return n.key; }); };
-    // a note added to a frame: the frame lays out afresh (a member it has not held), the others keep their shapes where they are
+    var placeIn = function (r, k) { return r.drawing.nodes.find(function (n) { return n.key === k; }).place; };
+    // every shape but those named is where it was, and the frames hold their members
+    var stay = function (r, but) {
+      first.drawing.nodes.forEach(function (n) { if (but.indexOf(n.key) < 0) eq(placeIn(r, n.key).at, n.place.at, n.key + ' stays'); });
+    };
+    // a note added to a frame: the frame keeps its members (it is not laid out afresh), the newcomer is put down beside them
     var grown = JSON.parse(JSON.stringify(d)); grown.nodes.push(nodeOf(note('Newcomer', target, 'new')));
     var a = await planOf(grown, { current: rows });
-    members(other).forEach(function (k) { eq(a.drawing.nodes.find(function (n) { return n.key === k; }).place, first.drawing.nodes.find(function (n) { return n.key === k; }).place, k + ' of an untouched frame stays'); });
+    assert(a.report.boards.root.kept.indexOf('f:' + target) >= 0 && !a.report.boards.root.afresh, 'the frame with a newcomer keeps its members: ' + JSON.stringify(a.report.boards.root.kept));
+    eq(a.report.boards.root.health.status, 'clean', 'clean');
+    stay(a, ['Newcomer', target]);
     assert(a.drawing.nodes.find(function (n) { return n.key === 'Newcomer'; }), 'the newcomer is placed');
     checkPlan(a.plan);
     var abs = absoluteOf(a.drawing), mine = members(target).concat(['Newcomer']);
     mine.forEach(function (k, i) { mine.slice(i + 1).forEach(function (j) { var p = abs[k], q = abs[j]; assert(!(p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h), k + ' and ' + j + ' overlap'); }); });
-    // a note taken out of the document: its frame lays out afresh too (the file holds one the document no longer has)
+    // a note taken out of the document: the others stay, and the pills to it are gone
     var shrunk = JSON.parse(JSON.stringify(d)), gone = members(other)[0];
     shrunk.nodes = shrunk.nodes.filter(function (n) { return n.key !== gone; }); shrunk.edges = shrunk.edges.filter(function (e) { return e.from !== gone && e.to !== gone; });
     var b = await planOf(shrunk, { current: rows });
-    members(target).forEach(function (k) { eq(b.drawing.nodes.find(function (n) { return n.key === k; }).place, first.drawing.nodes.find(function (n) { return n.key === k; }).place, k + ' of an untouched frame stays'); });
-    // a note moved by hand to another frame: both frames lay out afresh
+    assert(b.report.boards.root.kept.indexOf('f:' + other) >= 0 && !b.report.boards.root.afresh, 'the frame that lost a member keeps the rest: ' + JSON.stringify(b.report.boards.root.kept));
+    stay(b, [gone]);
+    eq(b.report.boards.root.health.status, 'clean', 'still clean');
+    // a note moved by hand to another frame: the frame it entered puts it down beside its members, the others stay
     var carried = rowsOf(first.drawing, function (rs) { var rn = rs.find(function (x) { return x.key === members(target)[0]; }); rn.in = other; rn.inside = [other]; });
     var c = await planOf(d, { current: carried });
     var kept = c.report.boards.root.kept;
-    assert(kept.indexOf('f:' + target) < 0 && kept.indexOf('f:' + other) < 0 && kept.indexOf('b:root') >= 0, 'the two frames the note left and entered are laid out afresh, the board keeps: ' + JSON.stringify(kept));
+    assert(kept.indexOf('f:' + target) >= 0 && kept.indexOf('f:' + other) >= 0 && kept.indexOf('b:root') >= 0 && !c.report.boards.root.afresh, 'both frames and the board keep their members: ' + JSON.stringify(kept));
+    eq(c.report.boards.root.health.status, 'clean', 'clean');
     checkPlan(c.plan);
     // an answer that is a bare list of rows is read as well, and rows without a place are ignored
     var bare = await planOf(d, { current: rows.rows.concat([{ id: 'x', key: 'gone', inside: [] }]) });
     eq(placesOfNodes(bare), placesOfNodes(first), 'a list of rows');
+  });
+
+  await test('drawing again in place: a document the file holds as drawn comes out exactly as it is, every container kept and no board laid out afresh', async function () {
+    var names = ['acme', 'tree', 'flat60', 'spine', 'typed', 'frames'];
+    for (var i = 0; i < names.length; i++) {
+      var d = fixture(names[i]), first = await planOf(d), again = await planOf(d, { current: rowsOf(first.drawing) });
+      eq(JSON.stringify(again.drawing), JSON.stringify(first.drawing), names[i] + ': the same drawing, byte for byte');
+      Object.keys(again.report.boards).forEach(function (bd) {
+        var rep = again.report.boards[bd];
+        assert(!rep.afresh && rep.kept.length >= 1, names[i] + ' ' + bd + ' kept: ' + JSON.stringify(rep.kept));
+        eq([rep.rounds, rep.cutFurther], [0, 0], names[i] + ' ' + bd + ': nothing was mended');
+      });
+    }
+  });
+
+  await test('drawing again in place: a note added goes beside the shapes it links to and nothing else moves, a note taken out or a link added moves none, and a longer note grows where it stands', async function () {
+    var d = fixture('acme'), first = await planOf(d), rows = rowsOf(first.drawing), abs0 = absoluteOf(first.drawing);
+    var moved = function (r, but) { var abs = absoluteOf(r.drawing); return Object.keys(abs0).filter(function (k) { return but.indexOf(k) < 0 && JSON.stringify(abs0[k]) !== JSON.stringify(abs[k]); }); };
+    var added = JSON.parse(JSON.stringify(d)); added.nodes.push(nodeOf(note('Newcomer'))); added.edges.push({ from: 'Newcomer', to: 'Sales' }, { from: 'Newcomer', to: 'Finance' });
+    var a = await planOf(added, { current: rows }), abs = absoluteOf(a.drawing);
+    eq(moved(a, []), [], 'no shape moved');
+    var dist = function (p, q) { return Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y)); };
+    assert(Math.min(dist(abs.Newcomer, abs.Sales), dist(abs.Newcomer, abs.Finance)) < 1200, 'the newcomer is beside one of the notes it links to: ' + Math.round(dist(abs.Newcomer, abs.Sales)));
+    eq([a.report.boards.root.health.status, a.report.boards.root.afresh], ['clean', false], 'clean, and the board was not laid out afresh');
+    checkPlan(a.plan);
+    var removed = JSON.parse(JSON.stringify(d)); removed.nodes = removed.nodes.filter(function (n) { return n.key !== 'Legal'; }); removed.edges = removed.edges.filter(function (e) { return e.from !== 'Legal' && e.to !== 'Legal'; });
+    eq(moved(await planOf(removed, { current: rows }), ['Legal']), [], 'a note taken out: no shape moved');
+    var linked = JSON.parse(JSON.stringify(d)); linked.edges.push({ from: 'Marketing', to: 'People' });
+    var l = await planOf(linked, { current: rows });
+    eq(moved(l, []), [], 'a link added: no shape moved');
+    eq(l.report.boards.root.health.status, 'clean', 'and the board is clean');
+    var taller = JSON.parse(JSON.stringify(d));
+    taller.nodes.find(function (n) { return n.key === 'CTO'; }).props.text = 'A longer text\n\nthat takes\n\nmore lines\n\nthan it did\n\nbefore: a note that grew taller';
+    var t = await planOf(taller, { current: rows }), tabs = absoluteOf(t.drawing);
+    eq(moved(t, ['CTO']), [], 'a longer note: no other shape moved');
+    eq([tabs.CTO.x, tabs.CTO.y, tabs.CTO.h > abs0.CTO.h], [abs0.CTO.x, abs0.CTO.y, true], 'it grew where it stands');
+  });
+
+  await test('drawing again in place: a link that is a pill stays a pill and an arrow an arrow, whatever else changes, and a board whose notes and links did not change is not redone', async function () {
+    var d = fixture('acme'), first = await planOf(d), rows = rowsOf(first.drawing);
+    var state = function (r) { var o = {}; r.drawing.edges.forEach(function (e) { o[e.from + '>' + e.to] = e.place && e.place.pill ? (e.place.pill.share != null ? 'share' : 'pill') : 'arrow'; }); return o; };
+    var s0 = state(first), pills = Object.keys(s0).filter(function (k) { return s0[k] !== 'arrow'; }).length;
+    assert(pills >= 20 && pills < Object.keys(s0).length, 'the drawing has both: ' + pills + ' pills of ' + Object.keys(s0).length);
+    var changed = JSON.parse(JSON.stringify(d));
+    changed.nodes.find(function (n) { return n.key === 'CTO'; }).props.text = 'A longer text\n\nthat takes\n\nmore lines\n\nthan it did\n\nbefore: a note that grew taller';
+    changed.nodes.push(nodeOf(note('Newcomer', 'Operations'))); changed.edges.push({ from: 'Newcomer', to: 'Legal' });
+    var r = await planOf(changed, { current: rows }), s1 = state(r);
+    eq(Object.keys(s0).filter(function (k) { return s0[k] !== s1[k]; }), [], 'every link keeps being what it was');
+    // a document of two boards, one of them changed: the other comes out as it is, the pills that point into the changed one aside
+    var t = fixture('tree'), tf = await planOf(t), tr = rowsOf(tf.drawing);
+    var edited = JSON.parse(JSON.stringify(t)); edited.nodes.push(nodeOf(note('Extra', 'Auth', 'extra'))); edited.edges.push({ from: 'Extra', to: 'Login' });
+    var e = await planOf(edited, { current: tr });
+    assert(e.report.boards.Backend.kept.length >= 1 && !e.report.boards.Backend.afresh, 'the changed board keeps its containers');
+    var rootNodes = function (x) { return x.drawing.nodes.filter(function (n) { return x.model.node(n.key).board === 'root'; }).map(function (n) { return [n.key, n.place]; }); };
+    eq(rootNodes(e), rootNodes(tf), 'the other board is as it was');
+    eq(e.report.boards.root.ms < 1000, true, 'and costs next to nothing: ' + e.report.boards.root.ms + ' ms');
+  });
+
+  await test('drawing again in place: a board a person tangled is mended where it is kept, and kept with what is left said where no cut mends it', async function () {
+    var d = digest([note('A'), note('B'), note('C'), note('D')], [{ from: 'A', to: 'B' }, { from: 'C', to: 'D' }]);
+    var first = await planOf(d), at = function (r, k) { return r.drawing.nodes.find(function (n) { return n.key === k; }).place.at; };
+    eq(first.report.boards.root.health.status, 'clean');
+    // a person drags the four into a square, so A -> B crosses C -> D: kept where they are, and a link cut so the board is clean again
+    var square = { A: [0, 0], B: [1400, 900], C: [1400, 0], D: [0, 900] };
+    var tangled = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (r) { if (square[r.key]) r.at[0] = square[r.key].slice(); }); }) });
+    var t = tangled.report.boards.root;
+    eq([t.stop, t.health.status, t.afresh, t.kept], ['clean', 'clean', false, ['b:root']], 'mended where it is');
+    assert(t.cutFurther > first.report.boards.root.cutFurther, 'by a cut the fresh plan did not need: ' + t.cutFurther);
+    ['A', 'B', 'C', 'D'].forEach(function (k) { eq(at(tangled, k), square[k], k + ' stays where the person put it'); });
+    // a person drags A away and puts C on the room B's title takes, 10 units above it: both stay where they put them (the board is not laid out afresh),
+    // and B, which C covers, is put down again
+    var b = first.drawing.nodes.find(function (n) { return n.key === 'B'; }).place, c = first.drawing.nodes.find(function (n) { return n.key === 'C'; }).place;
+    var moved = { A: [b.at[0] - 1500, b.at[1]], C: [b.at[0], b.at[1] - c.size[1] - 10] };
+    var heldBy = new Map([['A', new Set(['moved'])], ['C', new Set(['moved'])]]);
+    var onTitle = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (r) { if (moved[r.key]) r.at[0] = moved[r.key]; }); }), changed: heldBy });
+    var o = onTitle.report.boards.root;
+    eq([o.stop, o.health.status, o.afresh], ['clean', 'clean', false], 'kept, and clean');
+    eq([at(onTitle, 'A'), at(onTitle, 'C')], [moved.A, moved.C], 'what the person moved stays where they put it');
+    eq(o.held, ['A', 'C'], 'the report says which are held');
+    assert(o.moved.some(function (m) { return m.key === 'B' && /covered/.test(m.why); }), 'B is put down again, because a person\'s shape covers it: ' + JSON.stringify(o.moved));
+    // without `changed` (an app that does not say) a shape put on another's title is not known to be a person's: the check says so, and the board is kept as it is (never laid out afresh: that would put back what a person moved)
+    var unknown = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (r) { if (moved[r.key]) r.at[0] = moved[r.key]; }); }) });
+    eq([unknown.report.boards.root.afresh, unknown.report.boards.root.health.status], [false, 'not clean'], 'kept, and said, where nothing says whose it is');
+    eq([at(unknown, 'A'), at(unknown, 'C')], [moved.A, moved.C], 'and what the person moved stays');
+  });
+
+  await test('drawing again in place: the cut is read from the rows of the edges: a link through a pill stays a pill, a link through none an arrow, and a note that shares a pill stays in the pill the file has it in', async function () {
+    var names = ['acme', 'flat60', 'spine', 'typed'], shared = 0;
+    for (var i = 0; i < names.length; i++) {
+      var first = await planOf(fixture(names[i]));
+      shared += first.drawing.edges.filter(function (e) { return e.place && e.place.pill && e.place.pill.share != null; }).length;
+      var again = await planOf(fixture(names[i]), { current: rowsOf(first.drawing) });
+      eq(JSON.stringify(again.drawing.edges), JSON.stringify(first.drawing.edges), names[i] + ': every link what it was, every sharer in the pill it was in');
+    }
+    assert(shared >= 10, 'the fixtures have notes that share a pill: ' + shared);
+    // a link the file draws through a pill stays one though a straight line from its note is clear, and one it draws as an arrow stays an arrow
+    var d = fixture('acme'), f = await planOf(d), rows = rowsOf(f.drawing);
+    var viaOf = function (rs) { var o = {}; rs.rows.forEach(function (r) { if (r.connection) o[r.key] = r.connection.via ? r.connection.via.to.id : null; }); return o; };
+    var before = viaOf(rows), made = f.drawing.edges.filter(function (e) { return e.place && e.place.pill; });
+    assert(made.length >= 20 && Object.keys(before).some(function (k) { return before[k] == null; }), 'the file has both');
+    var edited = JSON.parse(JSON.stringify(d)); edited.nodes.push(nodeOf(note('Extra', 'Operations'))); edited.edges.push({ from: 'Extra', to: 'Legal' });
+    var r = await planOf(edited, { current: rows }), pills = function (x) { var o = {}; x.drawing.edges.forEach(function (e) { o[e.from + '>' + e.to] = e.place && e.place.pill ? JSON.stringify(e.place.pill) : 'arrow'; }); return o; };
+    var p0 = pills(f), p1 = pills(r);
+    eq(Object.keys(p0).filter(function (k) { return p0[k] !== p1[k]; }), [], 'nothing of the file\'s links changed for a note added');
+  });
+
+  await test('drawing again in place: a note a person moved onto another stays, its pills come with it, the note it covers is put down again, and nothing else moves', async function () {
+    var d = fixture('acme'), first = await planOf(d), rows = rowsOf(first.drawing), abs0 = absoluteOf(first.drawing);
+    var by = {}; first.drawing.nodes.forEach(function (n) { by[n.key] = n; });
+    // a note with pills of its own, and another note beside it in the same container
+    var owners = {}; first.drawing.edges.forEach(function (e) { if (e.place && e.place.pill && e.place.pill.at && by[e.from].kind !== 'frame') owners[e.from] = (owners[e.from] || 0) + 1; });
+    var A = Object.keys(owners).filter(function (k) { return owners[k] >= 2; }).sort()[0];
+    var B = first.drawing.nodes.filter(function (n) { return n.key !== A && n.kind !== 'frame' && n.in === by[A].in && !owners[n.key]; }).map(function (n) { return n.key; }).sort()[0];
+    assert(A && B, 'a note with pills and one beside it: ' + A + ' ' + B);
+    var target = [abs0[B].x + 10, abs0[B].y + 6];
+    var r = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === A) x.at[0] = target.slice(); }); }), changed: new Map([[A, new Set(['moved'])]]) });
+    var rep = r.report.boards.root, abs = absoluteOf(r.drawing);
+    eq([abs[A].x, abs[A].y, abs[A].w, abs[A].h], [target[0], target[1], abs0[A].w, abs0[A].h], 'the note is where the person put it');
+    eq([rep.afresh, rep.stop, rep.health.status], [false, 'clean', 'clean'], 'kept, and clean');
+    eq(rep.held, [A], 'held');
+    eq(rep.moved.map(function (m) { return m.key; }), [B], 'only the note it covers moved: ' + JSON.stringify(rep.moved));
+    assert(/covered/.test(rep.moved[0].why), 'and the report says why: ' + rep.moved[0].why);
+    var still = Object.keys(abs0).filter(function (k) { return k !== A && k !== B && JSON.stringify(abs0[k]) !== JSON.stringify(abs[k]); });
+    eq(still, [], 'no other shape moved');
+    // its pills are about it now, not where they were
+    var mine = r.drawing.edges.filter(function (e) { return e.from === A && e.place && e.place.pill && e.place.pill.at; });
+    assert(mine.length >= 2, 'it still has its pills');
+    mine.forEach(function (e) {
+      var pa = e.place.pill.at, f = e.place.pill.in ? abs[e.place.pill.in] : { x: 0, y: 0 }, px = f.x + pa[0], py = f.y + pa[1];
+      assert(Math.abs(px - abs[A].x) < 800 && Math.abs(py - abs[A].y) < 800, 'its pill for ' + e.to + ' is about the note: ' + Math.round(px - abs[A].x) + ', ' + Math.round(py - abs[A].y));
+    });
+    // a second plan from what that drew, with the person\'s move no longer a change, holds as it is
+    var again = await planOf(d, { current: rowsOf(r.drawing) });
+    eq(JSON.stringify(again.drawing), JSON.stringify(r.drawing), 'drawn again, it is as it is');
+  });
+
+  await test('drawing again in place: a note a person put on another inside a frame stays, the frame grows as little as it must, and the shapes it reaches are put down again', async function () {
+    var d = pointsDigest(), first = await planOf(d), rows = rowsOf(first.drawing), abs0 = absoluteOf(first.drawing);
+    var A = 'P1', B = 'P2', target = [abs0[B].x + 12, abs0[B].y + 8];
+    var r = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === A) x.at[0] = target.slice(); }); }), changed: new Map([[A, new Set(['moved'])]]) });
+    var rep = r.report.boards.root, abs = absoluteOf(r.drawing);
+    eq([abs[A].x, abs[A].y], target, 'the note is where the person put it');
+    eq([rep.afresh, rep.health.status], [false, 'clean'], 'kept, and clean');
+    assert(rep.moved.some(function (m) { return m.key === B && /covered/.test(m.why); }), 'the note it covers is put down again: ' + JSON.stringify(rep.moved));
+    var f = abs.Points;
+    ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'Plugin'].forEach(function (k) { var b = abs[k]; assert(b.x >= f.x && b.y >= f.y && b.x + b.w <= f.x + f.w && b.y + b.h <= f.y + f.h, k + ' is inside its frame'); });
+    checkPlan(r.plan);
+  });
+
+  // a person drops a note of the tree document's Clients frame where they like, as a drag does (the first drawing's rows, the one note's place changed, the note
+  // said to be changed), and the drawing is made again: `where` is the key of the shape whose top-left it goes to, or the point [x, y] it goes to
+  // `real`: the app's own measure of the tree document (fixtures/tree.measure.json), and the drawing the driver makes of it: the document grouped by that measure's tightness
+  // (`cluster`), then planned, and the redraw grouped over the document as it now is (the file's rows, what a person changed) before it is planned from them
+  var TREE_MEASURE = JSON.parse(io.readText(base + '/test/fixtures/tree.measure.json'));
+  var droppedOn = async function (moved, where, real, fixtureName) {
+    var d = fixture(fixtureName || 'tree'), changed = new Map([[moved, new Set(['moved'])]]);
+    var planned = function (g, opts) {
+      if (!real) return planOf(g, opts);
+      return planm.planGraph(g, function (m) { return sizes.sizesFrom(m, TREE_MEASURE); }, Object.assign({ refused: sizes.refusedEdges(TREE_MEASURE) }, opts || {}), elk);
+    };
+    var first = await planned(real ? clusterm.clusterGraph(d, TREE_MEASURE, { kinds: KINDS }).graph : d), abs0 = absoluteOf(first.drawing);
+    var at = typeof where === 'string' ? [abs0[where].x, abs0[where].y] : typeof where[0] === 'string' ? [abs0[where[0]].x + where[1], abs0[where[0]].y + where[2]] : where;   // a key, a point, or [key, dx, dy]
+    var rows = rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === moved) x.at[0] = at.slice(); }); });
+    var g = real ? clusterm.clusterGraph(d, TREE_MEASURE, { kinds: KINDS, current: rows, changed: changed }).graph : d;
+    var r = await planned(g, { current: rows, changed: changed }), abs = absoluteOf(r.drawing);
+    var was = Object.assign({}, abs0); was[moved] = Object.assign({}, abs0[moved], { x: at[0], y: at[1] });
+    var by = {}; first.drawing.nodes.forEach(function (n) { by[n.key] = n; });
+    return { first: first, r: r, rep: r.report.boards.root, abs0: was, abs: abs, kind: function (k) { return by[k].kind; } };
+  };
+  var same = function (a, b) { return Math.abs(a.x - b.x) <= 0.5 && Math.abs(a.y - b.y) <= 0.5 && Math.abs(a.w - b.w) <= 0.5 && Math.abs(a.h - b.h) <= 0.5; };
+  var inFrame = function (b, f) { return b.x >= f.x && b.y >= f.y && b.x + b.w <= f.x + f.w && b.y + b.h <= f.y + f.h; };
+  var onBox = function (a, b) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; };
+
+  await test('drawing again in place: the note a person\'s note covers goes to the room the person left in the frame, so no frame grows and no other shape moves', async function () {
+    var o = await droppedOn('Mobile app', 'Web app');
+    eq(o.rep.moved.map(function (m) { return m.key; }), ['Web app'], 'only the note it covers moved: ' + JSON.stringify(o.rep.moved));
+    assert(/covered/.test(o.rep.moved[0].why), 'and the report says a person\'s shape covered it: ' + o.rep.moved[0].why);
+    eq(Object.keys(o.abs0).filter(function (k) { return k !== 'Web app' && !same(o.abs0[k], o.abs[k]); }), [], 'no frame grew or moved, no shape beside it moved');
+    assert(inFrame(o.abs['Web app'], o.abs.Clients), 'it is inside its frame, in the room the person left: ' + JSON.stringify(o.abs['Web app']));
+    assert(!onBox(o.abs['Web app'], o.abs['Mobile app']), 'not on the person\'s note');
+    eq([o.rep.afresh, o.rep.health.status], [false, 'clean'], 'kept, and clean');
+  });
+
+  // the room a person's note left is as tight as the drawing had it: Clients' notes were packed by the document's own spacing, 34 units between Admin console's footprint (its
+  // title's row and its pill) and Web app's, less than the 40 a put-down keeps between footprints; the covered note, once the mend cuts its link (the arrow would cross Web
+  // app) into a pill, has a footprint as tall as Admin console's was and more. It takes the room at the least gap before the frame grows
+  // the same case on the estimated measure and on the app's own (fixtures/tree.measure.json, what `canvas measure --tightness` answered for the tree document in DigestTests' test of
+  // it, kept from its output folder): on the app's, the covered note's pill and the line to it lie just where the person's note puts its own below it, the room the note left
+  var coveredTakesTheRoom = async function (real) {
+    var o = await droppedOn('Admin console', 'Mobile app', real);
+    eq(o.rep.moved.map(function (m) { return m.key; }), ['Mobile app'], 'only the note under the person\'s note moved: ' + JSON.stringify(o.rep.moved));
+    eq(o.rep.moved[0].why, 'a person\'s shape covered it', 'and the report says why');
+    eq(Object.keys(o.abs0).filter(function (k) { return k !== 'Mobile app' && !same(o.abs0[k], o.abs[k]); }), [], 'no frame grew or moved, no other shape moved (Clients and Gateway stay)');
+    assert(inFrame(o.abs['Mobile app'], o.abs.Clients), 'it is inside its frame: ' + JSON.stringify(o.abs['Mobile app']));
+    assert(!onBox(o.abs['Mobile app'], o.abs['Admin console']), 'not on the person\'s note');
+    eq([o.rep.afresh, o.rep.health.status], [false, 'clean'], 'kept, and clean');
+    // its link out of the frame is a pill now (the arrow would cross Web app), set beside it, inside the frame, and on no note
+    var mine = o.r.drawing.edges.filter(function (e) { return e.from === 'Mobile app'; });
+    assert(mine.length === 1 && mine[0].place && mine[0].place.pill && mine[0].place.pill.at, 'its link is a pill: ' + JSON.stringify(mine.map(function (e) { return e.place; })));
+    var pa = mine[0].place.pill.at, pill = { x: o.abs.Clients.x + pa[0], y: o.abs.Clients.y + pa[1], w: 128, h: 40 };
+    assert(inFrame(pill, o.abs.Clients), 'the pill is inside the frame');
+    ['Web app', 'Admin console', 'Mobile app'].forEach(function (k) { assert(!onBox(pill, o.abs[k]), 'the pill is on no note: ' + k); });
+  };
+  await test('drawing again in place: a note a person drops on a note with a link out of the frame takes the room the person left, with its pill: only it moves, no frame grows or moves (estimated measure)', function () { return coveredTakesTheRoom(false); });
+  await test('drawing again in place: a note a person drops on a note with a link out of the frame takes the room the person left, with its pill: only it moves, no frame grows or moves (the app\'s measure)', function () { return coveredTakesTheRoom(true); });
+
+  // a person drags a note of a frame out to where it lies on no note of its board: the frame grows to hold it, and the shapes it then reaches are put down again, the
+  // shapes the person's note covers none
+  await test('drawing again in place: a shape put down again because a frame grew around a person\'s note is reported as "a frame grew", and none as covered', async function () {
+    var o = await droppedOn('Web app', [1300, 650]);
+    var whys = {}; o.rep.moved.forEach(function (m) { whys[m.key] = m.why; });
+    var person = o.abs['Web app'];
+    eq([person.x, person.y], [1300, 650], 'the note is where the person put it');
+    assert(o.abs.Clients.w > o.abs0.Clients.w && o.abs.Clients.h > o.abs0.Clients.h && inFrame(person, o.abs.Clients), 'the frame grew to hold it: ' + JSON.stringify([o.abs0.Clients, o.abs.Clients]));
+    ['Gateway', 'Backend'].forEach(function (k) { assert(!onBox(person, o.abs0[k]), 'the person\'s note lies on no note of its board: ' + k); });
+    var grew = Object.keys(whys).filter(function (k) { return o.kind(k) !== 'frame' && !/container that moved/.test(whys[k]); });
+    assert(grew.length >= 1, 'a frame grew and put a shape down again: ' + JSON.stringify(o.rep.moved));
+    grew.forEach(function (k) { eq(whys[k], 'a frame grew', k + ': what the grown frame reached is not said to be covered by the person\'s note'); });
+    eq(Object.keys(whys).filter(function (k) { return /covered/.test(whys[k]); }), [], 'none is said to be covered');
+    eq([o.rep.afresh, o.rep.health.status], [false, 'clean'], 'kept, and clean');
+  });
+
+  // a document grouped by tightness has link weights 50 to 100 inside a group and 1 to 49 between groups (a lens document may give `layout.weight` too): the spot a redraw
+  // puts a new note at weighs each placed neighbour's pull by its link's weight against the weights of the note's own links
+  await test('drawing again in place: a new note linked to two notes far apart lands nearer the one its heavier link goes to, and where the links weigh the same it lands where it did before the weights counted', async function () {
+    var nodes = [], edges = [];
+    for (var k = 0; k < 8; k++) nodes.push(note('N' + k));
+    for (var j = 0; j < 7; j++) edges.push({ from: 'N' + j, to: 'N' + (j + 1), weight: 60 });
+    var d = digest(nodes, edges), first = await planOf(d), rows = rowsOf(first.drawing), abs0 = absoluteOf(first.drawing);
+    var landed = async function (wLeft, wRight) {
+      var added = JSON.parse(JSON.stringify(d));
+      added.nodes.push(nodeOf(note('Newcomer')));
+      added.edges.push(edgeOf({ from: 'Newcomer', to: 'N0', weight: wLeft }), edgeOf({ from: 'Newcomer', to: 'N7', weight: wRight }));
+      var r = await planOf(added, { current: rows }), abs = absoluteOf(r.drawing), rep = r.report.boards.root;
+      eq(Object.keys(abs0).filter(function (k) { return !same(abs0[k], abs[k]); }), [], wLeft + '/' + wRight + ': no shape of the file moved');
+      eq([rep.health.status, rep.afresh], ['clean', false], wLeft + '/' + wRight + ': clean, and kept');
+      var toLeft = Math.hypot(abs.Newcomer.x - abs.N0.x, abs.Newcomer.y - abs.N0.y), toRight = Math.hypot(abs.Newcomer.x - abs.N7.x, abs.Newcomer.y - abs.N7.y);
+      return { x: abs.Newcomer.x, y: abs.Newcomer.y, toLeft: toLeft, toRight: toRight };
+    };
+    var heavyLeft = await landed(90, 10), heavyRight = await landed(10, 90), tight = await landed(60, 20);
+    assert(heavyLeft.toLeft + 200 < heavyLeft.toRight, 'the heavy link on the left: nearer the left one (' + Math.round(heavyLeft.toLeft) + ' against ' + Math.round(heavyLeft.toRight) + ')');
+    assert(heavyRight.toRight + 200 < heavyRight.toLeft, 'the heavy link on the right: nearer the right one (' + Math.round(heavyRight.toRight) + ' against ' + Math.round(heavyRight.toLeft) + ')');
+    assert(tight.toLeft + 100 < tight.toRight, 'and the same for weights of a group and between groups');
+    // each weight alike, whatever it is (past the cap of 3 a link's pull had, and under it): where the unweighted score put it, the middle of the two
+    var alike = [await landed(1, 1), await landed(50, 50), await landed(80, 80), await landed(100, 100)];
+    alike.forEach(function (p, i) { eq([Math.round(p.x), Math.round(p.y)], [1288, 709], 'equal weights, the same place as before the weights counted: ' + [1, 50, 80, 100][i]); });
+  });
+
+  // what a redraw puts down keeps what the first drawing kept: the notes an arrow joins keep the gap an arrow needs between their boxes (the tight pass the frame's own room is
+  // taken at keeps the least gap between footprints only), a covered note's links weigh as they were written (an arrow does not weigh twice a pill), and a pill the
+  // put-down gives a place stays inside the frame it is in
+  var drawnBetween = function (o) {
+    var out = [], by = {};
+    o.r.drawing.nodes.forEach(function (n) { by[n.key] = n; });
+    o.r.drawing.edges.forEach(function (e) { if (!(e.place && e.place.pill) && by[e.from] && by[e.to] && by[e.from].in === by[e.to].in) out.push([e.from, e.to]); });
+    return out;
+  };
+  var gapOf = function (a, b) { return Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w), b.y - (a.y + a.h), a.y - (b.y + b.h)); };
+  await test('drawing again in place: a note dropped on another leaves the notes an arrow joins at least a gap apart, and the board clean', async function () {
+    var o = await droppedOn('Finance', ['People', 10, 6], false, 'acme');
+    var near = drawnBetween(o).filter(function (p) { return gapOf(o.abs[p[0]], o.abs[p[1]]) < 40 - 0.5; });
+    eq(near.map(function (p) { return p.join(' -> ') + ' ' + gapOf(o.abs[p[0]], o.abs[p[1]]); }), [], 'no two notes of one container an arrow joins are under 40 apart');
+    eq([o.rep.afresh, o.rep.health.status], [false, 'clean'], 'kept, and clean');
+  });
+  // the tight pass keeps an arrow's two notes a gap apart (box to box, where the arrow runs) and the footprints, their titles' rows and pills, the least gap: the room the
+  // person left is taken wherever the arrow has its room, and a frame grows only where it has none (Login on Tokens in the tree still grows Auth: the spot beside Passwords
+  // has Tokens' arrow to Services over Passwords)
+  var linkedUnder = function (o, who) { return drawnBetween(o).filter(function (p) { return p.indexOf(who) < 0 && gapOf(o.abs[p[0]], o.abs[p[1]]) < 40 - 0.5; }); };
+  await test('drawing again in place: a note dropped on another takes the room the person left wherever its arrows have theirs, and notes an arrow joins are a gap apart box to box', async function () {
+    var o = await droppedOn('CTO', ['Payments team', 10, 6], false, 'acme'), grown = [];
+    o.first.drawing.nodes.forEach(function (n) { if (n.kind === 'frame') { var f = absoluteOf(o.first.drawing)[n.key], g = o.abs[n.key]; if (g.w > f.w + 0.5 || g.h > f.h + 0.5) grown.push(n.key + ' ' + f.w + 'x' + f.h + ' -> ' + g.w + 'x' + g.h); } });
+    eq(grown, [], 'no frame grew: the covered note took the room the person left');
+    eq(linkedUnder(o, 'CTO'), [], 'no two notes of one container an arrow joins, the person\'s own aside, are under 40 apart');
+    eq([o.rep.afresh, o.rep.health.status], [false, 'clean'], 'kept, and clean');
+    var s = await droppedOn('Search index', ['Catalog DB', 10, 6]);
+    eq([s.abs.Stores.w, s.abs.Stores.h], [722, 900], 'Stores grows by no more than the note the person put over its edge');
+    eq(linkedUnder(s, 'Search index'), [], 'and no two notes an arrow joins, the person\'s own aside, are under 40 apart');
+    eq([s.rep.afresh, s.rep.health.status], [false, 'clean'], 'kept, and clean');
+    var l = await droppedOn('Login', ['Tokens', 10, 6]);
+    eq(linkedUnder(l, 'Login'), [], 'Login on Tokens: no two notes an arrow joins, the person\'s own aside, are under 40 apart');
+    eq([l.rep.afresh, l.rep.health.status], [false, 'clean'], 'kept, and clean');
+  });
+  await test('drawing again in place: a covered note whose links are arrows and pills of one weight lands where it did before the weights counted', async function () {
+    var o = await droppedOn('Passwords', 'Tokens');
+    eq([Math.round(o.abs.Tokens.x * 100) / 100, Math.round(o.abs.Tokens.y * 100) / 100], [1172.62, 1230.75], 'Tokens, covered, where the unweighted score put it');
+    eq([o.rep.afresh, o.rep.health.status], [false, 'clean'], 'kept, and clean');
+  });
+  await test('drawing again in place: the pill of a covered note\'s link, shared with another note, stays inside its frame, and the board is clean', async function () {
+    var o = await droppedOn('Orders DB', ['Cache', 10, 6]);
+    eq([o.rep.afresh, o.rep.health.status, o.rep.conflicts || []], [false, 'clean', []], 'kept, and clean');
+    var pills = o.r.drawing.edges.filter(function (e) { return e.place && e.place.pill && e.place.pill.at; });
+    pills.forEach(function (e) {
+      var p = e.place.pill, f = p.in ? o.abs[p.in] : null;
+      if (f) assert(p.at[0] >= 0 && p.at[1] >= 0 && p.at[0] + 128 <= f.w && p.at[1] + 40 <= f.h, 'the pill of ' + e.from + ' -> ' + e.to + ' is inside ' + p.in + ': ' + JSON.stringify(p.at));
+    });
+  });
+
+  await test('drawing again in place: two shapes a person put on one another both stay, and the board is kept with what is left said, not laid out afresh', async function () {
+    var d = digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'C' }, { from: 'B', to: 'C' }]);
+    var first = await planOf(d), abs0 = absoluteOf(first.drawing);
+    var r = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'A') x.at[0] = [abs0.B.x + 20, abs0.B.y + 20]; }); }), changed: new Map([['A', new Set(['moved'])], ['B', new Set(['resized'])]]) });
+    var rep = r.report.boards.root, abs = absoluteOf(r.drawing);
+    eq([abs.A.x, abs.A.y, abs.B.x, abs.B.y], [abs0.B.x + 20, abs0.B.y + 20, abs0.B.x, abs0.B.y], 'both where they are');
+    eq([rep.afresh, rep.stop, rep.held], [false, 'not clean', ['A', 'B']], 'kept, not clean, both held');
+    assert(rep.conflicts.length >= 1 && /"A"/.test(rep.conflicts.join(' ')), 'the conflict is said: ' + JSON.stringify(rep.conflicts));
+  });
+
+  // two ranked frames of notes (bands) with links among them: a person moves one note of the lower band
+  function bandsDigest() {
+    var nodes = [], edges = [];
+    ['Top', 'Low'].forEach(function (f, r) {
+      nodes.push({ title: f, kind: 'frame', rank: r });
+      var ring = [1, 2, 3, 4].map(function (i) { return f[0] + i; });
+      ring.forEach(function (t, i) { nodes.push(note(t, f, 'a note\nof two lines')); edges.push({ from: t, to: ring[(i + 1) % 4] }); });
+    });
+    edges.push({ from: 'T1', to: 'L1' }, { from: 'T3', to: 'L3' });
+    return digest(nodes, edges);
+  }
+
+  await test('drawing again in place: what a redraw leaves is read back as it is, so the next redraw draws it the same: a person\'s move in a ranked band, a longer note, a board left not clean, a frame made smaller', async function () {
+    var d = bandsDigest(), first = await planOf(d), abs0 = absoluteOf(first.drawing);
+    var again = async function (r, doc) { return planOf(doc || d, { current: rowsOf(r.drawing) }); };
+    var same = function (a, b, m) { eq(JSON.stringify(a.drawing), JSON.stringify(b.drawing), m); };
+    // a note of a ranked band moved by hand: held, and the band is not laid out again by its ranks when the move is no longer a change
+    var onL3 = [abs0.L3.x + 30, abs0.L3.y + 20];
+    var moved = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'L2') x.at[0] = onL3.slice(); }); }), changed: new Map([['L2', new Set(['moved'])]]) });
+    var abs = absoluteOf(moved.drawing);
+    eq([abs.L2.x, abs.L2.y], onL3, 'the note is where the person put it, on another, which is put down again');
+    same(await again(moved), moved, 'the ranked band is read back as it is');
+    // moved, and its text longer: it takes the size its text has, where it stands, and drawn again nothing moves
+    var longer = JSON.parse(JSON.stringify(d));
+    longer.nodes.find(function (n) { return n.key === 'L2'; }).props.text = new Array(40).join('A longer text\n');
+    var grown = await planOf(longer, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'L2') x.at[0][0] += 250; }); }), changed: new Map([['L2', new Set(['moved'])]]) });
+    var ga = absoluteOf(grown.drawing);
+    eq([ga.L2.x, ga.L2.y, ga.L2.h > abs0.L2.h], [abs0.L2.x + 250, abs0.L2.y, true], 'it is where it was put, and as tall as its text');
+    same(await again(grown, longer), grown, 'drawn again, a longer note that was moved stays');
+    // a board a redraw leaves not clean (two shapes of a person's on each other) is drawn again with none of the notes moved
+    var e = digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'C' }, { from: 'B', to: 'C' }]), ef = await planOf(e), ea = absoluteOf(ef.drawing);
+    var tangled = await planOf(e, { current: rowsOf(ef.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'A') x.at[0] = [ea.B.x + 20, ea.B.y + 20]; }); }), changed: new Map([['A', new Set(['moved'])], ['B', new Set(['resized'])]]) });
+    eq(tangled.report.boards.root.stop, 'not clean', 'not clean');
+    var t2 = await planOf(e, { current: rowsOf(tangled.drawing) }), t2a = absoluteOf(t2.drawing), t1a = absoluteOf(tangled.drawing);
+    eq(['A', 'B', 'C'].map(function (k) { return [t2a[k].x, t2a[k].y]; }), ['A', 'B', 'C'].map(function (k) { return [t1a[k].x, t1a[k].y]; }), 'drawn again, none of the notes moves, though nothing says whose they are');
+    // a frame a person made smaller than what it holds stays at their size on the redraw after that too
+    var p = pointsDigest(), pf = await planOf(p), pa = absoluteOf(pf.drawing), fr = pa.Points;
+    var small = await planOf(p, { current: rowsOf(pf.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'Points') x.at[1] = [fr.w - 120, fr.h - 100]; }); }), changed: new Map([['Points', new Set(['resized'])]]) });
+    eq([absoluteOf(small.drawing).Points.w, absoluteOf(small.drawing).Points.h], [fr.w - 120, fr.h - 100], 'the frame has the size they gave it');
+    same(await planOf(p, { current: rowsOf(small.drawing) }), small, 'and is read back at it');
+  });
+
+  await test('drawing again in place: a shape a person carried into another container stays there, which the drawing says, and the report says what was carried', async function () {
+    var d = digest([{ title: 'F1', kind: 'frame' }, { title: 'F2', kind: 'frame' }, note('X', 'F1'), note('Y', 'F1'), note('Z', 'F2'), note('W', 'F2')], [{ from: 'X', to: 'Y' }, { from: 'Z', to: 'W' }, { from: 'X', to: 'Z' }]);
+    var first = await planOf(d), abs0 = absoluteOf(first.drawing), f2 = abs0.F2;
+    var at = [f2.x + 30, f2.y + f2.h + 200];
+    var r = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'X') { delete x.in; x.inside = []; x.at[0] = at.slice(); } }); }), changed: new Map([['X', new Set(['frame', 'moved'])]]) });
+    var xn = r.drawing.nodes.find(function (n) { return n.key === 'X'; }), ra = absoluteOf(r.drawing);
+    eq([xn.in || null, ra.X.x, ra.X.y], [null, at[0], at[1]], 'X is on the board where the person put it, not in its frame');
+    eq(r.report.carried, [{ key: 'X', in: null }], 'the report says so');
+    // not a change of container (no frame or board in what changed): the document says where it is
+    var kept = await planOf(d, { current: rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'X') { delete x.in; x.inside = []; x.at[0] = at.slice(); } }); }), changed: new Map([['X', new Set(['moved'])]]) });
+    eq(kept.drawing.nodes.find(function (n) { return n.key === 'X'; }).in, 'F1', 'the document\'s container otherwise');
   });
 
   await test('drawing again in place: subboards and nested frames keep their members too; the file holding shapes the document lacks is laid out afresh above them', async function () {
@@ -1263,23 +1458,30 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(m.plan);
   });
 
-  await test('a pinned node has a pill drawn for it, and none with promotion off', async function () {
-    var d = fixture('acme');
-    d.nodes.find(function (n) { return n.key === 'Platform team'; }).layout = { pill: true };
-    var off = await planOf(d, { promote: false });
-    assert(off.drawing.edges.every(function (e) { return !(e.place && e.place.pill); }), 'no pill is drawn with promotion off');
-    var on = await planOf(d);
-    assert(on.drawing.edges.some(function (e) { return e.to === 'Platform team' && e.place && e.place.pill; }), 'a pill is drawn for the pinned node');
+  await test('a pinned node (layout.pill: true) has a pill only where a pill is needed: none for an arrow on its board, one for a link from another board', async function () {
+    var pinned = { title: 'B', kind: 'sticky-note', text: 'b', pill: true };
+    var lone = await planOf(digest([note('A'), pinned], [{ from: 'A', to: 'B' }]));
+    eq(lone.drawing.edges.filter(pillOf).length, 0, 'A -> B is an arrow');
+    var far = await planOf(digest([{ title: 'Sub', kind: 'subboard' }, note('A', 'Sub'), pinned], [{ from: 'A', to: 'B' }]));
+    assert(far.plan.boards.some(function (b) { return b.pills.some(function (p) { return p.for === 'B'; }); }), 'a pill from another board stands for it');
   });
 
-  await test('props are the app\'s: a hub whose props say private: true is laid out as any other hub, and the document keeps what it says', async function () {
-    // whether a pill may stand for a shape is the app's to say (canvas apply refuses one for a private node, by key); the layout reads no props
-    var fx = hubFixture(4, 5), marked = hubFixture(4, 5);
-    marked.nodes.forEach(function (n) { if (n.title === 'Hub') n.props = Object.assign({}, n.props, { private: true }); });
-    var plain = await planOf(digest(fx.nodes, fx.edges), { marginPills: 100000 });
-    var r = await planOf(digest(marked.nodes, marked.edges), { marginPills: 100000 });
-    eq(JSON.stringify(r.plan.boards), JSON.stringify(plain.plan.boards), 'the same boards, pills and moves');
-    eq(r.drawing.nodes.find(function (n) { return n.key === 'Hub'; }).props.private, true, 'its props passed through');
+  await test('props are the app\'s: a node whose props say private: true is laid out as any other, and the document keeps what it says', async function () {
+    // whether a pill may stand for a shape is the app\'s to say (canvas apply refuses one for a private node, by key); the layout reads no props
+    var plain = fixture('acme'), marked = fixture('acme');
+    marked.nodes.forEach(function (n) { if (n.key === 'Platform team') n.props = Object.assign({}, n.props, { private: true }); });
+    var a = await planOf(plain), b = await planOf(marked);
+    eq(JSON.stringify(b.plan.boards), JSON.stringify(a.plan.boards), 'the same boards and pills');
+    eq(b.drawing.nodes.find(function (n) { return n.key === 'Platform team'; }).props.private, true, 'its props passed through');
+  });
+
+  await test('what the report says: no word of what is public, in the plan, the report or the summary', async function () {
+    var names = ['acme', 'tree', 'flat60', 'spine', 'frames', 'typed'];
+    for (var i = 0; i < names.length; i++) {
+      var r = await planOf(fixture(names[i]));
+      eq([r.report.public, r.report.publicWhy, r.plan.public], [undefined, undefined, undefined], names[i] + ': nothing is reported public');
+      assert(!/public/.test(clim.summarize(r)), names[i] + ': the summary says nothing of public');
+    }
   });
 
   // ---- the commands ----
@@ -1302,8 +1504,11 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     await clim.run(['plan', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH, '--view', '1440x900'], mem.io);
     var summary = mem.printed.pop();
     assert(/^plan: 1 board\(s\), 29 shapes, \d+ pills/.test(summary) && /laid out for a view of 1440 x 900/.test(summary) && !/public/.test(summary), summary);
+    assert(/\nhealth: [01] of 1 board\(s\) clean; \d+ crossings, \d+ lines over shapes, \d+ shapes on top of others/.test(summary), 'the summary says how many boards are clean: ' + summary);
+    assert(/\ncut: \d+ of \d+ links made pills/.test(summary), 'and how many links were cut: ' + summary);
     var drawing = JSON.parse(mem.files['/out/drawing.json']), report = JSON.parse(mem.files['/out/report.json']);
-    eq(drawing.nodes.length, 29); eq(drawing.drawing, 'acme'); assert(report.totals && report.promotions && report.view.w === 1440 && report.timings.engine === 'test', 'report.json');
+    eq(drawing.nodes.length, 29); eq(drawing.drawing, 'acme'); assert(report.totals && report.public === undefined && report.view.w === 1440 && report.timings.engine === 'test', 'report.json');
+    assert(report.health && report.health.boards === 1 && report.health.margin === 8 && /^(clean|not clean)$/.test(report.boards.root.health.status), 'report.json has each board\'s health and the totals: ' + JSON.stringify(report.health));
     eq(Object.keys(mem.files).sort(), ['/g.json', '/m.json', '/out/drawing.json', '/out/report.json'], 'two files written, and nothing else');
     var threw = ''; try { await clim.run(['plan', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH, '--records', 'x'], mem.io); } catch (e) { threw = e.message; }
     assert(/unknown option --records/.test(threw), threw);
@@ -1338,7 +1543,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     await clim.run(['extract', 'kinds', KINDS_PATH], mem.io);
     eq(JSON.parse(mem.printed.pop()).map(function (k) { return k.kind; }), ['arrow', 'emoji-sticker', 'frame', 'reference', 'sticky-note', 'subboard']);
     threw = ''; try { await clim.run(['nonsense'], mem.io); } catch (e) { threw = e.message; }
-    assert(/THE MESS DIAL/.test(threw), 'the usage');
+    assert(/THE CUT/.test(threw), 'the usage');
+    threw = ''; try { await clim.run(['plan', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH, '--mess', '0.5'], mem.io); } catch (e) { threw = e.message; }
+    assert(/unknown option --mess/.test(threw), 'the dial is gone: ' + threw);
   });
 
   await test('--current is read from a file: the plan starts from where the drawing\'s shapes are', async function () {
@@ -1347,6 +1554,580 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     await clim.run(['plan', '/g.json', '/m.json', '/o', '--kinds', KINDS_PATH, '--current', '/c.json'], mem.io);
     var drawn = JSON.parse(mem.files['/o/drawing.json']);
     assert(JSON.stringify(drawn.nodes.map(function (n) { return n.place; })) !== JSON.stringify(first.drawing.nodes.map(function (n) { return n.place; })), 'a hand-moved shape moves the layout');
+  });
+
+  await test('--changed is read from a file, and the summary says what a redraw did: the boards as they were, shapes put down, a person\'s shapes held', async function () {
+    var d = fixture('acme'), first = await planOf(d), abs0 = absoluteOf(first.drawing), by = {};
+    first.drawing.nodes.forEach(function (n) { by[n.key] = n; });
+    var A = first.drawing.nodes.filter(function (n) { return n.kind !== 'frame'; })[3].key, B = first.drawing.nodes.filter(function (n) { return n.kind !== 'frame' && n.key !== A && n.in === by[A].in; })[0].key;
+    var cur = rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === A) x.at[0] = [abs0[B].x + 10, abs0[B].y + 6]; }); });
+    var changed = { rows: [Object.assign({}, cur.rows.find(function (x) { return x.key === A; }), { changed: ['moved'] })] };
+    var mem = memory({ '/g.json': JSON.stringify(d), '/m.json': JSON.stringify(measureOf(d)), '/c.json': JSON.stringify(cur), '/h.json': JSON.stringify(changed) });
+    await clim.run(['plan', '/g.json', '/m.json', '/o', '--kinds', KINDS_PATH, '--current', '/c.json', '--changed', '/h.json'], mem.io);
+    var drawn = JSON.parse(mem.files['/o/drawing.json']), rep = JSON.parse(mem.files['/o/report.json']);
+    eq(drawn.nodes.find(function (n) { return n.key === A; }).place.at, [abs0[B].x + 10 - (by[A].in ? abs0[by[A].in].x : 0), abs0[B].y + 6 - (by[A].in ? abs0[by[A].in].y : 0)], 'the shape a person moved is where they put it');
+    var said = mem.printed.join('\n');
+    assert(/redraw: \d+ board\(s\) as the file has them, \d+ with \d+ shape\(s\) put down, 0 laid out afresh/.test(said) && /1 shape\(s\) a person put where they are held/.test(said), 'the summary says what it did: ' + said);
+    assert(!/so each board's links are planar|put back as arrows/.test(said), 'and says nothing that does not apply to a redraw');
+    eq(rep.redraw, true);
+    var hold = await clim.run(['changed-by', '/g.json'], mem.io);
+    assert(/^:changed\("/.test(mem.printed[mem.printed.length - 1]), 'the query that asks: ' + mem.printed[mem.printed.length - 1]);
+  });
+
+  // ---- health: every board measured on its drawing ----
+  // a drawing by hand: each node's box in its board's coordinates (`at`: key -> [x, y, w, h], from its frame's top-left when it is in one) and,
+  // by an edge's place in the list, the pill it goes through ({at, in} or {share})
+  function drawnBy(d, at, pills) {
+    return {
+      drawing: d.drawing,
+      nodes: d.nodes.map(function (n) { var b = at[n.key]; return Object.assign({}, n, { place: { at: [b[0], b[1]], size: [b[2], b[3]] } }); }),
+      edges: d.edges.map(function (e, i) { return pills && pills[i] ? Object.assign({}, e, { place: { pill: pills[i] } }) : Object.assign({}, e); }),
+    };
+  }
+  function healthBy(d, at, pills, opts) {
+    var m = model.buildModel(d), me = helpers.estimateMeasure(m, d);
+    if (opts && opts.tweak) opts.tweak(me);   // the measurement as a test wants it (a title's width)
+    return healthm.healthOf(m, drawnBy(d, at, pills), sizes.sizesFrom(m, me), Object.assign({ view: { w: 1440, h: 960 } }, opts || {}));
+  }
+
+  await test('health: two arrows that cross are a crossing; two that share an end are not', async function () {
+    var at = { A: [0, 0, 100, 100], B: [400, 400, 100, 100], C: [400, 0, 100, 100], D: [0, 400, 100, 100] };
+    var h = healthBy(digest([note('A'), note('B'), note('C'), note('D')], [{ from: 'A', to: 'B' }, { from: 'C', to: 'D' }]), at).boards.root;
+    eq([h.status, h.crossings, h.overShapes, h.onTop], ['not clean', 1, 0, 0], 'the diagonals cross');
+    eq(h.examples, ['"A" -> "B" crosses "C" -> "D"']);
+    h = healthBy(digest([note('A'), note('B'), note('C'), note('D')], [{ from: 'A', to: 'B' }, { from: 'C', to: 'A' }]), at).boards.root;
+    eq([h.status, h.crossings, h.links, h.cut, h.pills], ['clean', 0, 2, 0, 0], 'lines that meet at A cross nothing');
+  });
+
+  await test('health: a line that passes within 8 units of a shape runs over it; one 9 units off does not', async function () {
+    var d = digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'B' }]), untitled = { tweak: function (me) { me.nodes.C.above = 0; } };
+    var near = healthBy(d, { A: [0, 0, 100, 100], B: [600, 0, 100, 100], C: [300, 57, 100, 100] }, null, untitled).boards.root;
+    eq([near.status, near.overShapes], ['not clean', 1], 'seven units below the line');
+    eq(near.examples, ['"A" -> "B" runs over "C"']);
+    var off = healthBy(d, { A: [0, 0, 100, 100], B: [600, 0, 100, 100], C: [300, 59, 100, 100] }, null, untitled).boards.root;
+    eq([off.status, off.overShapes], ['clean', 0], 'nine units below it');
+  });
+
+  await test('health: a line over the room another shape\'s title takes runs over that shape; over its own end\'s title it does not', async function () {
+    var d = digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'B' }]);
+    var h = healthBy(d, { A: [0, 0, 100, 100], B: [600, 0, 100, 100], C: [300, 70, 100, 100] }).boards.root;
+    eq([h.status, h.overShapes, h.examples], ['not clean', 1, ['"A" -> "B" runs over "C"']], 'twenty units above C, in the room its title takes (30 here)');
+    h = healthBy(digest([note('A'), note('B')], [{ from: 'A', to: 'B' }]), { A: [0, 0, 100, 100], B: [0, 300, 100, 100] }).boards.root;
+    eq([h.status, h.overShapes], ['clean', 0], 'into B from above, over B\'s own title');
+    // the room is as wide as the title, where the measurement says how wide that is
+    var p = digest([note('N'), note('P'), note('T')], [{ from: 'P', to: 'T' }]), at = { N: [0, 0, 300, 100], P: [800, -100, 100, 100], T: [800, 500, 100, 100] };
+    eq(healthBy(p, at, { 0: { at: [200, -41] } }).boards.root.onTop, 1, 'a pill over the right of a title row the shape\'s width');
+    eq(healthBy(p, at, { 0: { at: [200, -41] } }, { tweak: function (me) { me.nodes.N.titleWidth = 100; } }).boards.root.onTop, 0, 'clear of a title 100 wide');
+  });
+
+  await test('health: an arc that bends around a shape runs over nothing; the straight line runs over it', async function () {
+    var d = digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'B' }]), at = { A: [0, 0, 100, 100], B: [600, 0, 100, 100], C: [300, 20, 100, 60] };
+    eq(healthBy(d, at).boards.root.overShapes, 1, 'straight');
+    eq(healthBy(d, at, null, { bendOf: function () { return 150; } }).boards.root.overShapes, 0, 'bent 150 units, below it');
+    // the arc bulges to the side the app's ArrowGeometry puts a positive bend: along (-dy, dx), below a line drawn left to right
+    var box = function (b) { return { x: b[0], y: b[1], w: b[2], h: b[3] }; }, path = geomm.arrowPath(box(at.A), box(at.B), 150, 16);
+    assert(path.length > 2 && path.every(function (p) { return p[1] >= 50 - 1e-6; }) && Math.max.apply(null, path.map(function (p) { return p[1]; })) > 190, 'below: ' + JSON.stringify(path));
+  });
+
+  await test('health: a note\'s lines into its own pills over its other pills fail nothing; another\'s line over a pill does, and crosses', async function () {
+    var nodes = [note('H'), note('T1'), note('T2'), note('S'), note('U')], at = { H: [0, 0, 100, 100], T1: [2000, 0, 100, 100], T2: [2000, 400, 100, 100], S: [200, 300, 78, 100], U: [200, -400, 78, 100] };
+    var pills = { 0: { at: [200, 40] }, 1: { at: [400, 40] } };
+    var h = healthBy(digest(nodes, [{ from: 'H', to: 'T1' }, { from: 'H', to: 'T2' }]), at, pills).boards.root;
+    eq([h.status, h.overOwnPills, h.overShapes, h.crossings, h.pills, h.links, h.cut], ['clean', 1, 0, 0, 2, 2, 2], 'H\'s line to its far pill runs over its near one: counted apart');
+    h = healthBy(digest(nodes, [{ from: 'H', to: 'T1' }, { from: 'H', to: 'T2' }, { from: 'S', to: 'U' }]), at, pills).boards.root;
+    eq([h.status, h.overOwnPills, h.overShapes, h.crossings, h.links, h.cut], ['not clean', 1, 1, 1, 3, 2], 'S\'s arrow runs over H\'s pill and crosses H\'s line to the other');
+    eq(h.examples, ['"H" -> its pill for "T2" crosses "S" -> "U"', '"S" -> "U" runs over the pill for "T1" beside "H"']);
+  });
+
+  await test('health: a note\'s line over a pill it shares is its own; over one it doesn\'t use, it runs over a shape', async function () {
+    var nodes = [note('H'), note('S'), note('T1'), note('T2')], at = { H: [0, -300, 100, 100], S: [0, 0, 100, 100], T1: [2000, 0, 100, 100], T2: [2000, 400, 100, 100] };
+    var pills = { 0: { at: [200, 40] }, 1: { at: [400, 40] }, 2: { share: 'H' }, 3: { share: 'H' } };
+    var h = healthBy(digest(nodes, [{ from: 'H', to: 'T1' }, { from: 'H', to: 'T2' }, { from: 'S', to: 'T2' }]), at, pills).boards.root;
+    eq([h.status, h.overShapes, h.overOwnPills, h.pills, h.links, h.cut], ['not clean', 1, 0, 2, 3, 3], 'S uses only H\'s pill for T2, and its line runs over the one for T1');
+    eq(h.examples, ['"S" -> the pill for "T2" beside "H" runs over the pill for "T1" beside "H"']);
+    h = healthBy(digest(nodes, [{ from: 'H', to: 'T1' }, { from: 'H', to: 'T2' }, { from: 'S', to: 'T2' }, { from: 'S', to: 'T1' }]), at, pills).boards.root;
+    eq([h.status, h.overShapes, h.overOwnPills, h.pills, h.links, h.cut], ['clean', 0, 1, 2, 4, 4], 'S shares both: its own');
+  });
+
+  await test('health: the second arrow between two shapes is bowed apart from the first, as the app draws it', async function () {
+    var at = { A: [0, 0, 100, 100], B: [600, 0, 100, 100], C: [300, 80, 100, 60] }, untitled = { tweak: function (me) { me.nodes.C.above = 0; } };
+    var one = healthBy(digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'B' }]), at, null, untitled).boards.root;
+    eq([one.status, one.overShapes], ['clean', 0], 'the straight arrow passes 30 units above C');
+    var two = healthBy(digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'B' }, { from: 'B', to: 'A' }]), at, null, untitled).boards.root;
+    eq([two.status, two.overShapes, two.crossings, two.links], ['not clean', 1, 0, 1], 'the second bows 34 units, into C');
+    eq(two.examples, ['"B" -> "A" runs over "C"']);
+    var other = healthBy(digest([note('A'), note('B'), note('C')], [{ from: 'B', to: 'A' }, { from: 'A', to: 'B' }]), at, null, untitled).boards.root;
+    eq(other.examples, ['"A" -> "B" runs over "C"'], 'listed the other way round, the other arrow is the second, bowed the same way');
+    var bent = healthBy(digest([note('A'), note('B'), note('C')], [{ from: 'A', to: 'B' }, { from: 'B', to: 'A' }]), at, null, Object.assign({ bendOf: function (e) { return e.from === 'B' ? 90 : 0; } }, untitled)).boards.root;
+    eq([bent.status, bent.overShapes], ['clean', 0], 'an edge bent its own way keeps its bend: 90 units the other side');
+  });
+
+  await test('health: shapes on top: a note on a note, a pill on a note\'s title, a pill on a frame it is not in; shapes in their own frame are not', async function () {
+    var h = healthBy(digest([note('N'), note('O')], []), { N: [0, 0, 100, 100], O: [50, 50, 100, 100] }).boards.root;
+    eq([h.status, h.onTop, h.examples], ['not clean', 1, ['"N" is on "O"']], 'a note on a note');
+    // the room a note's title takes above it (measure's above: 30 here) is the note's
+    h = healthBy(digest([note('N'), note('P'), note('T')], [{ from: 'P', to: 'T' }]), { N: [0, 0, 300, 100], P: [800, -100, 100, 100], T: [800, 500, 100, 100] }, { 0: { at: [10, -41] } }).boards.root;
+    eq([h.status, h.onTop, h.overShapes, h.examples], ['not clean', 1, 1, ['"P" -> its pill for "T" runs over "N"', 'the pill for "T" beside "P" is on the title of "N"']], 'a pill on a note\'s title, its line over the title too');
+    h = healthBy(digest([note('N'), note('P'), note('T')], [{ from: 'P', to: 'T' }]), { N: [0, 0, 300, 100], P: [800, -100, 100, 100], T: [800, 500, 100, 100] }, { 0: { at: [10, -72] } }).boards.root;
+    eq([h.status, h.onTop], ['clean', 0], 'clear of the title');
+    // a note and a pill inside their frame are the frame's; a pill on the board over the frame is on it
+    var nodes = [{ title: 'F', kind: 'frame' }, note('M', 'F'), note('Q'), note('T'), note('T2')];
+    var at = { F: [0, 0, 400, 300], M: [40, 60, 100, 100], Q: [600, 100, 100, 100], T: [600, 600, 100, 100], T2: [900, 600, 100, 100] };
+    h = healthBy(digest(nodes, [{ from: 'M', to: 'T2' }]), at, { 0: { at: [200, 60], in: 'F' } }).boards.root;
+    eq([h.status, h.onTop, h.overShapes], ['clean', 0, 0], 'M and its pill in F');
+    h = healthBy(digest(nodes, [{ from: 'M', to: 'T2' }, { from: 'Q', to: 'T' }]), at, { 0: { at: [200, 60], in: 'F' }, 1: { at: [350, 120] } }).boards.root;
+    eq([h.status, h.onTop, h.overShapes, h.examples], ['not clean', 1, 0, ['"F" is on the pill for "T" beside "Q"']], 'Q\'s pill on F (its line stops at the pill, short of F)');
+  });
+
+  // a relationship type's two ends, which the app draws as one arc through it: P -> J -> C, J beside both on a line through them
+  var throughNodes = [note('P'), note('C'), note('J'), note('D')], throughEdges = [{ from: 'P', to: 'J' }, { from: 'J', to: 'C' }];
+  var lined = { tweak: function (me) { me.lines = [{ through: 'J', edges: [0, 1] }]; } };
+
+  await test('sizes: the measure\'s lines through a node, each half by the ends of its edge; a line the model can\'t read is left out', async function () {
+    var d = digest(throughNodes, throughEdges.concat([{ from: 'P', to: 'C' }])), m = model.buildModel(d), me = helpers.estimateMeasure(m, d);
+    me.lines = [{ through: 'J', edges: [0, 1] }, { through: 'nobody', edges: [0, 1] }, { through: 'J', edges: [0, 9] }, { through: 'J', edges: [2] }];
+    eq(sizes.sizesFrom(m, me).lines, [{ through: 'J', first: ['P', 'J'], second: ['J', 'C'] }]);
+    eq(sizes.sizesFrom(m, helpers.estimateMeasure(m, d)).lines, [], 'none said, none');
+  });
+
+  await test('health: the two ends the measure says are one line are drawn as the app draws them, one arc through the node, here looping off the board', async function () {
+    var d = digest(throughNodes, throughEdges), at = { P: [0, 0, 100, 100], C: [300, 0, 100, 100], J: [600, 60, 64, 24], D: [150, 7480, 100, 100] };
+    var straight = healthBy(d, at).boards.root;
+    eq([straight.status, straight.overShapes, straight.examples], ['not clean', 1, ['"P" -> "J" runs over "C"']], 'drawn straight, P\'s half would run through C');
+    var arc = healthBy(d, at, null, lined).boards.root;
+    eq([arc.status, arc.overShapes, arc.examples], ['not clean', 1, ['"P" -> "J" runs over "D"']], 'P\'s half goes the long way round the circle through the three middles: clear of C, over D');
+    assert(arc.size[1] > 7500 && arc.fit < 0.15, 'the loop is the board\'s size: ' + JSON.stringify([arc.size, arc.fit]));
+    // the arc as the app's ArrowThrough has it: P's half the long way round, away from C; J's half the short way, away from P
+    var box = function (b) { return { x: b[0], y: b[1], w: b[2], h: b[3] }; }, mid = function (b) { return [b[0] + b[2] / 2, b[1] + b[3] / 2]; };
+    var first = geomm.throughBend(mid(at.P), mid(at.J), mid(at.C)), second = geomm.throughBend(mid(at.J), mid(at.C), mid(at.P));
+    assert(first > 7000 && second > 0 && second < 10, 'bends ' + first + ' and ' + second);
+    var lowest = Math.max.apply(null, geomm.arrowPath(box(at.P), box(at.J), first, 16).map(function (p) { return p[1]; }));
+    assert(Math.abs(lowest - 7535) < 1, 'the circle\'s foot, 7,535 down: ' + lowest);
+  });
+
+  await test('health: one arc only where the app draws one: straight with the node on the line, plain with a half through a pill', async function () {
+    var d = digest(throughNodes, throughEdges);
+    var on = healthBy(d, { P: [0, 0, 100, 100], C: [600, 0, 100, 100], J: [318, 38, 64, 24], D: [318, 300, 64, 64] }, null, lined).boards.root;
+    eq([on.status, on.overShapes, on.size], ['clean', 0, [700, 394]], 'J on the line between P and C: straight');
+    eq(geomm.isStraightThrough([50, 50], [350, 50.2], [650, 50]), true, 'a fifth of a unit off is on the line');
+    eq(geomm.isStraightThrough([50, 50], [350, 50.3], [650, 50]), false, 'three tenths is off it');
+    var at = { P: [0, 0, 100, 100], C: [300, 0, 100, 100], J: [600, 60, 64, 24], D: [150, 7480, 100, 100] };
+    var cut = healthBy(d, at, { 0: { at: [140, 30] } }, lined).boards.root;
+    eq([cut.status, cut.overShapes, cut.pills], ['clean', 0, 1], 'P\'s half into a pill beside P for J is no half of the line: both plain');
+  });
+
+  await test('health: every board of a plan has one, the report has the totals, and the same drawing measures the same', async function () {
+    var d = fixture('tree'), r = await planOf(d);
+    eq(Object.keys(r.report.boards).sort(), r.model.boards.slice().sort());
+    r.model.boards.forEach(function (b) {
+      var h = r.report.boards[b].health;
+      assert(h && /^(clean|not clean)$/.test(h.status) && h.size.length === 2 && h.fit > 0 && h.fit <= 1 && h.seconds >= 0, b + ': ' + JSON.stringify(h));
+      eq(h.status === 'clean', h.crossings + h.overShapes + h.onTop === 0, b + ': clean is nothing failing');
+    });
+    eq(r.report.health.boards, r.model.boards.length);
+    var m = r.model, sz = sizes.sizesFrom(m, helpers.estimateMeasure(m, d));
+    var once = healthm.healthOf(m, r.drawing, sz, { view: r.report.view }), again = healthm.healthOf(m, JSON.parse(JSON.stringify(r.drawing)), sz, { view: r.report.view });
+    eq(once, again, 'the same drawing, read again');
+    var noSeconds = function (o) { var c = JSON.parse(JSON.stringify(o)); Object.keys(c).forEach(function (b) { delete c[b].seconds; }); return c; };
+    eq(noSeconds(once.boards), noSeconds(Object.fromEntries(r.model.boards.map(function (b) { return [b, r.report.boards[b].health]; }))), 'the plan\'s own');
+  });
+
+
+  // ---- clusters (cluster.mjs): each container's shapes grouped by how tightly their links hold them, the links between groups cut ----
+  // the app's measure for a document with a `tightness` member: f(a, b) for each pair of notes on one board that a link joins (a < b), as the app answers it
+  var tightMeasure = function (d, f, extra) {
+    var m = model.buildModel(d), me = helpers.estimateMeasure(m, d), seen = {}, pairs = [];
+    m.edges.forEach(function (e) {
+      var a = m.node(e.from), b = m.node(e.to);
+      if (e.from === e.to || a.board !== b.board || a.holds === 'shapes' || b.holds === 'shapes') return;
+      var x = e.from < e.to ? e.from : e.to, y = e.from < e.to ? e.to : e.from, k = x + '\u0000' + y;
+      if (seen[k]) return;
+      seen[k] = 1;
+      var p = { a: x, b: y, tightness: f(x, y) };
+      if (a.board !== 'root') p.board = a.board;
+      pairs.push(p);
+    });
+    pairs.sort(function (p, q) { return p.a < q.a ? -1 : p.a > q.a ? 1 : p.b < q.b ? -1 : p.b > q.b ? 1 : 0; });
+    me.tightness = Object.assign({ model: 'test/embedding', texts: m.nodes.size, asked: 0, pairs: pairs }, extra || {});
+    return me;
+  };
+  var FRAME = KINDS.filter(function (k) { return k.holds === 'shapes'; })[0].kind;
+  // two lens frames of two notes each; a note beside each frame linked tightly to a note in it; one weak link between the frames
+  var camps = function (mark) {
+    var nodes = [{ title: 'F', kind: FRAME }, { title: 'G', kind: FRAME }, note('a', 'F'), note('b', 'F'), note('c'), note('x', 'G'), note('y', 'G'), note('z'), note('lone')];
+    if (mark === 'never') nodes[6] = { title: 'y', kind: 'sticky-note', in: 'G', text: '', pill: false };
+    var edges = [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }, { from: 'x', to: 'y' }, { from: 'x', to: 'z' }, Object.assign({ from: 'b', to: 'y' }, mark === 'direct' ? { direct: true } : {})];
+    return digest(nodes, edges);
+  };
+  var campsTight = function (a, b) { return { 'a\u0000b': 0.9, 'a\u0000c': 1, 'x\u0000y': 0.9, 'x\u0000z': 1, 'b\u0000y': 0.1 }[a + '\u0000' + b]; };
+  var edgeBy = function (g, from, to) { return g.edges.find(function (e) { return e.from === from && e.to === to; }); };
+  var nodeBy = function (g, key) { return g.nodes.find(function (n) { return n.key === key; }); };
+
+  await test('louvain: two triangles joined by one light link are two clusters, an equal gain goes to the lower cluster, and the same twice', async function () {
+    var two = [[0, 1, 1], [1, 2, 1], [0, 2, 1], [3, 4, 1], [4, 5, 1], [3, 5, 1], [2, 3, 0.1]];
+    var cl = clusterm.louvain(6, two);
+    eq([cl[0] === cl[1], cl[1] === cl[2], cl[3] === cl[4], cl[4] === cl[5], cl[0] !== cl[3]], [true, true, true, true, true], 'two clusters: ' + cl);
+    eq(clusterm.louvain(6, two), cl, 'the same twice');
+    eq(clusterm.louvain(3, []), [0, 1, 2], 'no links: every node alone');
+    // node 0 is linked once to each of two pairs, so it gains the same from either: it goes to the lower cluster (node 2's, not node 3's)
+    var tie = clusterm.louvain(5, [[1, 2, 10], [3, 4, 10], [0, 2, 1], [0, 3, 1]]);
+    eq([tie[0] === tie[2], tie[0] !== tie[3], tie[3] === tie[4]], [true, true, true], 'an equal gain goes to the lower community: ' + tie);
+  });
+
+  await test('clusters: the groups add nothing to the document: no frame, no shape changes container, nodes and edges keep their order; a lens frame is one item in what holds it and its own notes are grouped inside it; the document reads back', async function () {
+    var d = camps(), r = clusterm.clusterGraph(d, tightMeasure(d, campsTight), { kinds: KINDS }), g = r.graph;
+    eq(g.nodes, d.nodes, 'the lens\'s nodes, untouched and in their order: no frame added, none moved');
+    eq(g.edges.map(function (e) { return e.from + '>' + e.to; }), d.edges.map(function (e) { return e.from + '>' + e.to; }), 'edges keep their order');
+    eq(g.layout.clustered, { by: 'test/embedding' }, 'the note on the document');
+    eq(model.buildModel(g).nodes.size, d.nodes.length, 'and it reads back');
+    eq(Object.keys(r.report).sort(), ['boards', 'resolution', 'tightness', 'totals'], 'the report: no frames, kept, joined or dropped');
+    eq(r.report.resolution, 1.5, 'groups of the usual size 1.5');
+    eq(r.report.boards.length, 1, 'only boards with a link between two notes');
+    eq(Object.keys(r.report.boards[0]).sort(), ['board', 'clusters', 'cut', 'levels', 'links', 'missing', 'notes'], 'a board\'s');
+    eq([r.report.boards[0].clusters, r.report.boards[0].missing], [[3, 3], 0]);
+    eq(r.report.boards[0].levels['b:root'], { F: 0, G: 1, c: 0, lone: 2, z: 1 }, 'each container\'s items and their group: a lens frame one item');
+    eq(Object.keys(r.report.boards[0].levels).sort(), ['b:root', 'f:F', 'f:G'], 'a frame\'s own notes grouped inside it');
+    eq(r.report.boards[0].levels['f:F'], { a: 0, b: 0 }, 'a frame\'s own notes make one group');
+    eq(r.report.totals, { boards: 1, links: 5, cut: 1, missing: 0 });
+    eq(clusterm.clusterLine(r.report), 'clusters: each container\'s shapes grouped by how tightly their links hold them, on 1 board(s); 1 of 5 linked pairs between two groups are cut before anything is placed, and come back as arrows where their line is clear (tightness: test/embedding)');
+    // a plan lays it out as any document: the link between the groups is a pill before anything is placed, and counted so
+    var p = await planOf(g), rep = p.report.boards.root;
+    eq([rep.precut, p.report.totals.precut], [1, 1], 'one link cut between groups');
+    eq(rep.stop, 'clean', 'clean');
+    assert(/\ncut: \d+ of 5 links made pills: 1 between groups before anything was placed, /.test(clim.summarize(p)), clim.summarize(p));
+  });
+
+  await test('clusters: the resolution is an option, 1.5 by default: a higher one makes smaller groups, a lower one larger', async function () {
+    var ring = digest(['n1', 'n2', 'n3', 'n4'].map(function (t) { return note(t); }), [{ from: 'n1', to: 'n2' }, { from: 'n2', to: 'n3' }, { from: 'n3', to: 'n4' }, { from: 'n4', to: 'n1' }]);
+    var at = function (res) { var r = clusterm.clusterGraph(ring, measureOf(ring), res == null ? { kinds: KINDS } : { kinds: KINDS, res: res }); return [r.report.resolution, r.report.totals.cut]; };
+    eq(at(), [1.5, 2], 'by default the four notes in a ring are two groups of two: two links between them');
+    eq(at(1.5), at(), 'the default is 1.5');
+    eq(at(0.5), [0.5, 0], 'larger groups: one');
+    eq(at(2), [2, 4], 'smaller: each note alone, every link cut');
+    eq(clusterm.louvain(4, [[0, 1, 1], [1, 2, 1], [2, 3, 1], [3, 0, 1]], 2), [0, 1, 2, 3], 'louvain takes it');
+    [0, -1, NaN, 'x', Infinity].forEach(function (bad) {
+      var threw = ''; try { clusterm.clusterGraph(ring, measureOf(ring), { kinds: KINDS, res: bad }); } catch (e) { threw = e.message; }
+      assert(/the resolution of the groups is a number above 0/.test(threw), 'a bad resolution ' + bad + ': ' + threw);
+    });
+  });
+
+  await test('clusters: a link between two clusters is cut, and a pair with a link marked direct or into a shape kept off pills is never cut: its weight is 50 to 100', async function () {
+    var d = camps(), g = clusterm.clusterGraph(d, tightMeasure(d, campsTight), { kinds: KINDS }).graph;
+    eq(edgeBy(g, 'b', 'y').layout, { weight: 1, cut: true }, 'cut: the one cut pair weighs 1');
+    eq(['a>b', 'x>y', 'a>c', 'x>z'].map(function (k) { var e = edgeBy(g, k[0], k[2]); return [e.layout.weight, e.layout.cut]; }), [[50, undefined], [67, undefined], [83, undefined], [100, undefined]], 'the others weigh 50 to 100 by tightness, the tightest 100');
+    ['direct', 'never'].forEach(function (mark) {
+      var m = camps(mark), r = clusterm.clusterGraph(m, tightMeasure(m, campsTight), { kinds: KINDS }), e = edgeBy(r.graph, 'b', 'y');
+      eq(e.layout.cut, undefined, mark + ': never cut');
+      assert(e.layout.weight >= 50 && e.layout.weight <= 100, mark + ': weighs 50 to 100: ' + JSON.stringify(e.layout));
+      eq(r.report.totals.cut, 0, mark + ': nothing cut');
+    });
+  });
+
+  await test('clusters: the engine\'s weights are 1 to 49 for the cut pairs and 50 to 100 for the rest by tightness rank, rounded as the spike did: with 101 pairs kept, the one of rank 29 is 64', async function () {
+    var nodes = [], edges = [], at = function (i) { return 'n' + (i < 10 ? '00' : i < 100 ? '0' : '') + i; };
+    for (var i = 0; i < 102; i++) nodes.push(note(at(i)));
+    for (var j = 0; j < 101; j++) edges.push({ from: at(j), to: at(j + 1), direct: true });
+    var d = digest(nodes, edges), r = clusterm.clusterGraph(d, tightMeasure(d, function (a) { return +a.slice(1) / 1000; }), { kinds: KINDS });
+    eq(edgeBy(r.graph, at(29), at(30)).layout.weight, 64, 'rank 29 of 101: 50 + round(50 * (29 / 100)), which is 14 and not 15');
+    eq([edgeBy(r.graph, at(0), at(1)).layout.weight, edgeBy(r.graph, at(100), at(101)).layout.weight], [50, 100], 'the loosest kept pair 50, the tightest 100');
+    eq(r.report.totals.cut, 0, 'all are direct: none cut');
+    // the cut ones from 1 to 49: five pairs between clusters of a chain of notes that are not direct (the chain\'s ends, the loosest, are cut first)
+    var w = []; r.graph.edges.forEach(function (e) { w.push(e.layout.weight); });
+    assert(w.every(function (x) { return x >= 50 && x <= 100; }), 'every weight is in 50..100');
+    var star = digest([note('hub'), note('p'), note('q'), note('r'), note('s'), note('t'), note('u')], [{ from: 'p', to: 'q' }, { from: 'q', to: 'r' }, { from: 'p', to: 'r' }, { from: 's', to: 't' }, { from: 't', to: 'u' }, { from: 's', to: 'u' }, { from: 'r', to: 's' }, { from: 'q', to: 't' }, { from: 'p', to: 'u' }]);
+    var rs = clusterm.clusterGraph(star, tightMeasure(star, function (a, b) { return { 'p\u0000q': 0.9, 'q\u0000r': 0.8, 'p\u0000r': 0.7, 's\u0000t': 0.9, 't\u0000u': 0.8, 's\u0000u': 0.7, 'r\u0000s': 0.1, 'q\u0000t': 0.2, 'p\u0000u': 0.3 }[a + '\u0000' + b]; }), { kinds: KINDS });
+    var cuts = rs.graph.edges.filter(function (e) { return e.layout && e.layout.cut; });
+    eq(cuts.length, 3, 'the three links between the triangles');
+    eq(cuts.map(function (e) { return e.layout.weight; }).sort(function (a, b) { return a - b; }), [1, 25, 49], 'the cut ones 1 to 49, the loosest 1, the tightest of them 49');
+    eq([['r', 's'], ['q', 't'], ['p', 'u']].map(function (k) { return edgeBy(rs.graph, k[0], k[1]).layout.weight; }), [1, 25, 49], 'each cut link by its own: the loosest (0.1) 1, then 0.2, the tightest of them (0.3) 49');
+  });
+
+  await test('clusters: a link counts by its rank in its board and not by how tight it is, so the groups are the ranks\' and not those of the tightness itself', async function () {
+    var names = ['a', 'b', 'c', 'd', 'e', 'f'], tight = { 'a\u0000c': 0.85, 'a\u0000f': 0.46, 'b\u0000f': 0.3, 'c\u0000e': 0.02, 'd\u0000e': 0.4, 'd\u0000f': 1 };
+    var d = digest(names.map(function (t) { return note(t); }), [['a', 'c'], ['a', 'f'], ['b', 'f'], ['c', 'e'], ['d', 'e'], ['d', 'f']].map(function (l) { return { from: l[0], to: l[1] }; }));
+    var r = clusterm.clusterGraph(d, tightMeasure(d, function (a, b) { return tight[a + '\u0000' + b]; }), { kinds: KINDS });
+    var lv = r.report.boards[0].levels['b:root'];
+    eq(lv, { a: 0, b: 1, c: 0, d: 2, e: 2, f: 1 }, 'grouped by the six links\' ranks, each 0.1 to 1');
+    // the same links weighing what the tightness itself is would group otherwise: d, e and f together
+    var items = names.map(function (n) { return n; }), ix = {}; items.forEach(function (n, i) { ix[n] = i; });
+    var raw = clusterm.louvain(6, Object.keys(tight).map(function (k) { var p = k.split('\u0000'); return [ix[p[0]], ix[p[1]], tight[k]]; }), clusterm.RESOLUTION);
+    assert(raw[ix.d] === raw[ix.f] && lv.d !== lv.f, 'by the raw tightness d and f are together, and by rank they are not: ' + raw);
+  });
+
+  await test('clusters: two links lifted onto one pair of items add up, and the sum decides the grouping', async function () {
+    var FRAME2 = KINDS.filter(function (k) { return k.holds === 'shapes'; })[0].kind;
+    var nodes = [{ title: 'F1', kind: FRAME2 }, { title: 'F2', kind: FRAME2 }, note('a', 'F1'), note('b', 'F1'), note('c', 'F2'), note('d', 'F2'), note('g'), note('h')];
+    var tight = { 'a\u0000c': 0.4, 'b\u0000d': 0.36, 'g\u0000h': 0.56, 'b\u0000g': 0.37, 'd\u0000h': 0.57 };
+    var d = digest(nodes, [['a', 'c'], ['b', 'd'], ['g', 'h'], ['b', 'g'], ['d', 'h']].map(function (l) { return { from: l[0], to: l[1] }; }));
+    var r = clusterm.clusterGraph(d, tightMeasure(d, function (a, b) { return tight[a + '\u0000' + b]; }), { kinds: KINDS });
+    // a -> c and b -> d are each lighter than b -> g and d -> h, but both join F1 and F2: together they outweigh either
+    eq(r.report.boards[0].levels['b:root'], { F1: 0, F2: 0, g: 1, h: 1 }, 'F1 with F2, g with h');
+  });
+
+  await test('clusters: with no tightness every link weighs the same, the lens\'s own weights are left as they are, and the report and the summary say the groups are by the links alone', async function () {
+    var tri = function (a, b, c) { return [{ from: a, to: b }, { from: b, to: c }, { from: a, to: c }]; };
+    var d = digest(['a', 'b', 'c', 'd', 'e', 'f'].map(function (t) { return note(t); }), tri('a', 'b', 'c').concat(tri('d', 'e', 'f'), [{ from: 'c', to: 'd', weight: 7 }]));
+    var r = clusterm.clusterGraph(d, measureOf(d), { kinds: KINDS }), g = r.graph;
+    eq(r.report.tightness, { by: null, why: 'canvas measure gave no tightness' });
+    eq(g.layout.clustered, { by: null, why: 'canvas measure gave no tightness' });
+    eq(edgeBy(g, 'c', 'd').layout, { weight: 7, cut: true }, 'the bridge is cut and keeps the lens\'s weight');
+    eq(g.edges.filter(function (e) { return e.layout && e.layout.weight != null && e.from !== 'c'; }).length, 0, 'no other weight written');
+    eq(g.nodes, d.nodes, 'no frame made for the two triangles');
+    eq(r.report.boards[0].levels['b:root'], { a: 0, b: 0, c: 0, d: 1, e: 1, f: 1 }, 'the two triangles');
+    assert(/\(no tightness: canvas measure gave no tightness; grouped by the links alone, each weighing the same\)$/.test(clusterm.clusterLine(r.report)), clusterm.clusterLine(r.report));
+    var text = clim.summarize(await planOf(g));
+    assert(/\nclusters: by the links alone, each weighing the same \(no tightness: canvas measure gave no tightness\)/.test(text), text);
+    assert(/1 between groups before anything was placed/.test(text), text);
+    // the app says why it can't (no key): that is the reason given
+    var m = measureOf(d); m.tightness = { unavailable: 'No OpenAI key', reason: 'no_key' };
+    eq(clusterm.clusterGraph(d, m, { kinds: KINDS }).graph.layout.clustered, { by: null, why: 'No OpenAI key' });
+  });
+
+  await test('layout.cut and layout.clustered are the tool\'s own, typed and refused where they don\'t belong; a lens\'s node may use a key beginning cluster: (the tool makes no frame); a document is clustered once', async function () {
+    var d = camps(), clustered = clusterm.clusterGraph(d, tightMeasure(d, campsTight), { kinds: KINDS }).graph;
+    eq(model.readGraph(clustered, model.kindsTable(KINDS)).errors, [], 'the tool\'s own output reads');
+    var withCut = function (g, key, value) { var c = JSON.parse(JSON.stringify(g)); c.edges[0].layout = Object.assign({}, c.edges[0].layout, { [key]: value }); return c; };
+    var errs = function (g) { return model.readGraph(g, model.kindsTable(KINDS)).errors.join('\n'); };
+    assert(/layout\.cut is the tool's own/.test(errs(withCut(d, 'cut', true))), 'layout.cut without layout.clustered: ' + errs(withCut(d, 'cut', true)));
+    assert(/layout\.cut is true or false, not "yes"/.test(errs(withCut(clustered, 'cut', 'yes'))), errs(withCut(clustered, 'cut', 'yes')));
+    var both = withCut(withCut(clustered, 'cut', true), 'direct', true);
+    assert(/layout\.cut and layout\.direct are both true/.test(errs(both)), errs(both));
+    var into = JSON.parse(JSON.stringify(clustered)); nodeBy(into, 'y').layout = { pill: false };
+    var threw = ''; try { model.buildModel(into); } catch (e) { threw = e.message; }
+    assert(/"b" -> "y" is cut .*no pill may stand for it/.test(threw), 'a cut link into a shape kept off pills: ' + threw);
+    var direct = JSON.parse(JSON.stringify(clustered)); edgeBy(direct, 'b', 'y').layout.direct = true;
+    threw = ''; try { model.buildModel(direct); } catch (e) { threw = e.message; }
+    assert(/"b" -> "y" is cut/.test(threw) || /both true/.test(errs(direct)), 'cut and direct: ' + threw);
+    var lensKey = digest([note('a'), note('b')], [{ from: 'a', to: 'b' }]); lensKey.nodes.push({ key: 'cluster:b:root:0', kind: FRAME, props: {} });
+    eq(errs(lensKey), '', 'a key beginning cluster:b: is the lens\'s own: the tool makes no frame');
+    var bad = JSON.parse(JSON.stringify(d)); bad.layout = { clustered: 'yes' };
+    assert(/layout\.clustered is the tool's note/.test(errs(bad)), errs(bad));
+    threw = ''; try { clusterm.clusterGraph(clustered, tightMeasure(clustered, campsTight), { kinds: KINDS }); } catch (e) { threw = e.message; }
+    assert(/clustered already/.test(threw), 'clustered once: ' + threw);
+    var lens = JSON.parse(JSON.stringify(d)); lens.nodes.push({ key: 'cluster:f:F:0', kind: FRAME, props: {} });
+    eq(clusterm.clusterGraph(lens, measureOf(lens), { kinds: KINDS }).graph.nodes.map(function (n) { return n.key; }), lens.nodes.map(function (n) { return n.key; }), 'and clusters over it as over any frame');
+  });
+
+  await test('a link cut between groups is a pill before anything is placed and counts as precut, never as a planar cut, and comes back as an arrow where its line is clear, whatever else joins the same two notes or groups', async function () {
+    var cutDoc = function (extra) { var g = digest([note('A'), note('B')], [Object.assign({ from: 'A', to: 'B' }, extra || {})]); g.layout = { clustered: { by: 'test' } }; g.edges[0].layout = Object.assign({ cut: true }, g.edges[0].layout); return g; };
+    var plain = await planOf(digest([note('A'), note('B')], [{ from: 'A', to: 'B' }]));
+    eq([plain.report.boards.root.end.pills, plain.report.boards.root.end.arrows, plain.report.boards.root.precut], [0, 1, 0], 'with no cut the link is an arrow');
+    var r = await planOf(cutDoc()), rep = r.report.boards.root;
+    eq([rep.precut, rep.cut, rep.cutFurther, rep.restored, rep.restoredCut, rep.end.pills, rep.end.arrows], [1, 0, 0, 1, 1, 0, 1], 'counted as precut and no more, then put back as an arrow: its line is clear');
+    assert(!pillOf(r.drawing.edges[0]), 'the drawing has it as an arrow');
+    eq([r.report.totals.precut, r.report.totals.restored, r.report.totals.restoredCut], [1, 1, 1]);
+    assert(/\ncut: 1 of 1 links made pills: 1 between groups before anything was placed, 0 so each board's links are planar and 0 more where a drawing still crossed or ran over a shape; 1 of the 1 between groups and 0 of the others put back as arrows /.test(clim.summarize(r)), clim.summarize(r));
+    // a link no pill may stand for between the same two notes is an arrow and no more; the cut link comes back beside it
+    var held = cutDoc(); held.edges.push({ from: 'B', to: 'A', layout: { direct: true } });
+    var k = await planOf(held), kr = k.report.boards.root;
+    eq([kr.precut, kr.restoredCut, kr.end.pills, kr.end.arrows], [1, 1, 0, 2], 'both arrows: ' + JSON.stringify([kr.precut, kr.end]));
+    // the same between two groups: the links of both lift to the one pair of the lens's frames, one of them to a lens frame (always direct)
+    var d = camps(), g = clusterm.clusterGraph(d, tightMeasure(d, campsTight), { kinds: KINDS }).graph;
+    g.edges.push({ from: 'c', to: 'G' });
+    var l = await planOf(g), lr = l.report.boards.root;
+    eq([lr.precut, lr.cut], [1, 0], 'counted as precut: ' + JSON.stringify([lr.precut, lr.cut]));
+    assert(pillOf(edgeBy(l.drawing, 'b', 'y')) === undefined, 'b -> y, cut between the groups, comes back as an arrow where its line is clear, though c -> G joins them too: ' + JSON.stringify(edgeBy(l.drawing, 'b', 'y')));
+    eq([lr.restored, lr.restoredCut], [1, 1], 'counted as put back, and as one that was cut between groups');
+    assert(!pillOf(edgeBy(l.drawing, 'c', 'G')), 'c -> G, a link to a lens frame, is an arrow');
+    // where its line is not clear it stays a pill: three notes in a row, the link cut between the outer two would run over the one between them
+    var row = digest([note('N0'), note('N1'), note('N2')], [{ from: 'N0', to: 'N1', direct: true }, { from: 'N1', to: 'N2', direct: true }, { from: 'N0', to: 'N2', layout: { cut: true } }]);
+    row.layout = { clustered: { by: 'test' } };
+    var w = await planOf(row), wr = w.report.boards.root;
+    eq([wr.precut, wr.restored, wr.restoredCut, wr.end.pills, wr.end.arrows, wr.stop], [1, 0, 0, 1, 2, 'clean'], 'a pill, counted as precut and not put back: ' + JSON.stringify([wr.precut, wr.restored, wr.end]));
+    assert(pillOf(edgeBy(w.drawing, 'N0', 'N2')) && !pillOf(edgeBy(w.drawing, 'N0', 'N1')), 'the cut link is the pill');
+    assert(/1 between groups before anything was placed, 0 so each board's links are planar and 0 more where a drawing still crossed or ran over a shape; 0 of the 1 between groups and 0 of the others put back as arrows /.test(clim.summarize(w)), clim.summarize(w));
+  });
+
+  await test('the mend of a fresh plan cuts the least wanted link first where the document was clustered by tightness, the one in the most conflicts first otherwise, and a redraw\'s mend still the one in the most', async function () {
+    var lines = [{ key: 'a', cuttable: true }, { key: 'b', cuttable: true }, { key: 'c', cuttable: true }];
+    var worth = function (k) { return k === 'b' ? 10 : 1; };
+    eq(cutm.conflictCuts([[0, 1], [1, 2]], lines, worth), ['b'], 'by default: b is in both conflicts');
+    eq(cutm.conflictCuts([[0, 1], [1, 2]], lines, worth, true), ['a', 'c'], 'least wanted first: a and c, though b alone would mend both');
+    eq(cutm.conflictCuts([[0, 1], [0, 2]], lines, function () { return 1; }, true), ['a'], 'alike: the one in more conflicts');
+    eq(cutm.frozenCuts([[0, 1], [1, 2]], lines, worth, null, null), ['b'], 'a redraw\'s: the one in the most conflicts');
+  });
+
+  await test('tightness: what the app answered by the two keys of a pair either way round, none to give and why, and an app that says nothing; a pair the answer lacks is counted', async function () {
+    var t = sizes.tightnessFrom({ tightness: { model: 'm', texts: 3, asked: 0, pairs: [{ a: 'b', b: 'a', tightness: 0.5 }, { a: 'x', b: 'y', tightness: -0.25 }, { a: 'bad', b: 'x', tightness: null }] } });
+    eq([t.by, t.why, t.of.get('a\u0000b'), t.of.get('x\u0000y'), t.of.size], ['m', null, 0.5, -0.25, 2], 'sorted by the tool, a bad row skipped');
+    eq(sizes.tightnessFrom({ tightness: { unavailable: 'No OpenAI key', reason: 'no_key' } }).why, 'No OpenAI key');
+    eq(sizes.tightnessFrom({}).why, 'canvas measure gave no tightness');
+    eq(sizes.tightnessFrom(null).by, null);
+    eq(clim.tightnessLine({ tightness: { model: 'm', texts: 962, asked: 12, pairs: [{ a: 'a', b: 'b', tightness: 0.1 }] } }), 'tightness: 1 linked pairs of notes, by m (asked for 12 of 962 texts)');
+    eq(clim.tightnessLine({ tightness: { unavailable: 'No OpenAI key', reason: 'no_key' } }), 'tightness: unavailable (No OpenAI key): clusters by the links alone');
+    var d = camps(), me = tightMeasure(d, campsTight);
+    me.tightness.pairs = me.tightness.pairs.filter(function (p) { return !(p.a === 'b' && p.b === 'y'); });
+    var r = clusterm.clusterGraph(d, me, { kinds: KINDS });
+    eq([r.report.boards[0].missing, r.report.totals.missing], [1, 1], 'counted');
+    assert(/; 1 pair\(s\) had no tightness$/.test(clusterm.clusterLine(r.report)), clusterm.clusterLine(r.report));
+    var swapped = tightMeasure(d, campsTight); swapped.tightness.pairs = swapped.tightness.pairs.map(function (p) { return { a: p.b, b: p.a, tightness: p.tightness }; }).reverse();
+    eq(JSON.stringify(clusterm.clusterGraph(d, swapped, { kinds: KINDS }).graph), JSON.stringify(clusterm.clusterGraph(d, tightMeasure(d, campsTight), { kinds: KINDS }).graph), 'the order the app gave them in doesn\'t matter');
+  });
+
+  await test('the commands cluster and tightness: cluster writes clustered.json and clusters.json and prints one line, tightness one line; unknown options are refused', async function () {
+    var d = camps(), me = tightMeasure(d, campsTight, { asked: 4 });
+    var mem = memory({ '/g.json': JSON.stringify(d), '/m.json': JSON.stringify(me) });
+    await clim.run(['cluster', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH], mem.io);
+    eq(mem.printed.pop(), 'clusters: each container\'s shapes grouped by how tightly their links hold them, on 1 board(s); 1 of 5 linked pairs between two groups are cut before anything is placed, and come back as arrows where their line is clear (tightness: test/embedding)');
+    eq(Object.keys(mem.files).sort(), ['/g.json', '/m.json', '/out/clusters.json', '/out/clustered.json'].sort(), 'two files written');
+    eq(JSON.parse(mem.files['/out/clustered.json']), clusterm.clusterGraph(d, me, { kinds: KINDS }).graph, 'the document');
+    eq(JSON.parse(mem.files['/out/clusters.json']).totals, { boards: 1, links: 5, cut: 1, missing: 0 }, 'the report');
+    await clim.run(['tightness', '/m.json'], mem.io);
+    eq(mem.printed.pop(), 'tightness: 5 linked pairs of notes, by test/embedding (asked for 4 of 9 texts)');
+    var threw = ''; try { await clim.run(['cluster', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH, '--bogus', 'x'], mem.io); } catch (e) { threw = e.message; }
+    assert(/unknown option --bogus/.test(threw), threw);
+    // a drawing as the file holds it, and what a person changed, are read from files
+    var first = await planOf(clusterm.clusterGraph(d, me, { kinds: KINDS }).graph);
+    mem.files['/c.json'] = JSON.stringify(rowsOf(first.drawing)); mem.files['/ch.json'] = JSON.stringify([]);
+    await clim.run(['cluster', '/g.json', '/m.json', '/out2', '--kinds', KINDS_PATH, '--current', '/c.json', '--changed', '/ch.json'], mem.io);
+    eq(mem.printed.pop(), 'clusters: each container\'s shapes grouped by how tightly their links hold them, on 1 board(s); 1 of 5 linked pairs between two groups only weigh the links: the file\'s arrows and pills stay (tightness: test/embedding)', 'a redraw says the groups only weigh the links, and the file\'s arrows and pills stay');
+  });
+
+  // ---- clusters on a redraw: the groups are found afresh over the document as it is now, only to weigh its links; nothing of the file's is kept here ----
+  // the document as camps() draws it, and the file's rows of that drawing; `edit` changes the rows (what a person did), `more` the lens's document
+  var campsDrawn = async function (extra, tight) {
+    var d = camps(); if (extra) extra(d);
+    var me = tightMeasure(d, tight || campsTight), g = clusterm.clusterGraph(d, me, { kinds: KINDS }).graph, r = await planOf(g);
+    return { d: d, g: g, r: r, rows: rowsOf(r.drawing) };
+  };
+  var redrawn = async function (first, edit, grow, tight, changed) {
+    var d = camps(); if (grow) grow(d);
+    var rows = rowsOf(first.r.drawing, edit), me = tightMeasure(d, tight || campsTight);
+    var c = clusterm.clusterGraph(d, me, { kinds: KINDS, current: rows, changed: changed });
+    return { d: d, c: c, g: c.graph, rows: rows, r: await planOf(c.graph, { current: rows, changed: changed }) };
+  };
+  var holders = function (g) { var o = {}; g.nodes.forEach(function (n) { o[n.key] = n.in; }); return o; };
+  var growCamps = function (extraNodes, extraEdges) { return function (d) { extraNodes.forEach(function (n) { d.nodes.push(nodeOf(n)); }); extraEdges.forEach(function (e) { d.edges.push(edgeOf(e)); }); }; };
+
+  await test('a redraw groups the document afresh, only to weigh its links: nothing changed gives the same document and the same places, byte for byte, and nothing is added or kept', async function () {
+    var first = await campsDrawn(), again = await redrawn(first);
+    eq(JSON.stringify(again.g), JSON.stringify(first.g), 'the same clustered document');
+    eq(JSON.stringify(again.r.drawing), JSON.stringify(first.r.drawing), 'and the same drawing');
+    eq(placesOfNodes(again.r), placesOfNodes(first.r), 'places');
+    eq(again.g.nodes, again.d.nodes, 'no frame added');
+    eq(Object.keys(again.c.report).sort(), ['boards', 'resolution', 'tightness', 'totals'], 'the report says nothing of frames kept, joined or gone');
+    eq(again.r.report.redraw, true);
+  });
+
+  await test('a redraw: a note a person carried into another frame is grouped where it is now, and one that is new is grouped with the rest as a fresh document would', async function () {
+    var first = await campsDrawn(), abs0 = absoluteOf(first.r.drawing);
+    var carry = await redrawn(first, function (rs) { var rn = rs.find(function (x) { return x.key === 'c'; }); rn.in = 'G'; rn.inside = ['G']; rn.at = [[abs0.G.x + 60, abs0.G.y + 60], rn.at[1]]; }, null, null, new Map([['c', new Set(['frame', 'moved'])]]));
+    eq(holders(carry.c.carried).c, 'G', 'c is in G, where the person put it, in the document the groups were found over');
+    eq(holders(carry.g).c, undefined, 'the clustered document keeps its own containers: the plan carries the shapes');
+    eq(carry.c.report.carried, [{ key: 'c', in: 'G' }], 'and the report says what was carried');
+    eq(carry.r.report.carried, [{ key: 'c', in: 'G' }], 'which the plan says too');
+    eq(carry.g.nodes.length, carry.d.nodes.length, 'and no frame was added');
+    var b = carry.c.report.boards[0];
+    assert(Object.keys(b.levels['f:G']).indexOf('c') >= 0 && Object.keys(b.levels['b:root']).indexOf('c') < 0, 'grouped in G\'s own notes, not on the board: ' + JSON.stringify(b.levels));
+    // a new note is grouped with the document as it now is: the link it brings weighs and may be cut as any other
+    var rate = function (a, b2) { var v = { 'c\u0000n': 0.95, 'n\u0000z': 0.2 }[a + '\u0000' + b2]; return v !== undefined ? v : campsTight(a, b2); };
+    var n = await redrawn(first, null, growCamps([note('n')], [{ from: 'n', to: 'c' }, { from: 'n', to: 'z' }]), rate);
+    eq(n.g.nodes.map(function (x) { return x.key; }), n.d.nodes.map(function (x) { return x.key; }), 'no frame made');
+    eq(n.c.report.boards[0].levels['b:root'].n, n.c.report.boards[0].levels['b:root'].c, 'n is grouped with c, the note it is most tightly linked to (0.95 against 0.2)');
+    eq(edgeBy(n.g, 'n', 'z').layout.cut, true, 'and its looser link, to z, is cut between groups');
+    eq(edgeBy(n.g, 'n', 'c').layout.cut, undefined, 'its tighter one is not');
+    eq(n.r.report.boards.root.afresh, false, 'drawn in place');
+  });
+
+  await test('a redraw: a new link between two groups is an arrow where its line is clear, else a pill, and a note a person moved is held where they put it; the drawn-again document reads back the same', async function () {
+    var big = function (d) { d.nodes.push(nodeOf(note('c2'))); d.edges.push(edgeOf({ from: 'a', to: 'c2' })); d.edges.push(edgeOf({ from: 'lone', to: 'c' })); };
+    var tight = function (a, b) { var t = { 'a\u0000c2': 0.95, 'c\u0000lone': 0.9, 'c\u0000z': 0.05, 'c2\u0000z': 0.05 }[a + '\u0000' + b]; return t !== undefined ? t : campsTight(a, b); };
+    var first = await campsDrawn(big, tight);
+    eq(first.g.nodes, first.d.nodes, 'the first drawing has no frame but the lens\'s');
+    // two new links, c -> z and c2 -> z, each between two groups: the file has no row for either
+    var news = function (d) { big(d); d.edges.push(edgeOf({ from: 'c', to: 'z' })); d.edges.push(edgeOf({ from: 'c2', to: 'z' })); };
+    var linked = await redrawn(first, null, news, tight);
+    eq([edgeBy(linked.g, 'c', 'z').layout.cut, edgeBy(linked.g, 'c2', 'z').layout.cut], [true, true], 'cut: between two groups');
+    eq(linked.r.report.boards.root.afresh, false, 'drawn in place');
+    assert(!pillOf(edgeBy(linked.r.drawing, 'c', 'z')), 'c -> z: its line is clear, so an arrow though it is cut between groups: ' + JSON.stringify(edgeBy(linked.r.drawing, 'c', 'z').place));
+    assert(pillOf(edgeBy(linked.r.drawing, 'c2', 'z')), 'c2 -> z: its line runs over the frame between, so a pill: ' + JSON.stringify(edgeBy(linked.r.drawing, 'c2', 'z').place));
+    eq(linked.r.report.boards.root.stop, 'clean');
+    // the shapes the file had stay where they were
+    var abs0 = absoluteOf(first.r.drawing), abs1 = absoluteOf(linked.r.drawing);
+    eq(Object.keys(abs0).filter(function (k) { return abs1[k].x !== abs0[k].x || abs1[k].y !== abs0[k].y; }), [], 'nothing the file had moved');
+    // c moved far off by a person: its row is there, and it stays where they put it, whatever its links now are
+    var out = await redrawn(first, function (rs) { var rn = rs.find(function (x) { return x.key === 'c'; }); rn.at[0] = [5000, 5000]; }, news, tight, new Map([['c', new Set(['moved'])]]));
+    eq(out.g.nodes, out.d.nodes, 'no frame, and c is in none');
+    var ctr = absoluteOf(out.r.drawing);
+    eq([ctr.c.x, ctr.c.y], [5000, 5000], 'and held where the person put it');
+    // the drawn-again document reads back the same
+    var again = await planOf(out.g, { current: rowsOf(out.r.drawing) });
+    eq(placesOfNodes(again), placesOfNodes(out.r), 'and the next redraw draws it the same');
+    eq(JSON.stringify(again.drawing.edges.map(function (e) { return [e.from, e.to, !!pillOf(e)]; })), JSON.stringify(out.r.drawing.edges.map(function (e) { return [e.from, e.to, !!pillOf(e)]; })), 'the same links are arrows and pills');
+  });
+
+  await test('a redraw with a note carried into another container: cluster keeps the document\'s own containers, says what it carried and writes the carried document, whose measure sizes the pills the plan draws; nothing carried writes none', async function () {
+    var d = digest([{ title: 'F1', kind: 'frame' }, { title: 'F2', kind: 'frame' }, note('X', 'F1'), note('Y', 'F1'), note('Z', 'F2'), note('W', 'F2')], [{ from: 'X', to: 'Y' }, { from: 'Z', to: 'W' }, { from: 'X', to: 'Z' }, { from: 'Y', to: 'W' }, { from: 'X', to: 'W' }, { from: 'Y', to: 'Z' }]);
+    // a measure whose pill widths tell the container the note is in: 270 from the board, 150 from a frame (the 120 default is neither)
+    var wide = function (g) { var m = measureOf(g); m.pills.forEach(function (p) { p.size = [p.from ? 150 : 270, p.size[1]]; }); return m; };
+    var first = await planOf(clusterm.clusterGraph(d, wide(d), { kinds: KINDS }).graph), at = [absoluteOf(first.drawing).F2.x + 30, absoluteOf(first.drawing).F2.y + absoluteOf(first.drawing).F2.h + 200];
+    var rows = rowsOf(first.drawing, function (rs) { rs.forEach(function (x) { if (x.key === 'X') { delete x.in; x.inside = []; x.at[0] = at.slice(); } }); });
+    var changed = [{ key: 'X', changed: ['frame', 'moved'] }];
+    var mem = memory({ '/g.json': JSON.stringify(d), '/m.json': JSON.stringify(wide(d)), '/c.json': JSON.stringify(rows), '/ch.json': JSON.stringify(changed) });
+    var args = ['cluster', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH, '--current', '/c.json', '--changed', '/ch.json'];
+    await clim.run(args, mem.io);
+    eq(Object.keys(mem.files).filter(function (k) { return k.indexOf('/out/') === 0; }).sort(), ['/out/carried.json', '/out/clustered.json', '/out/clusters.json']);
+    eq(nodeBy(JSON.parse(mem.files['/out/clustered.json']), 'X').in, 'F1', 'clustered.json keeps X in the container the document gave it');
+    eq(nodeBy(JSON.parse(mem.files['/out/carried.json']), 'X').in, undefined, 'carried.json has it where the person put it: on the board');
+    eq(JSON.parse(mem.files['/out/clusters.json']).carried, [{ key: 'X', in: null }], 'clusters.json says what it carried');
+    // the driver measures carried.json (the app is asked of it), and plans clustered.json with that measure
+    var carriedDoc = JSON.parse(mem.files['/out/carried.json']), mc = wide(carriedDoc);
+    var own = measureOf(carriedDoc);
+    mem.files['/mc.json'] = JSON.stringify(mc);
+    await clim.run(['plan', '/out/clustered.json', '/mc.json', '/outp', '--kinds', KINDS_PATH, '--view', '1440x900', '--current', '/c.json', '--changed', '/ch.json'], mem.io);
+    eq(JSON.parse(mem.files['/outp/report.json']).carried, [{ key: 'X', in: null }], 'the plan carries the shapes itself, so the report says so');
+    assert(/; 1 of them carried into another container, which they stay in/.test(mem.printed.pop()), 'and the summary says so');
+    // the pills are sized from the measure of the carried document: X -> Y and X -> Z are pills of notes now in other containers than the document's
+    var direct = async function (m) { var g = JSON.parse(mem.files['/out/clustered.json']); return planm.planGraph(g, function (mo) { return sizes.sizesFrom(mo, m); }, { view: { w: 1440, h: 900 }, current: rows, changed: new Map([['X', new Set(['frame', 'moved'])]]), kinds: KINDS }, elk); };
+    var viaCarried = await direct(mc), viaOwn = await direct(wide(d));
+    var widths = function (r) { return r.plan.boards.reduce(function (a, b) { return a.concat(b.pills.map(function (p) { return p.start + '>' + p.for + ':' + p.w; })); }, []).sort(); };
+    assert(widths(viaCarried).length > 0, 'pills are drawn: ' + JSON.stringify(widths(viaCarried)));
+    assert(widths(viaCarried).every(function (w) { return /:(150|270)$/.test(w); }), 'no pill falls to the 120 default: ' + JSON.stringify(widths(viaCarried)));
+    assert(JSON.stringify(widths(viaOwn)) !== JSON.stringify(widths(viaCarried)), 'a measure of the document before it was carried sizes them otherwise: ' + JSON.stringify(widths(viaOwn)));
+    eq(JSON.parse(mem.files['/outp/drawing.json']), viaCarried.drawing, 'the drawing plan wrote is the one the carried measure gives');
+    // nothing carried: no carried.json, no carried in the report
+    var mem2 = memory({ '/g.json': JSON.stringify(d), '/m.json': JSON.stringify(wide(d)), '/c.json': JSON.stringify(rowsOf(first.drawing)), '/ch.json': JSON.stringify([]) });
+    await clim.run(args, mem2.io);
+    eq(Object.keys(mem2.files).filter(function (k) { return k.indexOf('/out/') === 0; }).sort(), ['/out/clustered.json', '/out/clusters.json']);
+    eq(JSON.parse(mem2.files['/out/clusters.json']).carried, undefined);
+  });
+
+  await test('a redraw: a new link whose line is not clear shares a pill the file has for its target, which it reaches, before it gets one of its own; with no pill in the file for the target it gets its own', async function () {
+    var d = fixture('acme'), first = await planOf(d), makers = function (r) { return r.drawing.edges.filter(function (e) { return pillOf(e) && pillOf(e).at; }); };
+    var withLink = async function (from, to) {
+      var d2 = JSON.parse(JSON.stringify(d)); d2.edges.push({ from: from, to: to });
+      var r = await planOf(d2, { current: rowsOf(first.drawing) });
+      return { r: r, e: r.drawing.edges.find(function (x) { return x.from === from && x.to === to; }) };
+    };
+    // the file draws Mobile team -> Mobile app 3 through a pill, in Engineering, where Payments team is too: its new link to Mobile app 3 goes into that pill
+    var host = first.drawing.edges.find(function (e) { return e.from === 'Mobile team' && e.to === 'Mobile app 3'; });
+    assert(host && pillOf(host) && pillOf(host).at, 'the file has the pill: ' + JSON.stringify(host));
+    var s = await withLink('Payments team', 'Mobile app 3');
+    eq(pillOf(s.e), { share: 'Mobile team' }, 'the new link goes into the file\'s pill');
+    eq(makers(s.r).map(function (e) { return e.from + '>' + e.to + JSON.stringify(pillOf(e)); }), makers(first).map(function (e) { return e.from + '>' + e.to + JSON.stringify(pillOf(e)); }), 'and no new pill is made');
+    eq(JSON.stringify(pillOf(s.r.drawing.edges.find(function (e) { return e.from === 'Mobile team' && e.to === 'Mobile app 3'; }))), JSON.stringify(pillOf(host)), 'the file\'s pill stays where it is');
+    // the file has no pill for Data engineering: the same kind of link, of its own
+    assert(!first.drawing.edges.some(function (e) { return e.to === 'Data engineering' && pillOf(e); }), 'the file has no pill for Data engineering');
+    var o = await withLink('Payments team', 'Data engineering');
+    assert(pillOf(o.e) && pillOf(o.e).at && pillOf(o.e).share === undefined, 'a pill of its own: ' + JSON.stringify(pillOf(o.e)));
+    eq(makers(o.r).length, makers(first).length + 1, 'one pill more');
+  });
+
+  await test('the plan\'s mend cuts the least wanted link first in a document grouped by tightness (layout.clustered.by, each link weighed), the link in the most conflicts first in one that is not, and the weights are what it goes by', async function () {
+    var names = ['N0', 'N1', 'N2', 'N3', 'N4', 'N5'];
+    var links = [[0, 4, 1], [2, 1, 11], [4, 1, 18], [4, 3, 23], [2, 3, 29], [2, 4, 40], [1, 5, 45], [0, 5, 52], [2, 0, 59]];
+    var mk = function (by, flat) {
+      var d = digest(names.map(function (x) { return note(x); }), links.map(function (l) { return { from: names[l[0]], to: names[l[1]], layout: { weight: flat ? 1 : l[2] } }; }));
+      if (by) d.layout = { clustered: { by: 'test/embedding' } };
+      return d;
+    };
+    var pills = function (r) { return r.drawing.edges.filter(pillOf).map(function (e) { return e.from + '>' + e.to; }).sort(); };
+    var by = await planOf(mk(true)), plain = await planOf(mk(false)), flat = await planOf(mk(true, true));
+    assert(by.report.boards.root.cutFurther > 0 && plain.report.boards.root.cutFurther > 0, 'the mend cuts on both: ' + by.report.boards.root.cutFurther + ', ' + plain.report.boards.root.cutFurther);
+    eq(pills(by), ['N2>N1', 'N2>N3', 'N2>N4'], 'grouped by tightness, by the weights: the 29 (N2 -> N3) is a pill, and the 45 (N1 -> N5) an arrow');
+    eq(pills(plain), ['N1>N5', 'N2>N1', 'N2>N4'], 'not grouped by tightness: the link in the most conflicts, the 45 (N1 -> N5), is a pill, and the 29 an arrow');
+    eq(pills(flat), pills(plain), 'the weights are what the first goes by: weighed alike it is the second');
+    eq([by.report.boards.root.stop, plain.report.boards.root.stop, flat.report.boards.root.stop], ['clean', 'clean', 'clean']);
   });
 
   if (part) io.print('part ' + part.k + ' of ' + part.n + ': ' + (results.length + failed) + ' of ' + defined + ' tests');

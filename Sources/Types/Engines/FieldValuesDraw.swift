@@ -10,7 +10,8 @@ import Queries
 /// is stored are the same. A string that is exactly `@[Title]` is the text it is: no field names a note. And it reports on each shape a run draws, changes or restates (and on each arrow it deletes, for what the row says of it): its row's
 /// `problems` (what its values still need and what is wrong, as the check of the run says it, against types
 /// the script draws too), and, for a shape the run wrote values on, each member no field of its types
-/// names (kept, and warned about).
+/// names (kept, and warned about). And it tells `canvas measure` of a document which edges are one line through a
+/// relationship type (`RelationshipLines`).
 public struct FieldValuesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "draw-field-values" }
@@ -24,6 +25,7 @@ public struct FieldValuesPlugin: ListedPlugin {
         registrar.drawValueWriter(for: RelationshipEndProperty.key, merge: { written, held in
             EndRuleMerge.merged(written, into: held)
         })
+        registrar.drawLines { connections, shapes, registry in RelationshipLines.lines(connections, shapes, registry) }
         registrar.drawReports(members: RelationshipDrawReport.members) { record, written, shapes, bothHeads in
             guard let reading = shapes.reading, let checks = reading.service(FieldChecks.self) else { return DrawShapeReport() }
             // A connection the run deleted is not on the board: its members, and nothing of its values.

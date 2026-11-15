@@ -58,6 +58,7 @@ maps one onto the other.
 - [Colors](#colors)
 - [Language models](#language-models)
 - [Decision models](#decision-models)
+- [Embedding models](#embedding-models)
 - [Language rules](#language-rules)
 - [Prose maps](#prose-maps)
 - [Snapping](#snapping)
@@ -345,6 +346,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Change what box a drag of a resize handle gives a shape (snap its sides), and draw while it does | `registrar.resizeAdjuster { editor, start in … }`, a `ResizeAdjuster`: Snapping claims it | [The resize adjuster](#the-cores-part-the-resize-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Ask yes-or-no questions of a state, each answered with a probability (and test it without the network) | `editor.decisions?.decide(DecisionRequest(state:preface:questions:))` (answered from memory what was asked today), `model.cutoffs.verdict(p)`; `ScriptedDecisionModel` in tests | [Decision models](#decision-models) |
+| Turn texts into vectors (and test it without the network) | `registry.embeddings?.vectors(of:)` (asked of the model only what it hasn't given), `EmbeddingText.of(title:words:)`; `ScriptedEmbeddingModel` in tests | [Embedding models](#embedding-models) |
 | Hold a member of another plugin's in every type's schema, out of the sync's sight | `registrar.typeDirective("rules")` (Types); `registry.heldDirectives` | [Language rules](#language-rules) |
 | Check a kind's shapes against their types' rules in English | `x.checkedByRules()` (LanguageRules); `editor.ruleChecks?.check(of:)` | [Language rules](#language-rules) |
 | Say which words of a text say which part of a lower-level text (a schema, code, a query), to highlight them | A `ProseTarget` (a name and a guide); `editor.proseMaps?.map(T.self, of:prose:target:askingIf:)` where the words are drawn | [Prose maps](#prose-maps) |
@@ -444,13 +446,14 @@ holds three more groups, which are not interfaces a kind plugs into but are stil
   Titles: a point made only to change a module's place is the wrong fix.
 - **Engines**: what any plugin may run or ask. The query engine ([Queries](#queries)), the draw
   engine ([Draw](#draw)), the translation of English into a query (QueryTranslation), the language
-  model ([LanguageModels](#language-models)), the decision model ([DecisionModels](#decision-models)),
+  model ([LanguageModels](#language-models)), the decision model ([DecisionModels](#decision-models)), the
+  embedding model ([EmbeddingModels](#embedding-models)),
   prose maps (what words say of a lower-level text, [ProseMaps](#prose-maps)) and the lights a hovered
   shape shows ([Neighbors](#neighbors)). An engine
   knows no meaning a horizontal owns: the words a horizontal gives it come from the horizontal's own
   module, through the engine's points. And an engine may declare no point at all and only lend
   something: LanguageModels lends every editor the model plugins ask, DecisionModels the model they
-  ask yes-or-no questions of, and ProseMaps what a text's words say of a lower-level text, which it
+  ask yes-or-no questions of, EmbeddingModels the model that turns texts into vectors, and ProseMaps what a text's words say of a lower-level text, which it
   asks the language model.
 - **What agents speak**: the [command line](#the-command-line) (Automation: `draw`, `show`, `capture`,
   `kinds` and `measure`) and `canvas query` (QueryCommands), whose words are the query language's and their
@@ -544,7 +547,7 @@ Modules sit on three rungs; each imports only from its own rung or those below i
 | Rung | What it is | May depend on | Modules |
 |---|---|---|---|
 | product | The verticals, shapes that hold something of their own; nothing imports one, so no kind knows another | core, platform | Arrows, StickyNotes, Subboards, Frames |
-| platform | What every shape gets, whatever its kind; its modules build on one another, grouped under headings nothing checks | core, platform | Horizontals in the window: Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Find. Horizontals that are shape traits: Topology, Validation, Titles, Locking, Connections, Mentions, Publishing, Boards, Transform, Colors, Types, References. Things you do: Clipboard, Snapping, JumpTo, Moving, Reordering. Engines: LanguageModels, DecisionModels, ProseMaps, Queries, Draw, QueryTranslation, Neighbors. What agents speak: Automation, QueryCommands |
+| platform | What every shape gets, whatever its kind; its modules build on one another, grouped under headings nothing checks | core, platform | Horizontals in the window: Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Find. Horizontals that are shape traits: Topology, Validation, Titles, Locking, Connections, Mentions, Publishing, Boards, Transform, Colors, Types, References. Things you do: Clipboard, Snapping, JumpTo, Moving, Reordering. Engines: LanguageModels, DecisionModels, EmbeddingModels, ProseMaps, Queries, Draw, QueryTranslation, Neighbors. What agents speak: Automation, QueryCommands |
 | core | The canvas and plain libraries, which know no plugin | core | Geometry, Canvas (the core, which holds [what a window puts around its canvas](#host-slots), said by plugins and placed by the window, and so names SwiftUI's views and the wire's types for the commands the app's server runs), CanvasRPC (the wire: what the app and its [command line](#the-command-line) say to each other), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on), FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) and Palette ([the color math](#palette): the roles one color is drawn in on the light canvas and the dark, and the one test for a dark appearance) |
 | core private | The window, the app and the command line: the core's own, which no plugin may import; only another private module and a test may | core | CanvasUI (the window: the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server), InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`), CanvasQuickLook (`// layer: core private of InfiniteCanvas`: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk), packaged into the app's bundle; `+ shipped`, as the app is) and CanvasCLI (`canvas`: it knows the wire, never the app) |
 | testsupport, test | What the tests stand on and the tests themselves, which see more of the graph than a plugin does; their tags say what kind of target a line is, not where it sits | (see Package.swift) | TestKit, CanvasTesting, ShippedTesting (the tests' way to the product's plugins), `*Tests` |
@@ -686,19 +689,20 @@ plugin after the ones whose points it fills.
   its Quick Look extension, which import none of those modules and don't compile against them;
   and CompositionTests, the benchmarks and their support (ShippedTesting), which import the ones
   they call.
-- **What reaches outside the process.** Two listed plugins, made from nothing, reach outside: the
-  language model's (Claude, over the network, with the key from Settings) and the clipboard's (the
-  system's pasteboard). Each says so (`OutwardPlugin`). Only the product is made of them as they
+- **What reaches outside the process.** Four listed plugins, made from nothing, reach outside: the
+  language model's (Claude, over the network, with the key from Settings), the decision model's
+  (TypeSafe's Jev, the same), the embedding model's (OpenAI, the same, and a file of vectors in
+  Application Support) and the clipboard's (the system's pasteboard). Each says so (`OutwardPlugin`). Only the product is made of them as they
   come: `ShippedList.plugins()` is the app's and its extension's alone (`@_spi(Product)`).
   Anything else calls `ShippedList.plugins(supplying:)` and hands over its own, and the list
   refuses to load without them (`ShippedListError.notSupplied`), so a test can't reach the network
   or the user's pasteboard by leaving an argument out. Any other listed plugin can be handed over
   the same way, and takes its place in the list.
 - **Tests** get the product's plugins from ShippedTesting's `ShippedPlugins`:
-  `plugins(pasteboard:model:decisionModel:)`, `registry(pasteboard:model:decisionModel:)` and
-  `makeEditor(document:scheduler:pasteboard:model:decisionModel:)`, the list with a clipboard on the test's
-  pasteboard, the test's model, whose `model` has no default, and a `ScriptedDecisionModel` unless the
-  test passes a decision model of its own. A test that passes no pasteboard
+  `plugins(pasteboard:model:decisionModel:embeddingModel:)`, `registry(…)` and
+  `makeEditor(document:scheduler:pasteboard:model:decisionModel:embeddingModel:)`, the list with a clipboard on the test's
+  pasteboard, the test's model, whose `model` has no default, a `ScriptedDecisionModel` unless the
+  test passes a decision model of its own and a hashing `ScriptedEmbeddingModel` unless it passes an embedding model. A test that passes no pasteboard
   gets its own (`ShippedPlugins.pasteboard`: made when the test first asks, shared by its editors,
   released as it ends, through TestKit's `afterThisTest`), never the user's.
 
@@ -3725,7 +3729,7 @@ plugins ([What ships](#what-ships)).
 | The sidebar (`HostSidebars`, at most one) | `registrar.hostSidebar(keyboardEntry:) { editor, onExit in … }`: the view, and the view in it that takes the keyboard when the window gives the sidebar the keyboard | `registry.hostSidebar` | the table of contents' list, from `TableOfContentsPlugin`'s own `register` |
 | The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(shownWhile:isRequested:onDismiss:keyboardEntry:) { editor, onExit in … }`: when it has something to show (always, by default), when it's wanted (never), what hiding it meanwhile does (nothing) | `registry.hostInspector` | the detail panel: something to show while shapes are selected, wanted while a takeover is active |
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
-| Settings panes (`SettingsPanes`, in plugin order, a title once; the first takes the keyboard, `settingsPaneTakesFocus`) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one; the TypeSafe key's under it, when the decision model is Jev |
+| Settings panes (`SettingsPanes`, in plugin order, a title once; the first takes the keyboard, `settingsPaneTakesFocus`) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one; the TypeSafe key's under it, when the decision model is Jev; the OpenAI key's under that, when the embedding model is OpenAI's |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
 | The keys that run a command, as menus take them (`MenuKeys`, at most one) | `registrar.menuKeys { command, registry in … }`: `[MenuKey]`, each a menu's key equivalent and modifiers, the one an item shows first | `registry.menuKey(of:)`, the first, read by the menu bar's items and a context menu's that run a command; `registry.menuKeys(of:)`, all, whose others held with ⌘ or ⌃ the menu bar answers too (hidden items); none without one | Keyboard: every key that runs the command, in the order registered (Delete as Backspace's character) |
 | The Keyboard Shortcuts window's rows (`KeyboardHelp`, at most one) and key hints (`KeyHints`, any number) | `registrar.keyboardHelp { registry, kits in … }`; `registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)` | `registry.keyboardHelp(kitsOn:)`: the one list's rows, then the hints, each row once, an off kit's left out ([Kits](#kits)); `registry.keyboardHelp`, every kit's | Keyboard: every key it registers; the hints of each plugin that reads a key no shortcut has |
@@ -9103,9 +9107,10 @@ x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
   no rule, only said ("only a public shape can be stood for", "ask the user to make it public").
   `seats` is for a kind whose shape can say where the shape it stands for is: given where one `make`
   made sits (`StandInSeat`: `.file(container:board:)`, a frame, else the board, in the file `context`
-  reads; or `.written(shape:seat:opening:root:)`, the names of the containers a script wrote for the shape
-  and for where it sits, with no file to read, which of them own a board, and what the open file calls its
-  top board), it leaves the props saying that, as its writers would
+  reads; or `.written(shape:seat:opening:root:shared:)`, the names of the containers a script wrote for the shape
+  and for where it sits, with no file to read, which of them own a board, what the open file calls its
+  top board, and how many of the first of the two lists are the same containers when the names can't
+  say: two untitled frames are both "Frame"), it leaves the props saying that, as its writers would
   (References': fitted to the path from the seat to the shape, as a pick from the list is).
   `registry.standIns` (`StandIns`, main actor, nothing kept, so a caller that asks of many shapes makes it once: `RelationshipIndex.standIns`, `FarVerdicts`; the registry never changes) reads the
   rules without an index: `kinds`, `isEmpty`, `forwarding(of: record)` (a record's rule, applied: what
@@ -11806,7 +11811,9 @@ canvas rehearse <scripts>|- [--board <board>]
 canvas capture <file> [--shape <name>]… [--zoom <number>] [--in <name> | --root] [--size <width,height>] [--scale <number>] [--dark] [--board <board>]
                                         a picture of a board, or of part of it, as the app draws it, in a PNG file
 canvas kinds [<kind>] [--schema]        what a script can draw, and with what (and which pills can stand for each kind)
-canvas measure <script>|-               how big a script's (or a document's) shapes would be, and what the placement is done with, drawing nothing
+canvas measure <script>|- [--on <name>] [--tightness]
+                                        how big a script's (or a document's) shapes would be, and what the placement is done with, drawing nothing;
+                                        with --tightness, how alike each link's two notes are
 canvas query <query>|- [--limit <number>] [--count] [--brief] [--fields <attribute>]… [--board <board>]
                                         the shapes of a file a query matches, on every board, in file order
 canvas query --ask <question>|- […]     the same, the query written by the app's language model
@@ -11823,7 +11830,7 @@ The modules, one job each:
 | CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own seven, `draw`, `apply`, `rehearse`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` or `DocumentError` as the wire's `AutomationError`; `apply` draws a program's document by key on every board in one step, drawn on a rehearsal of the editor and taken in with `editor.adopt`; `rehearse` draws several scripts in turn on a copy of the file, Draw's `Rehearsal`, a turn of the main actor each; `measure` takes a script or a document), `show` and `capture`, which borrow Draw's naming (`capture` draws with the core's `BoardPicture`). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
-| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the eleven points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, `DrawLines`, and `DrawRecords`, what keeps drawings): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
 | Drawings | platform | What a program drew, kept by name in the file (`DrawingsProperty`, Draw's `DrawingRecord`: the board its top went on and each shape it made by id, with the program's key and what it last wrote), through Draw's `DrawRecords`, which `canvas apply` and `canvas draw --drawing` write in the step that draws; nothing on the shapes. |
 | DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
@@ -12472,6 +12479,27 @@ format's own refusals (a blank `@[]`) still refuse. It answers
 `warnings`, `[{line, message}]`, is there only when something was measured without a name, and `board`,
 the server's as in `draw`'s answer, only when a board ran it.
 
+A document (JSON with `nodes` and `edges` by key, as `apply` takes one) is measured by key: each node's
+`size`, `above` and `titleWidth`, a pill for each end an edge reaches, the edges the app would refuse and the
+lines through a node, and with `--on` the board it will be drawn on. A pill's path names a container with no
+title as the app does (a frame is "Frame"). `--tightness` (a document's alone; `canvas` waits 120 s for it
+unless `--timeout` says) adds `tightness`, how alike the two notes of each link are: for each two distinct nodes
+an edge joins on one board, neither a frame, the cosine of their vectors from the app's embedding model, each
+centred on the mean of its board's notes.
+
+```json
+{"tightness": {"model": "openai/text-embedding-3-large", "texts": 962, "asked": 0,
+               "pairs": [{"a": "file:Draw.swift", "b": "file:Measure.swift", "board": "module:Draw", "tightness": 0.4127}]}}
+```
+
+A note is embedded by its title and its words (a note's `text`, a subboard's `description`, as the kind's schema
+says), made one text ([Embedding models](#embedding-models)), and the vectors are kept by text, so a second measure
+asks nothing (`asked: 0`). `pairs` are by `(a, b)` in UTF-16 code-unit order, `a` before `b`; `board` is the key of
+the node that owns the board and is left out for the drawing's own. When it can't be said, the sizes are answered
+all the same and `tightness` is `{"unavailable": "No OpenAI key", "reason": "no_key"}` (`no_model`: no embedding
+model; `no_key`: no key, or a rejected one; `failed`: any other), nothing partial. With a key saved in Settings the
+app sends each note's title and words to OpenAI, and without one it sends nothing.
+
 The `size` of a shape is the room it takes once drawn: the frame its kind lays it out in
 (`LaidOutBox`, a note that shows rows no record holds), which is the size it stores for any other
 kind, and the same size `draw`'s `at` reports for the statement. It is worked out by one function
@@ -12491,11 +12519,13 @@ reaches nowhere); asked of a record that is not on any board, nothing is kept fo
 row is the size of `registry.standIns.make(kind, standingFor:, label:)` for the end's title, for
 each edge that says `via:` (the kind it names): Draw knows no kind of stand-in, and a bare edge's
 goes through one or not by the boards, which it does not read. Every end is seated as written
-(`.written(shape:seat:opening:root:)`: the containers the end names, from its path, else from the script's
+(`.written(shape:seat:opening:root:shared:)`: the containers the end names, from its path, else from the script's
 shape of that title or the one shape the open file has, or from the file by its id (none at the top of the
 root board), and those of the start's; which of them own a board, the script's own containers first, so a
 frame it draws is a frame whatever the file holds; and the open file's name for its top board), so its pill
-measures as draw makes one. The constants are read from the
+measures as draw makes one. For a document (below), a container with no title is called what its kind is called, as the app
+calls one in a pill's place (a frame is "Frame"), and `shared` says which of the two lists' first containers are
+the same ones by key, so two untitled frames called alike are two (a lens can draw containers of one name). The constants are read from the
 source and never copied: the gaps (`GapName`), the step between references
 (`LayoutProblem.impliedListStep`), the inset of what `in "F"` holds (`LayoutProblem.insideGap`),
 the default gap, the list step, the clearances, and each kind's least size
@@ -12519,6 +12549,7 @@ Draw knows no title, port, validity, mention or group. `draw` takes each from a 
 | `DrawValueWriters` | `registrar.drawValueWriter(for:write:merge:)` | The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin |
 | `DrawReports` | `registrar.drawReports(members: ["is"]) { record, written, shapes, bothHeads in … }` | Each shape and edge row of the run, once every statement is in the transaction, with what its statement wrote for each property that has a value writer (nil for an `unchanged` row) and the board as the script leaves it: a `DrawShapeReport` of warnings (`DrawIssue`s, said with the statement's line) and `problems` (Queries' `ShapeProblem`: `field`, `path`, `class`, `message`) that go on the shape's row, and `members` (a `[String: JSONValue]`) that go flat beside the row's own, only the keys it declared in `members:` (the registry refuses one that is a row's own key, an edge attribute, blank or declared twice); `bothHeads` is whether the statement of a connection wrote `<->`; it is asked of each connection the run deletes too, with the record as it was (gone from `shapes`, `written` nil for a `delete edge` that names no identity key, `[:]` for any other), for its members and warnings only | No `problems`, no warnings, no members from it | FieldValuesPlugin |
 | `DrawGroups` | `registrar.drawGroups(group:ungroup:)` | For a `group` or `ungroup` statement, the shapes it names (resolved: each once, on the board the run draws on, in the order written) and the run's transaction, once every shape and edge the script draws is in it: `group` puts exactly those shapes in one group of their own, `ungroup` leaves each in none. Each writes through the transaction (a read-only shape refuses the write, and the run says `read_only`) and answers whether it changed anything, else the statement's row is `unchanged` | No groups: `group` and `ungroup` are `no_groups` | GroupDrawPlugin |
+| `DrawLines` | `registrar.drawLines { connections, shapes, registry in … }` | For `canvas measure` of a document: the connections the document draws, as the measure laid them out with its nodes (each `DrawnConnection`: its record and the shapes its ends name), and those shapes by id; it answers the pairs the app draws as the halves of one line through a shape (`DrawLine`: `first` into `through`, `second` out of it), which the measure says as `lines`, by the edges' places in the document's list, so a render layer sees the arc the app will draw | No lines: the measure says none | FieldValuesPlugin (a relationship type's two ends, `RelationshipLines`) |
 
 `TypeNamesPlugin` ([TypeNames.swift](../Sources/Types/Engines/TypeNames.swift)) writes `is: "Employee card"`, on a shape and on an edge, as the id of the type that title names (`TypeLink.mediaType`), admitting what `TypeIndex.canBeNamed(_:registry:writing:)` says, a pure function of the record and the registry (a type that is no pill), and refuses any other shape "which isn't a type or a shape", and the shape itself (`DrawTextContext.owner`); a quoted value for a list of text is a list of that one item (Draw's, `KindVocabulary.value(of:)`), several are JSON.
 
@@ -13825,7 +13856,7 @@ do throws(LanguageModelError) {
   `~/Library/Application Support/InfiniteCanvas/anthropic-api-key`: the key and nothing else, mode
   0600, written whole and renamed into place; a missing file is no key. Not the Keychain: the app
   isn't signed, so each build would be a new app to it. What's done with the file is `KeyFile`'s, a
-  protocol every service's key store adopts (DecisionModels' `TypeSafeKeyStore` too), and a key's
+  protocol every service's key store adopts (DecisionModels' `TypeSafeKeyStore` and EmbeddingModels' `OpenAIKeyStore` too), and a key's
   rows are `KeyRows` over `KeySettings` (its logic, made for a `KeyService`: the name, the prompt,
   where keys are made and what's posted when the key changes, with the service's own test): the
   Claude pane's on the API key's way, and `KeySettingsView`'s, the pane of a service with a key
@@ -13937,6 +13968,69 @@ do throws(DecisionModelError) {
   `fallback`, `holdsAnswers` and `release()`), which ShippedTesting's `ShippedPlugins` gives every
   test unless it passes one (`decisionModel:`), so no test reaches TypeSafe; DecisionModelsTests stub
   URLSession with a `URLProtocol`.
+
+## Embedding models
+
+EmbeddingModels ([`Sources/EmbeddingModels`](../Sources/EmbeddingModels)) is an engine beside the
+language and decision models that lends the registry one thing: a model that turns texts into
+vectors, with the vectors it gave kept by text. It declares one point, `EmbeddingEngines`, whose
+one contribution is that lending, and knows nothing of what the vectors are for.
+
+```swift
+guard let embeddings = registry.embeddings else { return }   // nil without EmbeddingModelsPlugin
+do throws(EmbeddingModelError) {
+    let answered = try await embeddings.vectors(of: ["a note's words", "another's"])
+    // answered.vectors[0], .model ("openai/text-embedding-3-large"), .asked (0: memory held them all)
+} catch {
+    status = error.message                                   // "No OpenAI key"
+}
+```
+
+- **The protocol.** `EmbeddingModel` is `name` (the provider and the model, which vectors are kept
+  by), `textsPerRequest` and one async call, `embed(_:)`: texts in, a vector of `Float` for each, in
+  order, out, or an `EmbeddingModelError`, a `failure` and the `provider` it names, worded as a
+  decision model's ("No OpenAI key", "OpenAI key rejected", "Can’t reach OpenAI", "Rate limited",
+  "Unusable answer"; a refused request is the service's first sentence, the key taken out),
+  `isTransient` (Retry) and `needsKey` (Open Settings…).
+- **One for the registry.** Plugins ask `registry.embeddings` (or the editor's), an `Embeddings`,
+  never the model. It is not an editor's service as `Decisions` is: `canvas measure` runs with no
+  editor when no board is open, and one memory of vectors must be shared by every command. It asks
+  the model for the texts its memory lacks, once each however often they come, in chunks of
+  `textsPerRequest`, and keeps each chunk's vectors (in memory, and in the file) as it lands, so a
+  call that fails part way keeps what came and the next asks only for the rest. Two calls at once
+  may each ask for a text neither has had answered yet (nothing tracks what is in flight; a measure
+  is one-shot, so it costs a duplicate request at worst), and a vector the file cannot hold (none,
+  or past 65,536 numbers) is an unusable answer, kept nowhere. Texts are told apart by their UTF-8,
+  never by `String`'s equality.
+- **Vectors kept.** `EmbeddingMemory`, by the model's name and a hash of the text, in memory and, in
+  the app, in `~/Library/Application Support/InfiniteCanvas/embedding-vectors.bin`: a vector of a text
+  by a model never changes, so none is let go (the file grows by about 12 KB a text). The app and
+  every copy of it share the file, so a save is one append of a whole buffer and never a
+  truncation, a file that isn't ours, or is torn (a process killed mid-write, a full disk), is
+  replaced by a rename (its whole records and what is in memory, so nothing is ever appended
+  after a tear), and a load keeps what it can read of a torn one. Read and written off the main actor.
+- **The text a note is embedded by.** `EmbeddingText.of(title:words:)`: the title (without a
+  trailing file extension when it looks like a file name), a dot, the first 900 UTF-16 units of its
+  words, code names split into words, runs of whitespace one space. It is the layout spike's text
+  character for character, in JavaScript's terms, which the vectors it measured were made of.
+- **The app's model.** `OpenAIEmbeddingModel`: one `POST https://api.openai.com/v1/embeddings` per
+  256 texts, the key as a bearer token, `text-embedding-3-large` (3,072 numbers a text, base64 on
+  the wire), each request bounded to 60 s in all (a session of its own per call, with the request's
+  and the resource timeout both at it, so a reply that trickles in is cut off too), retrying nothing, the key read at every call from `OpenAIKeyStore.standard`
+  (`~/Library/Application Support/InfiniteCanvas/openai-api-key`, a `KeyFile` as Anthropic's and
+  TypeSafe's). Every text embedded leaves the machine for OpenAI, and only with a key saved in
+  Settings: saving it is the opt-in. `EmbeddingModelsPlugin()`, made from nothing as the product's
+  list makes it, takes it, so the plugin is an `OutwardPlugin`, and gives the key's pane
+  (`registrar.settingsPane("OpenAI")`, `OpenAISettingsView`: a `KeySettingsView`, "OpenAI API key",
+  Test a one-text call, Save and Remove posting `Notification.Name.embeddingModelKeyDidChange`,
+  which nothing listens for) only when its model is an `OpenAIEmbeddingModel`; it lists after
+  DecisionModels, so its pane is the third, and only the window's first takes the keyboard as it
+  opens. Live vectors are not bitwise stable between calls or Macs.
+- **Tests** pass a `ScriptedEmbeddingModel` (vectors by text, a `fallback`, a queue of failures,
+  `holdsAnswers` and `release()`; `hashing()` answers any text with bytes of its SHA-256), which
+  ShippedTesting's `ShippedPlugins` gives every test unless it passes one (`embeddingModel:`), so
+  no test reaches OpenAI or the vector file; EmbeddingModelsTests stub URLSession with a
+  `URLProtocol`.
 
 ## Language rules
 
@@ -15818,6 +15912,7 @@ connect-menu         CanvasContextMenu in ShapeMenuGroup first
 arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
 language-models      service LanguageModelState
 decision-models      service Decisions
+embedding-models     embeddings
 language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
 rule-validation      ValidationRules → every shape holding ignoredRules · IssueScopes · ValidationRules → every shape holding schema
 rule-details         service RuleLights · outlines · ShapeDetails in Rules after Schema → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
@@ -15829,7 +15924,7 @@ port-edges           draw edges
 validation-checks    draw checks
 mention-texts        draw labels · draw text text/x-canvas-mentions
 type-names           draw text text/x-canvas-type · draw edge identity is · draw value schema
-draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
+draw-field-values    draw value fieldValues · draw value endRule · draw lines · draw reports members is, endOf, fits, relates
 color-names          draw text text/x-canvas-color
 group-draw           draw groups
 drawings             file property drawings · draw records
@@ -16266,7 +16361,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   asks): TypesTests' live smoke test (`SCHEMA_LIVE=1`) and `--ask`'s evaluation (`QUERY_LIVE=1`,
   [`--ask`](#--ask)). Every other shipped list a test builds gets a `ScriptedLanguageModel`
   (`ShippedPlugins.makeEditor(model:)`, whose `model:` has no default so none can be forgotten, and
-  a `ScriptedDecisionModel` unless it passes one, `decisionModel:`, so no test asks TypeSafe either),
+  a `ScriptedDecisionModel` unless it passes one, `decisionModel:`, so no test asks TypeSafe either, and a hashing `ScriptedEmbeddingModel` unless it passes one, `embeddingModel:`, so none asks OpenAI),
   which keeps each request, answers from its queue, and holds its answers while `holdsAnswers`
   until `release()`. A call lands on the main actor, so a test turns the main run loop until it has
   (TestKit's `spinRunLoop(until:)`, `awaitResult { … }`). LanguageModelsTests stub the network

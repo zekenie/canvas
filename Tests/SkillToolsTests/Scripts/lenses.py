@@ -59,12 +59,12 @@ indexes = [n for n in doc["nodes"] if n["props"]["title"] == "index.ts"]
 check(len(indexes) == 3 and len({n["key"] for n in indexes}) == 3, "default: three index.ts, three keys")
 check(all(m.startswith("module:") for m in [n["key"] for n in doc["nodes"] if n["kind"] == "subboard"]), "default: cards are module:")
 check(any(e.get("layout", {}).get("weight") for e in doc["edges"]), "default: weights are layout")
-check(json.dumps(plain["nodes"]) == json.dumps(doc["nodes"]) and "drawing" not in plain, "default: the runner adds only the drawing and the dial")
+check(json.dumps(plain["nodes"]) == json.dumps(doc["nodes"]) and "drawing" not in plain, "default: the runner adds only the drawing and the ranks")
 out["default"] = [len(doc["nodes"]), len(doc["edges"])]
 
-# the dial and the name from the runner
-doc, _ = run(skill, os.path.join(bookshelf, "scan.json"), os.path.join(scratch, "dial.json"), None, "--drawing", "mine", "--mess", "0.5", "--ranks", "columns")
-check(doc["drawing"] == "mine" and doc["layout"] == {"mess": 0.5, "ranks": "columns"}, f"dial: {doc.get('layout')}")
+# the ranks and the name from the runner
+doc, _ = run(skill, os.path.join(bookshelf, "scan.json"), os.path.join(scratch, "ranks.json"), None, "--drawing", "mine", "--ranks", "columns")
+check(doc["drawing"] == "mine" and doc["layout"] == {"ranks": "columns"}, f"ranks: {doc.get('layout')}")
 
 # overrides: bands, groups (with and without a key), folder boards, purposes
 scan = Scan.load(os.path.join(bookshelf, "scan.json"))

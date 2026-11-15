@@ -1,7 +1,6 @@
 // The graph document, read into a model: nodes, the board and frames each is on, edges, boards. The tool reads a node's key, its `in`, its kind
 // (by what `canvas kinds` says of it) and its `layout`; it never looks inside `props`.
 import { byTitle } from './util.mjs';
-import { dial } from './dial.mjs';
 
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -35,16 +34,13 @@ export const holdsShapes = (n) => n.holds === 'shapes';
 /** Whether a node holds a board of its own. */
 export const holdsBoard = (n) => n.holds === 'board';
 
-/** The pill an edge to a node goes through, when it goes through one: the first that can stand for the node's kind (`canvas kinds`' via); null for none. */
-export const pillFor = (model, n) => model.kinds.get(n.kind).via[0] || null;
-
 const keyOf = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
 const hint = (what, bad) => `${what} is ${bad}`;
 
 /**
  * The document's structure, every refusal found, naming keys: a document with nodes (and edges), a key that is a non-empty string and unique, a kind
  * the app can draw, an `in` that names a node whose kind holds shapes or a board and does not lead back to the node, edges whose ends name nodes,
- * and the layout hints the tool itself reads (`rank`, `pill`, `weight`, `direct`, the dial). What the app refuses of a value, it says.
+ * and the layout hints the tool itself reads (`rank`, `pill`, `placement`, `weight`, `direct`, `ranks`). What the app refuses of a value, it says.
  */
 export function readGraph(graph, kinds) {
   const errors = [];
@@ -56,10 +52,13 @@ export function readGraph(graph, kinds) {
   const lay = graph.layout;
   if (lay != null && !isPlain(lay)) errors.push('layout is an object');
   else if (lay) {
-    if (lay.mess != null && !(typeof lay.mess === 'number' && lay.mess >= 0 && lay.mess <= 1)) errors.push(`layout.mess is a number from 0 to 1, not ${JSON.stringify(lay.mess)}`);
     if (lay.ranks != null && !['rows', 'columns'].includes(lay.ranks)) errors.push(`layout.ranks is rows or columns (left out: whichever the view shows larger), not ${JSON.stringify(lay.ranks)}`);
-    if (lay.promote != null && typeof lay.promote !== 'boolean') errors.push(`layout.promote is true or false, not ${JSON.stringify(lay.promote)}`);
+    if (lay.placement != null && !PLACEMENTS.includes(lay.placement)) errors.push(`layout.placement is ${PLACEMENTS.join(' or ')}, not ${JSON.stringify(lay.placement)}`);
+    const c = lay.clustered;
+    if (c != null && !(isPlain(c) && (c.by === null || typeof c.by === 'string') && (c.why == null || typeof c.why === 'string'))) errors.push(`layout.clustered is the tool's note of how a document was clustered, {by: the model's name or null, why?: a string}, not ${JSON.stringify(c)}`);
   }
+  // what `cluster` writes (`layout.cut` on the links between groups) is the tool's own: only a document it has clustered has any
+  const clustered = !!(lay && lay.clustered != null);
   const nodes = [], index = new Map();
   (raw || []).forEach((n, i) => {
     if (!isPlain(n)) { errors.push(`nodes[${i}] is an object`); return; }
@@ -78,6 +77,7 @@ export function readGraph(graph, kinds) {
     else if (l) {
       if (l.rank != null && !(typeof l.rank === 'number' && isFinite(l.rank))) errors.push(`"${n.key}": layout.rank is a number, not ${JSON.stringify(l.rank)}`);
       if (l.pill != null && typeof l.pill !== 'boolean') errors.push(`"${n.key}": layout.pill is true or false, not ${JSON.stringify(l.pill)}`);
+      if (l.placement != null && !PLACEMENTS.includes(l.placement)) errors.push(`"${n.key}": layout.placement is ${PLACEMENTS.join(' or ')}, not ${JSON.stringify(l.placement)}`);
     }
   });
   // what holds each node
@@ -116,21 +116,30 @@ export function readGraph(graph, kinds) {
     const l = e.layout;
     if (l != null && !isPlain(l)) errors.push(`edges[${i}]: layout is an object`);
     else if (l) {
-      if (l.weight != null && !(typeof l.weight === 'number' && isFinite(l.weight))) errors.push(`edges[${i}]: layout.weight is a number, not ${JSON.stringify(l.weight)}`);
-      if (l.direct != null && typeof l.direct !== 'boolean') errors.push(`edges[${i}]: layout.direct is true or false, not ${JSON.stringify(l.direct)}`);
+      // a weight is summed over a pair's edges and the links lifted onto one pair of children: bounded, so no sum reaches Infinity
+      const ends = `edges[${i}] ${keyOf(e.from)} -> ${keyOf(e.to)}`;
+      if (l.weight != null && !(typeof l.weight === 'number' && l.weight > 0 && l.weight <= WEIGHT_MOST)) errors.push(`${ends}: layout.weight is a number above 0 and at most 1,000,000, not ${JSON.stringify(l.weight)}`);
+      if (l.direct != null && typeof l.direct !== 'boolean') errors.push(`${ends}: layout.direct is true or false, not ${JSON.stringify(l.direct)}`);
+      if (l.cut != null && typeof l.cut !== 'boolean') errors.push(`${ends}: layout.cut is true or false, not ${JSON.stringify(l.cut)}`);
+      else if (l.cut != null && !clustered) errors.push(`${ends}: layout.cut is the tool's own, written by cluster (with layout.clustered at the top of the document), not a hint a lens gives`);
+      if (l.cut === true && l.direct === true) errors.push(`${ends}: layout.cut and layout.direct are both true: a link that is drawn whatever can't be cut between groups`);
     }
   });
   return { errors, nodes, index, cyclic: ringed.size > 0 };
 }
 
 const hints = (x) => (x && isPlain(x.layout) ? x.layout : {});   // a node's or an edge's layout hints
+/** The most an edge's `layout.weight` may be. */
+export const WEIGHT_MOST = 1000000;
+/** How a container's children may be placed (layout.mjs): each hub among its users, or in rows. */
+export const PLACEMENTS = ['stars', 'rows'];
 
 /**
  * The model of a document over the app's kinds. `opts.refused` is the app's own refusals of edges (measure's `edges`: a Map from an edge's place in
  * the list to {reason, message, hint}); those, and the edges the layout has no way to draw, are left out, each with a warning in `model.warnings`.
  * Throws the first refusal of `readGraph`, or of a pill the layout is told to make where none can stand.
  */
-export function buildModel(graph, mess, kinds, opts = {}) {
+export function buildModel(graph, kinds, opts = {}) {
   const warnings = [];
   const table = kinds instanceof Map ? kinds : kindsTable(kinds);
   const read = readGraph(graph, table);
@@ -144,6 +153,7 @@ export function buildModel(graph, mess, kinds, opts = {}) {
     nodes.set(it.key, {
       key: it.key, index: it.index, kind: n.kind, holds: k.holds, parent: it.parent ? it.parent.key : null, children: [],
       chain: [], pin: pill === true, never: pill === false || !k.via.length, rank: typeof rank === 'number' ? rank : null,
+      placement: PLACEMENTS.includes(hints(n).placement) ? hints(n).placement : null,
     });
   }
   for (const it of read.nodes) {
@@ -190,12 +200,20 @@ export function buildModel(graph, mess, kinds, opts = {}) {
     let g = pairs.get(key);
     if (!g) pairs.set(key, g = { from: e.from, to: e.to, a, b, items: [] });
     const w = hints(e).weight;
-    g.items.push({ index, w: w == null ? 1 : w, direct: hints(e).direct === true });
+    g.items.push({ index, w: w == null ? 1 : w, direct: hints(e).direct === true, cut: hints(e).cut === true, key: typeof e.key === 'string' && e.key ? e.key : null });
   });
-  const edges = [...pairs.values()].map((g) => ({
-    from: g.from, to: g.to, weight: g.items.reduce((s, i) => s + i.w, 0), direct: g.items.some((i) => i.direct) || holdsShapes(g.a) || holdsShapes(g.b),
-    cross: g.a.board !== g.b.board, items: g.items.map((i) => i.index).sort((x, y) => x - y),
-  })).sort((x, y) => byTitle(x.from, y.from) || byTitle(x.to, y.to));
+  // `keys`: the document's own keys of its edges (canvas apply keeps the pill an edge makes under it), in the order of `items`
+  const edges = [...pairs.values()].map((g) => {
+    const items = g.items.slice().sort((x, y) => x.index - y.index);
+    return {
+      from: g.from, to: g.to, weight: g.items.reduce((s, i) => s + i.w, 0), direct: g.items.some((i) => i.direct) || holdsShapes(g.a) || holdsShapes(g.b),
+      cross: g.a.board !== g.b.board, items: items.map((i) => i.index), keys: items.map((i) => i.key),
+      precut: items.some((i) => i.cut),   // cut between two groups before anything is placed (cluster's cut, layout.cut): a pill until the drawing has room for the arrow
+    };
+  }).sort((x, y) => byTitle(x.from, y.from) || byTitle(x.to, y.to));
+  for (const e of edges) {
+    if (e.precut && (e.direct || nodes.get(e.to).never)) throw new Error(`edge "${e.from}" -> "${e.to}" is cut between groups (layout.cut), and no pill may stand for it: ${e.direct ? 'it is direct, or at a shape that holds shapes' : `"${e.to}" is never a pill target`}`);
+  }
   const out = new Map(), inn = new Map(), has = new Set();
   for (const e of edges) {
     if (!out.has(e.from)) out.set(e.from, []);
@@ -203,16 +221,15 @@ export function buildModel(graph, mess, kinds, opts = {}) {
     out.get(e.from).push(e); inn.get(e.to).push(e);
     has.add(e.from + '\u0000' + e.to);
   }
-  // the mess dial (the option, else the document's layout.mess, else 0.1) sets the price of a pill and the rest
-  const dl = dial(mess != null ? mess : layoutOpts.mess);
   const model = {
     drawing: graph.drawing, layout: layoutOpts, nodes, boards, boardDepth, kids, edges, out, inn, warnings, dropped, kinds: table,
-    mu: dl.mu, dial: dl, promote: layoutOpts.promote !== false, ranks: layoutOpts.ranks || null,
+    ranks: layoutOpts.ranks || null,
+    placement: PLACEMENTS.includes(layoutOpts.placement) ? layoutOpts.placement : null,
     hasEdge: (a, b) => has.has(a + '\u0000' + b),
     node: (t) => nodes.get(t),
     boardIndex: new Map(boards.map((b, i) => [b, i])),
   };
-  // what is a pill target no matter the loop: pinned, or the end of an edge that crosses boards
+  // what is a pill target whatever the cut: pinned, or the end of an edge that crosses boards
   model.forcedTargets = new Set();
   for (const e of edges) if (e.cross) model.forcedTargets.add(e.to);
   for (const n of nodes.values()) if (n.pin) model.forcedTargets.add(n.key);
@@ -227,9 +244,4 @@ function edgeRefusal(a, b, table) {
   if (holdsShapes(a) || holdsShapes(b)) return 'the layout draws an edge at a shape that holds shapes only as an arrow on one board, never through a pill';
   if (!table.get(b.kind).via.length) return `no pill can stand for the kind ${b.kind} (canvas kinds), and this edge goes through one`;
   return null;
-}
-
-/** The leaf shapes on a board: those that hold no shapes on it (notes, and cards, whose own board is apart). */
-export function leavesOn(model, board) {
-  return [...model.nodes.values()].filter((n) => n.board === board && !holdsShapes(n));
 }

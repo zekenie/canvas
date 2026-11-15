@@ -3,7 +3,7 @@
 
     settings.py <repo> <scip index path>
 
-Prints the settings as shell assignments for `eval` (S_SCANNER, S_SCIP, S_PREPARE, S_WINDOW as WxH, S_MESS, S_RANKS, S_DRAWING; each
+Prints the settings as shell assignments for `eval` (S_SCANNER, S_SCIP, S_PREPARE, S_WINDOW as WxH, S_RANKS, S_DRAWING; each
 empty when unset; S_FILE says whether there was a file). An unknown key is a warning on standard error, a bad value is an
 error naming the key (status 1). With no file, S_SCANNER is empty: ingest decides from what the repository holds.
 
@@ -12,14 +12,13 @@ error naming the key (status 1). With no file, S_SCANNER is empty: ingest decide
               (written bare, never in quotes: it is replaced by a shell-quoted path)
     prepare   a command run at the repository's root before scanning (installing packages)
     window    [width, height], each from 1 to 1,000,000: the room every board is laid out for; absent, the window's size when the run starts
-    mess      0 to 1, the digest's dial
     ranks     "rows" or "columns"
     drawing   the drawing's name, which the app keeps a record by: drawing again with a name updates that drawing in place;
               absent, the lens's, else the repository's name
 """
 import json, math, os, shlex, sys
 
-KEYS = ('scanner', 'scip', 'prepare', 'window', 'mess', 'ranks', 'drawing')
+KEYS = ('scanner', 'scip', 'prepare', 'window', 'ranks', 'drawing')
 WINDOW_MOST = 1_000_000
 
 
@@ -36,7 +35,7 @@ def number(value):
 def main():
     repo, index = sys.argv[1], sys.argv[2]
     path = os.path.join(repo, '.canvas', 'ingest.json')
-    out = {'S_FILE': '', 'S_SCANNER': '', 'S_SCIP': '', 'S_PREPARE': '', 'S_WINDOW': '', 'S_MESS': '', 'S_RANKS': '', 'S_DRAWING': ''}
+    out = {'S_FILE': '', 'S_SCANNER': '', 'S_SCIP': '', 'S_PREPARE': '', 'S_WINDOW': '', 'S_RANKS': '', 'S_DRAWING': ''}
     if os.path.isfile(path):
         out['S_FILE'] = '1'
         try:
@@ -69,11 +68,6 @@ def main():
             if not (isinstance(window, list) and len(window) == 2 and all(number(v) and 1 <= v <= WINDOW_MOST for v in window)):
                 fail(f'"window" is [width, height], each from 1 to {WINDOW_MOST:,}')
             out['S_WINDOW'] = f"{int(round(window[0]))}x{int(round(window[1]))}"
-        mess = settings.get('mess')
-        if mess is not None:
-            if not (number(mess) and 0 <= mess <= 1):
-                fail('"mess" is a number from 0 to 1')
-            out['S_MESS'] = repr(mess)
         ranks = settings.get('ranks')
         if ranks is not None:
             if ranks not in ('rows', 'columns'):

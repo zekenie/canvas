@@ -1,8 +1,5 @@
 {
  "drawing": "flat-modules",
- "layout": {
-  "mess": 0.1
- },
  "nodes": [
   {
    "key": "Parse cursor",

@@ -12,10 +12,11 @@ import Topology
 // media type is written (DrawTextFormats, one for each media type, Mentions' for mention text),
 // how a value a script writes joins what a shape holds (DrawValueWriters, one for each property),
 // what a shape with no title is called for the pill that stands for it (DrawLabels, Mentions'), what
-// each row of a run reports (DrawReports, Types') and how shapes are grouped (DrawGroups, Grouping's).
+// each row of a run reports (DrawReports, Types'), how shapes are grouped (DrawGroups, Grouping's) and which connections a
+// measure says are one line through a shape (DrawLines, Types').
 // Without one, `draw` does without: no titles (a titled statement is `no_names`), no edges
 // (`no_edges`), no groups (`group` and `ungroup` are `no_groups`), only the schemas' bounds checked,
-// text kept as written and a value replacing what the shape holds.
+// text kept as written, a value replacing what the shape holds, and no line through a shape in a measure.
 
 // MARK: Names
 
@@ -474,6 +475,49 @@ extension DrawGroups: KeyedExtensionPoint {
     static let label = "draw groups"
 }
 
+// MARK: Lines through a shape
+
+/// A connection a document draws, as `canvas measure` makes it: its record and the shapes its two ends name.
+public struct DrawnConnection {
+    public let record: AnyShapeRecord
+    public let from: ShapeID
+    public let to: ShapeID
+}
+
+/// Two connections the app draws as the halves of one line through a shape, `first ——[through]——> second`: the first runs into
+/// `through` and the second out of it, and what is between them is one arc through it.
+public struct DrawLine: Hashable, Sendable {
+    public let first: ShapeID
+    public let second: ShapeID
+    public let through: ShapeID
+
+    public init(first: ShapeID, second: ShapeID, through: ShapeID) {
+        self.first = first
+        self.second = second
+        self.through = through
+    }
+}
+
+/// Which connections the app draws as one line through a shape, for `canvas measure` of a document, so a tool that lays the document
+/// out sees the line the app will draw (canvas-digest's check): handed the connections the document draws and the shapes they join,
+/// by id, it answers the pairs. The plugin that says which arrows make one line says it (Types': the two ends of a relationship
+/// type); Draw knows no meaning of it. Only the sugar makes one (`registrar.drawLines`).
+@MainActor
+public struct DrawLining {
+    let lines: @MainActor (_ connections: [DrawnConnection], _ shapes: [ShapeID: AnyShapeRecord], Registry) -> [DrawLine]
+}
+
+/// What says which connections are one line, for `canvas measure`: at most one plugin.
+public enum DrawLines {}
+
+extension DrawLines: KeyedExtensionPoint {
+    public typealias Contribution = DrawLining
+    public static var owner: PluginID { .drawEngine }
+    public static func uniqueKeys(of _: DrawLining, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
+    public static func summary(of _: DrawLining, for _: ShapeTarget) -> String { label }
+    static let label = "draw lines"
+}
+
 /// The one key each draw point's contribution claims: "draw names" in a conflict.
 struct DrawPointKey: Hashable, CustomStringConvertible {
     let name: String
@@ -497,6 +541,13 @@ extension PluginRegistrar {
     public mutating func drawReports(members: [String] = [],
                                      _ report: @escaping @MainActor (AnyShapeRecord, _ written: JSONObject?, ShapeContext, _ bothHeads: Bool) -> DrawShapeReport) {
         contribute(DrawReporting(members: members, report: report), to: DrawReports.self)
+    }
+
+    /// Says which of the connections a document draws the app draws as the halves of one line through a shape (`canvas measure` of
+    /// a document answers them as `lines`): handed the connections, each with the shapes its ends name, and those shapes by id, in the
+    /// order the document lists them. At most one plugin says it.
+    public mutating func drawLines(_ lines: @escaping @MainActor (_ connections: [DrawnConnection], _ shapes: [ShapeID: AnyShapeRecord], Registry) -> [DrawLine]) {
+        contribute(DrawLining(lines: lines), to: DrawLines.self)
     }
 
     /// Writes the values of the property `key` in `canvas draw`: `write` gets the value as the script
@@ -657,6 +708,9 @@ extension Registry {
     var drawGrouping: DrawGrouping? { contributions(to: DrawGroups.self).first?.value }
 
     var drawReporting: DrawReporting? { contributions(to: DrawReports.self).first?.value }
+
+    /// What says which connections are one line through a shape, if something does.
+    var drawLining: DrawLining? { contributions(to: DrawLines.self).first?.value }
 
     /// The writers of values, by property key.
     var drawValueWriters: [String: DrawValueWriting] {
