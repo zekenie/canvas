@@ -10,7 +10,8 @@
 // loosest lightest), stats.json.
 // --frames=units: topology first, a frame one unit in what holds it and its own notes clustered inside it (stats.json's levels: each
 // container's items and their clusters); without it a frame's notes are clustered with the board's, as if it weren't there.
-//   EMB=openai-3-large DIGEST_TOOL=... node cluster.mjs [--res=1] [--frames=none|units] [--emit=cluster|control] [--boards=module:A,...] [--each=1] --out=DIR
+// --weight=value weighs a link by how alike its two notes are (0.1 to 1 between the board's loosest and tightest), not by its rank.
+//   EMB=openai-3-large DIGEST_TOOL=... node cluster.mjs [--res=1] [--weight=rank|value] [--frames=none|units] [--emit=cluster|control] [--boards=module:A,...] [--each=1] --out=DIR
 import fs from 'fs';
 import { readVectors } from './sim.mjs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';
@@ -21,6 +22,8 @@ const { cuttable } = await import(TOOL + 'cut.mjs');
 const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, '').split('=')));
 const EMB = process.env.EMB || 'openai-3-large';
 const RES = +(args.res ?? 1), EMIT = args.emit || 'cluster', OUT = args.out, FRAMES = args.frames || 'none';
+const WEIGHT = args.weight || 'rank';
+if (!['rank', 'value'].includes(WEIGHT)) throw new Error('--weight is rank (a link counts by its place in its board\'s order) or value (by how alike its two notes are)');
 if (!['cluster', 'control'].includes(EMIT)) throw new Error('--emit is cluster or control');
 if (!['none', 'units'].includes(FRAMES)) throw new Error('--frames is none (a frame\'s notes clustered with the board\'s) or units (a frame one unit in what holds it)');
 const rd = (p) => JSON.parse(fs.readFileSync(new URL(p, import.meta.url), 'utf8'));
@@ -92,6 +95,8 @@ for (const board of [...pairsOn.keys()].sort(byKey)) {
   const ps = [...pairsOn.get(board).values()].sort((x, y) => byKey(x.key, y.key));
   const byTight = ps.slice().sort((x, y) => x.tight - y.tight || byKey(x.key, y.key));
   byTight.forEach((p, i) => { p.w = 0.1 + 0.9 * (byTight.length > 1 ? i / (byTight.length - 1) : 1); });
+  // --weight=value: a link counts by how alike its two notes are, scaled from the board's loosest (0.1) to its tightest (1), not by its rank
+  if (WEIGHT === 'value') { const lo = byTight[0].tight, hi = byTight[byTight.length - 1].tight; byTight.forEach((p) => { p.w = 0.1 + 0.9 * (hi > lo ? (p.tight - lo) / (hi - lo) : 1); }); }
   const ks = points.get(board) || [];
   let clusterOf, levels = null;
   if (FRAMES === 'units') {

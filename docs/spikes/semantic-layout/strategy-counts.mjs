@@ -1,6 +1,7 @@
 // How a drawing came out, by the layout branch's health check against the graph it was drawn from: the links inside boards drawn as
 // arrows, the boards drawn clean, and the same for the six boards the pictures show. Given cluster.mjs's folder, also how many of those
-// six boards' links were cut between clusters before layout, and so how many more the engine cut inside clusters to draw clean.
+// six boards' links were cut between clusters before layout, and so how many more the engine cut inside clusters to draw clean: right
+// only where no cut link is put back (SIM_KEEPCUT); where some are, strategy-pairs.mjs counts each way.
 //   DIGEST_TOOL=... node strategy-counts.mjs <graph.json> <drawing.json> <name> [cluster dir]
 import fs from 'fs';
 const TOOL = (process.env.DIGEST_TOOL || (() => { throw new Error('set DIGEST_TOOL to the layout branch canvas-digest tool folder (main.js, lib/)'); })()).replace(/\/$/, '') + '/lib/';

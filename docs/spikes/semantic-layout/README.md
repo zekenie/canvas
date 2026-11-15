@@ -1,13 +1,16 @@
 # Spike: let meaning decide which links are arrows
 
-## The owner's plan, respiked: no new frames
+## The strategy
 
-[Issue 26](https://github.com/zekenie/canvas/issues/26) holds the owner's plan and its open points. This round is the spike's decomposition with nothing added: each board's links weighted by how alike their two files are, each container's files and frames (a lens frame one piece) split into groups by those links, and the links between groups made pills before layout, inside the boards and frames the lens draws, with no frame added. Slice 4's engine draws the rest. The owner judged it modestly better than slice 4.
+[Issue 26](https://github.com/zekenie/canvas/issues/26) states it, with nothing open: the owner's plan, the owner's answers to what it left open, and Claude's calls on the rest. It is the spike's decomposition with nothing added: each board's links weighted by how alike their two files are, each container's files and frames (a lens frame one piece) split into groups by those links, the links between groups made pills before layout, inside the boards and frames the lens draws, with no frame added. Slice 4's engine draws the rest, and then a cut link comes back as an arrow wherever its line crosses nothing. `strategy.sh` draws and counts it from this folder's data, with no key and no app:
 
-- `strategy.sh`'s last plan step draws it (`out/e-noframes`, from `out/cl-1-units/graph.json`, the lens's graph with the engine's weights) and counts it: 779 of 2,202 links inside boards drawn as arrows, 72 of 72 boards clean; the six boards 163 of 557, with 281 cut between groups and 113 more by the engine. Its boards and frames are the lens's, node for node.
-- `pictures/respike`: the root board and eight module boards in the app, slice 4 beside the respike.
+- `cluster.mjs --frames=units --res=1.5` finds the groups (`out/cl-1.5-units`): resolution 1.5 is the "smaller" groups the owner chose. `data/groups-decided.json` keeps each container's items and the group each is in, for the build to match.
+- The patched engine (`build/simtool`, `SIM_CUT` and no `SIM_KEEPCUT`) draws it (`out/decided`). `strategy-counts.mjs` and `strategy-pairs.mjs` count it: 774 of 2,202 links inside boards drawn as arrows (slice 4: 912), 72 of 72 boards clean. 1,226 links run between groups, and 147 of them come back as arrows; 976 are inside groups, and the engine cuts 349 of them. On the six boards, 172 of 557 (slice 4: 168). Its 56 frames are the lens's, node for node, and putting cut links back moves no shape.
+- `cluster.mjs --weight=value` is the other way to count a link when finding groups, by how alike its two files are rather than its place in the board's order (`out/decided-by-gaps`): 803 arrows, and 28 of the 68 boards with links group a few files differently. Claude kept the order.
+- `pictures/decided`: the root board and eight module boards in the app, slice 4 beside the strategy. `pictures/choices`: what the owner was shown to choose the group size (`sizes-*.jpg`, at resolutions 1, 1.5 and 2) and whether cut links come back (`back-*.jpg`).
+- The respike before it, which the owner judged modestly better than slice 4, grouped at resolution 1 and never put a cut link back (`out/e-noframes`, from `out/cl-1-units/graph.json`): 779 of 2,202 links drawn as arrows, 72 of 72 boards clean; the six boards 163 of 557, with 281 cut between groups and 113 more by the engine. `pictures/respike` has its boards.
 
-## Where it ended: clusters in new frames (an alternative, not the owner's plan)
+## Clusters in new frames (an alternative, not the owner's plan)
 
 The owner's plan, stated in [issue 26](https://github.com/zekenie/canvas/issues/26), places notes by the topology the lens already draws (its boards and frames) first and by meaning second, with no new groupings. This round did something else: it clustered each board by meaning and drew each cluster in a new, untitled frame the lens never made. The frames began as a device to make slice 4's engine lay clusters out as blocks (cluster-frames.mjs says they were only for the picture), and were then presented as the owner's idea, which they are not. They are kept here as an alternative the owner may consider. `strategy.sh` makes its numbers and pictures from this folder's data, with no key and no app:
 
