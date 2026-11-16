@@ -17,6 +17,8 @@ import TestKit
     var asked: [(shapes: [ShapeID], place: ContentsPlace)] = []
     var moved: [(shapes: [ShapeID], place: ContentsPlace)] = []
     var admits = true
+    /// What the mover says of a move it was asked: whether it moved them.
+    var moves = true
 }
 
 /// A mover (`ContentsMoves`) that takes what `log.admits` says, and only notes what it's asked to move.
@@ -28,7 +30,10 @@ struct RecordingMoves: CanvasPlugin {
         registrar.contentsMoves(admits: { shapes, place, _ in
             log.asked.append((shapes, place))
             return log.admits
-        }, move: { shapes, place, _ in log.moved.append((shapes, place)) })
+        }, move: { shapes, place, _ in
+            log.moved.append((shapes, place))
+            return log.moves
+        })
     }
 }
 
@@ -199,6 +204,18 @@ extension ContentsState {
         expectEqual(editor.file, before, "the move is the mover's")
         log.admits = false
         expect(!state.admits(nest.c, on: nest.outer, .on), "a place the mover doesn't take")
+    },
+    test("a drop is taken only if the mover moved the shapes: one it says didn't (the commit refused it, or it landed where they were) isn't, and the drag is over") {
+        let log = MoveLog()
+        let editor = try corralEditor([PocketsPlugin(), RecordingMoves(log: log)])
+        let nest = NestedCorrals(in: editor)
+        let state = editor.contents
+        expect(state.drag(nest.c, to: nest.outer, .on), "moved")
+        log.moves = false
+        expect(!state.drag(nest.a, to: nest.c, .below), "the mover says it moved nothing")
+        expectEqual(log.moved.count, 2, "it was asked")
+        expectEqual(state.dragShapes, nil, "the drag is over")
+        expectEqual(state.dropZone(for: nest.c), nil)
     },
     test("rows of a board open under its owner's: restacked on that board, in one step that undo takes back; the board shown stays") {
         let p = ShapeID(), x = ShapeID(), y = ShapeID(), z = ShapeID()

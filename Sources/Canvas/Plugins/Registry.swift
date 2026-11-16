@@ -59,6 +59,12 @@ public struct Registry {
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
+    /// Every plugin's judge of what a place takes (`registrar.admission`), found once, in plugin order:
+    /// a transaction asks them about every shape that comes into a place, while there is one.
+    let admissionRules: [CorePoints.Admissions.Contribution]
+    /// Every plugin's fit of a placed shape to its place (`registrar.placementFit`), found once, in
+    /// plugin order: each placement asks them.
+    let placementFits: [CorePoints.PlacementFits.Contribution]
     /// Every plugin's tint for a shape of its own (`registrar.shapeTints`), found once, in plugin
     /// order: `editor.tint(of:)` asks them.
     let shapeTintRules: [@MainActor (AnyShapeRecord, CanvasEditor) -> NSColor?]
@@ -132,6 +138,8 @@ public struct Registry {
         }, uniquingKeysWith: { first, _ in first })
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         shapeTintRules = (byPoint[ObjectIdentifier(CorePoints.ShapeTints.self)] ?? []).map { $0.value as! CorePoints.ShapeTints.Contribution }
+        admissionRules = (byPoint[ObjectIdentifier(CorePoints.Admissions.self)] ?? []).map { $0.value as! CorePoints.Admissions.Contribution }
+        placementFits = (byPoint[ObjectIdentifier(CorePoints.PlacementFits.self)] ?? []).map { $0.value as! CorePoints.PlacementFits.Contribution }
         placingTools = Set((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).compactMap {
             let tool = $0.value as! ToolRegistration
             return tool.placement == nil ? nil : tool.descriptor.id
@@ -637,6 +645,8 @@ struct RawContribution {
             case is CorePoints.WillDelete.Type: "willDelete"
             case is CorePoints.KeepsInStep.Type: "keeps in step → \(target)"
             case is CorePoints.ReadOnlyRules.Type: "read-only shapes"
+            case is CorePoints.Admissions.Type: "admission"
+            case is CorePoints.PlacementFits.Type: "placement fit"
             case is CorePoints.ShapeTints.Type: "shape tints"
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"

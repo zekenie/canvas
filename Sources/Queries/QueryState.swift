@@ -19,21 +19,28 @@ import Topology
 /// `editor.scheduler` cancel it (`too_slow`), each stopping that query alone; and every query on an
 /// editor stops when it goes (`board_closed`).
 ///
-/// It keeps nothing per shape or per board, and hears no commit: a commit costs it nothing, ever,
-/// and no snapshot outlives its query. Snapshots share the file's tables and Topology's until a
+/// It keeps nothing per shape or per board, and hears no commit while no standing query is held
+/// (`stand`): a commit then costs it a look at an empty list, and no snapshot outlives its query. Snapshots share the file's tables and Topology's until a
 /// commit changes one, which copies it once however many snapshots hold it, so queries at once cost
 /// a commit no more than one does.
 @MainActor
 public final class QueryState {
     /// Weak: a query in flight never keeps a closed file's editor alive.
-    private weak var editor: CanvasEditor?
-    private let registry: Registry
+    private(set) weak var editor: CanvasEditor?
+    let registry: Registry
     /// The snapshots alive.
     private let live = LiveCount()
+    /// The standing queries held (`stand`), weakly.
+    let standing = StandingQueries()
 
     init(editor: CanvasEditor) {
         self.editor = editor
         registry = editor.registry
+    }
+
+    /// The editor is going: its standing queries stop, and what they had out is cancelled.
+    isolated deinit {
+        standing.stopAll()
     }
 
     /// What this app's queries can name: made on the first query, and kept.
@@ -66,7 +73,42 @@ public final class QueryState {
     public private(set) var seededFromAnchors = 0
     /// How many steps reaches evaluated: one for each shape a reach stepped from.
     public private(set) var reachSteps = 0
+    /// How many times standing queries have asked the whole file, and asked a commit's shapes, and how
+    /// many shapes those asks named.
+    public private(set) var standingWholeAsks = 0
+    public private(set) var standingShapeAsks = 0
+    public private(set) var standingShapesAsked = 0
     #endif
+
+    // MARK: Standing
+
+    /// A query kept answered over the whole file (`StandingQuery`): `text` must pass `checkStored` with
+    /// nothing bound (it reads only the file), and is checked once, here. Its first answer is asked at
+    /// once (once the commit being delivered, if any, has settled), and after every commit it asks only
+    /// what the commit changed. It lasts while it's held, or until `stop()`; the editor going stops it.
+    /// While none is held the engine keeps nothing and follows nothing.
+    public func stand(_ text: String) throws(QueryError) -> StandingQuery {
+        let plan = try checkStored(text)
+        guard let editor else { throw .boardClosed }
+        let query = StandingQuery(plan: plan, state: self)
+        standing.add(query, following: editor.topology)
+        editor.onceSettled { [weak query] in query?.start() }
+        return query
+    }
+
+    // MARK: Fitting
+
+    /// `record` written to match what `text` says a shape is, as a shape a person makes inside a place that accepts
+    /// shapes of that query comes out: the first alternative of the query that can be written is the one used
+    /// (`QueryFit.swift` says what each part of a query writes and what is skipped). Synchronous, on the main actor, and it
+    /// awaits nothing: it reads the query's tree, never the file, and asks a word's owner (`makes:`) for its word. The record
+    /// is the same shape (its id, container and metadata), of its own kind unless `kindIsOpen`, which lets an alternative's
+    /// kind head turn it into a shape of that kind (made through the kind's placement). Nil when the text doesn't read, when
+    /// no alternative can be written, and when what can be written changes nothing.
+    public func fit(_ record: AnyShapeRecord, toMatch text: String, kindIsOpen: Bool = false) -> AnyShapeRecord? {
+        guard let editor else { return nil }
+        return QueryFit(editor: editor, vocabulary: vocabulary).fit(record, toMatch: text, kindIsOpen: kindIsOpen)
+    }
 
     // MARK: Checking
 
@@ -97,6 +139,9 @@ public final class QueryState {
         if let word = plan.editorWords.first { throw .readsTheEditor(word) }
         return plan
     }
+
+    /// The edge types the file has, as `check` reads them: a refusal that `readsEdgeTypes` is undone only when this changes.
+    public var presentEdgeTypes: Set<EdgeTypeID> { editor?.topology?.snapshot().presentTypes ?? [] }
 
     /// `check` over the edge types the file has, which the caller took (a batch takes them once).
     private func check(_ text: String, presentEdgeTypes present: Set<EdgeTypeID>) throws(QueryError) -> QueryPlan {
@@ -429,16 +474,7 @@ public final class QueryState {
         }
         run.cancel = nil
 
-        #if DEBUG
-        mainSlices += facts.slices
-        recordsEncoded += performed.stats.recordsEncoded
-        derivedTitlesAsked += facts.titlesAsked
-        verdictsAsked += facts.verdictsAsked
-        problemsAsked += facts.problemsAsked
-        universeWalks += performed.stats.universeWalks
-        seededFromAnchors += performed.stats.seeded
-        reachSteps += performed.stats.reachSteps
-        #endif
+        tally(facts, performed.stats)
         let timings = QueryTimings(main: .cpu(captured + facts.total), offMain: .cpu(performed.stats.offMain), slices: facts.slices,
                                    longestSlice: .cpu(facts.longest), costliestRecord: .cpu(facts.costliest))
         switch performed.outcome {
@@ -447,9 +483,71 @@ public final class QueryState {
         }
     }
 
+    /// Counts what a query cost (debug builds).
+    private func tally(_ facts: MainFacts, _ stats: Evaluation.Stats) {
+        #if DEBUG
+        mainSlices += facts.slices
+        recordsEncoded += stats.recordsEncoded
+        derivedTitlesAsked += facts.titlesAsked
+        verdictsAsked += facts.verdictsAsked
+        problemsAsked += facts.problemsAsked
+        universeWalks += stats.universeWalks
+        seededFromAnchors += stats.seeded
+        reachSteps += stats.reachSteps
+        #endif
+    }
+
+    /// Asks a standing query's question (`StandingQuery`): takes up the file now, in this turn, noting
+    /// the facts its words take in `read`, and answers it off the main actor as any query is, within
+    /// the file's deadline; `done` hears the answer on the main actor (never once `cancel` has been
+    /// called: `cancelled` instead, which `done` is not told). A file that can't be taken up (the editor
+    /// gone, no Topology) is `done`'s refusal at once.
+    func ask(standing ask: StandingAsk, noting read: FactsRead,
+             done: @escaping @MainActor (Result<StandingAnswer, QueryError>) -> Void) -> StandingAskHandle? {
+        let run: QueryRun
+        let handover: Handover<QuerySnapshot>, facts: MainFacts
+        do throws(QueryError) {
+            run = try startClock()
+            (handover, facts, _, _) = try takeUp(words: ask.plan.uses.pseudoClasses, formats: ask.plan.uses.textFormats, edges: [.resolved],
+                                                 settling: nil, noting: read)
+        } catch {
+            done(.failure(error))
+            return nil
+        }
+        #if DEBUG
+        if let shapes = ask.shapes {
+            standingShapeAsks += 1
+            standingShapesAsked += shapes.count
+        } else {
+            standingWholeAsks += 1
+        }
+        #endif
+        facts.onSlice = { [run] in run.answered() }
+        let vocabulary = vocabulary
+        let task = Task.detached(priority: Task.currentPriority) {
+            await Evaluation.perform(handover, vocabulary: vocabulary, facts: facts) { (evaluation: Evaluation) async throws(QueryError) -> StandingAnswer in
+                try await evaluation.standing(ask)
+            }
+        }
+        run.cancel = { task.cancel() }
+        let handle = StandingAskHandle(task: { task.cancel() })
+        Task { @MainActor [weak self] in
+            let performed = await task.value
+            run.cancel = nil
+            run.stop()
+            self?.tally(facts, performed.stats)
+            guard !handle.cancelled else { return }
+            switch performed.outcome {
+            case .success(let answer): done(.success(answer))
+            case .failure(let error): done(.failure(error.reason == .cancelled && run.timedOut ? .tooSlow(after: run.expired) : error))
+            }
+        }
+        return handle
+    }
+
     /// Takes up the file (`capture`), and what that cost the main actor.
-    private func takeUp(words: Set<String>, formats: Set<String>, edges: [EdgeView],
-                        settling: SettleWait?) throws(QueryError) -> (Handover<QuerySnapshot>, MainFacts, UInt64, Int?) {
+    private func takeUp(words: Set<String>, formats: Set<String>, edges: [EdgeView], settling: SettleWait?,
+                        noting read: FactsRead? = nil) throws(QueryError) -> (Handover<QuerySnapshot>, MainFacts, UInt64, Int?) {
         guard let editor, let topology = editor.topology else { throw .boardClosed }
         let start = threadCPU()
         let pending: Int? = switch settling {
@@ -457,7 +555,7 @@ public final class QueryState {
         case .everything?: topology.isSettling ? 0 : nil
         case nil: nil
         }
-        let (handover, facts) = capture(editor, topology: topology, words: words, formats: formats, edges: edges)
+        let (handover, facts) = capture(editor, topology: topology, words: words, formats: formats, edges: edges, noting: read)
         return (handover, facts, threadCPU() - start, pending)
     }
 
@@ -466,14 +564,14 @@ public final class QueryState {
     /// typed into, and then what each word and text format the query uses takes (`prepare`, in
     /// word order); and what asks the main actor, holding the editor weakly.
     private func capture(_ editor: CanvasEditor, topology: TopologyIndex, words: Set<String>, formats: Set<String>,
-                         edges: [EdgeView]) -> (Handover<QuerySnapshot>, MainFacts) {
+                         edges: [EdgeView], noting read: FactsRead?) -> (Handover<QuerySnapshot>, MainFacts) {
         let file = editor.withoutObservingDocument { editor.file }
         // One snapshot in each view asked for (each O(1), sharing the tables); the first is what the words prepare over.
         var views: [EdgeView: TopologySnapshot] = [:]
         for view in edges where views[view] == nil { views[view] = topology.snapshot(view) }
         let graph = views[edges.first ?? .resolved] ?? topology.snapshot()
         let shown = editor.board, path = editor.boardPath, revision = editor.revision, editing = editor.editingShapeID
-        let preparation = QueryPreparation(editor: editor, file: QueryFilePreparation(snapshot: graph, registry: registry, editor: editor))
+        let preparation = QueryPreparation(editor: editor, file: QueryFilePreparation(snapshot: graph, registry: registry, editor: editor, read: read))
         var prepared: [String: any Sendable] = [:], verdicts: [String: MainFacts.Verdict] = [:], problemers: [String: MainFacts.Problemer] = [:]
         for word in words.sorted() {
             switch vocabulary.declaration(forKey: word)?.meaning {
@@ -502,6 +600,21 @@ public final class QueryState {
     }
 }
 
+/// A standing query's ask in flight: cancelling it stops its evaluation, and its answer is never told.
+@MainActor
+final class StandingAskHandle {
+    private let stopTask: () -> Void
+    private(set) var cancelled = false
+
+    init(task stop: @escaping () -> Void) { stopTask = stop }
+
+    func cancel() {
+        guard !cancelled else { return }
+        cancelled = true
+        stopTask()
+    }
+}
+
 /// A query of a batch, checked: its place in the batch, its plan and its request.
 struct BatchedQuery: Sendable {
     let index: Int
@@ -517,7 +630,7 @@ struct BatchedQuery: Sendable {
 /// on without a sign of life, or whose main actor is gone, is. Both are actions scheduled on the
 /// editor's scheduler (tests advance a `ManualScheduler`).
 @MainActor
-private final class QueryRun {
+final class QueryRun {
     /// How long it may go without a slice answered (`QueryBudget.deadline(forShapes:)`).
     let allowed: Duration
     /// The most it may take in all, if the caller has someone waiting (`QueryRequest.deadline`).
@@ -567,9 +680,37 @@ private final class QueryRun {
     }
 }
 
-extension QueryState: EditorService {}
+extension QueryState: EditorService {
+    /// A commit, settled: each standing query held asks what it changed, once every service has settled
+    /// it. Nothing while none is held.
+    public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
+        guard !standing.isEmpty else { return }
+        editor.onceSettled { [weak self] in
+            for query in self?.standing.all ?? [] { query.heard(changes, in: editor) }
+        }
+    }
+
+    /// A whole file put in place: each standing query held asks the whole file. Another board shown
+    /// changes no stored query's answer.
+    public func boardDidSettle(_ change: BoardChange, in editor: CanvasEditor) {
+        guard change.isFileReplaced, !standing.isEmpty else { return }
+        editor.onceSettled { [weak self] in
+            for query in self?.standing.all ?? [] { query.fileReplaced() }
+        }
+    }
+}
 
 extension CanvasEditor {
     /// The editor's queries; nil without `QueriesPlugin`.
     public var queries: QueryState? { service(QueryState.self) }
+}
+
+extension QueryError {
+    /// Whether the refusal is of an edge type no plugin declares, which the file has only while a shape brings one
+    /// (`presentEdgeTypes`): what a check reads of the file besides the kinds of the shapes a query names by id as containers
+    /// (`shapesNamed`, a `cannot_contain`). Every other refusal is of the registry's words, which no commit changes, and a stored
+    /// query reads no title when it's checked.
+    public var readsEdgeTypes: Bool {
+        reason == .unknownEdgeType || errors.contains { $0.reason == .unknownEdgeType }
+    }
 }

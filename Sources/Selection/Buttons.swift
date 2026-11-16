@@ -8,8 +8,9 @@ import Geometry
 /// press dragged off it does nothing, and the pointing hand shows over one. Some are dragged instead
 /// (a port's dot): past the drag threshold, a press on one starts what its plugin says a drag from it
 /// does, and released without a drag it does nothing; the open hand shows over one. Either way,
-/// `editor.hoveredButton` and `editor.pressedButton` say which to draw hovered and pressed. In other
-/// tools they're only drawn. A list: each plugin's buttons, found with the last plugin's first, since
+/// `editor.hoveredButton` and `editor.pressedButton` say which to draw hovered and pressed. A button
+/// may carry help (`help:`), which the canvas shows as the system tooltip while the pointer rests on
+/// it (`Tool.help`). In other tools they're only drawn. A list: each plugin's buttons, found with the last plugin's first, since
 /// overlays draw in plugin order.
 public enum CanvasButtons {}
 
@@ -24,6 +25,9 @@ extension CanvasButtons: ExtensionPoint {
 public struct CanvasButtonSource {
     let button: @MainActor (CanvasEditor, CGPoint) -> AnyHashable?
     let action: Action
+    /// What the button says it is, asked of the button hovered, only when the hover changes or a commit
+    /// may have changed it. Nil for a source whose buttons have none.
+    let help: (@MainActor (AnyHashable, CanvasEditor) -> String?)?
 
     enum Action {
         case click(@MainActor (AnyHashable, CanvasEditor) -> Void)
@@ -40,11 +44,16 @@ public struct CanvasButtonSource {
 extension PluginRegistrar {
     /// Buttons this plugin draws on the canvas (see `CanvasButtons`). `at` finds the one under a view
     /// point, the front-most if several, as any value the plugin knows it by; `click` does what it's
-    /// for. The select tool asks `at` as the pointer moves over the canvas, so keep it cheap.
+    /// for. The select tool asks `at` as the pointer moves over the canvas, so keep it cheap. `help` is
+    /// what the button says it is, shown as the system tooltip while the pointer rests on it: asked of
+    /// the one button hovered, when the hover begins and after a commit while it lasts, so it may read
+    /// the document; nil, or no `help`, shows none.
     public mutating func canvasButtons<Button: Hashable & Sendable>(at find: @escaping @MainActor (CanvasEditor, CGPoint) -> Button?,
-                                                                    click: @escaping @MainActor (Button, CanvasEditor) -> Void) {
+                                                                    click: @escaping @MainActor (Button, CanvasEditor) -> Void,
+                                                                    help: (@MainActor (Button, CanvasEditor) -> String?)? = nil) {
         contribute(CanvasButtonSource(button: { editor, point in find(editor, point).map(AnyHashable.init) },
-                                      action: .click { button, editor in (button.base as? Button).map { click($0, editor) } }),
+                                      action: .click { button, editor in (button.base as? Button).map { click($0, editor) } },
+                                      help: Self.erased(help)),
                    to: CanvasButtons.self)
     }
 
@@ -52,12 +61,22 @@ extension PluginRegistrar {
     /// `at` finds the one under a view point, as `canvasButtons(at:click:)`'s does; past the drag
     /// threshold, `drag` gets the one pressed and where it was pressed (world units), and returns the
     /// session that takes over the drag, or nil to do nothing. A press released without a drag does
-    /// nothing.
+    /// nothing. `help` is as `canvasButtons(at:click:help:)`'s.
     public mutating func canvasButtons<Button: Hashable & Sendable>(at find: @escaping @MainActor (CanvasEditor, CGPoint) -> Button?,
-                                                                    drag: @escaping @MainActor (Button, CGPoint, CanvasEditor) -> (any Session)?) {
+                                                                    drag: @escaping @MainActor (Button, CGPoint, CanvasEditor) -> (any Session)?,
+                                                                    help: (@MainActor (Button, CanvasEditor) -> String?)? = nil) {
         contribute(CanvasButtonSource(button: { editor, point in find(editor, point).map(AnyHashable.init) },
-                                      action: .drag { button, origin, editor in (button.base as? Button).flatMap { drag($0, origin, editor) } }),
+                                      action: .drag { button, origin, editor in (button.base as? Button).flatMap { drag($0, origin, editor) } },
+                                      help: Self.erased(help)),
                    to: CanvasButtons.self)
+    }
+
+    private static func erased<Button: Hashable & Sendable>(_ help: (@MainActor (Button, CanvasEditor) -> String?)?) -> (@MainActor (AnyHashable, CanvasEditor) -> String?)? {
+        guard let help else { return nil }
+        return { button, editor in
+            guard let button = button.base as? Button else { return nil }
+            return help(button, editor)
+        }
     }
 }
 
@@ -73,6 +92,10 @@ extension CanvasEditor {
         }
         return nil
     }
+
+    /// The help of the canvas button the pointer is over in the select tool, if its plugin gave any
+    /// (`canvasButtons(at:click:help:)`): what the canvas shows as the system tooltip.
+    public var hoveredButtonHelp: String? { selectionState?.hoveredHelp }
 
     /// The canvas button the pointer is over in the select tool: draw it hovered.
     public var hoveredButton: AnyHashable? { selectionState?.hoveredButton?.button }
@@ -104,6 +127,12 @@ extension CanvasEditor {
 struct ButtonHit {
     let source: CanvasButtonSource
     let button: AnyHashable
+
+    /// The button's help, nil if its plugin gave none or said none, or it's blank.
+    func help(in editor: CanvasEditor) -> String? {
+        guard let text = source.help?(button, editor), !text.isEmpty else { return nil }
+        return text
+    }
 }
 
 /// A canvas button was pressed. One that's clicked, released on it, is clicked; dragged off, it shows
@@ -146,7 +175,10 @@ extension PressingButtonSession: Session {
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         editor.pressedButton = nil
-        if case .click(let click) = source.action, editor.button(atViewPoint: pointer.view) == button { click(button, editor) }
+        if case .click(let click) = source.action, editor.button(atViewPoint: pointer.view) == button {
+            click(button, editor)
+            editor.selectionState?.askHoveredHelpAgain()
+        }
     }
 
     /// Escape lets go of the press without clicking, or before any drag. A dragged button's plugin

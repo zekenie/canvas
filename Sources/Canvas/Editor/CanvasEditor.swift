@@ -191,6 +191,39 @@ public final class CanvasEditor {
     /// unless the host says.
     public var hostViewsReach: CGFloat { max(coveredTop(board), 0) }
 
+    /// The host overlay that has the whole canvas just now (a palette, a popover, each over a scrim that takes the clicks around it),
+    /// by its plugin: nil while none does. One at a time: a plugin whose overlay takes the canvas says so as it opens
+    /// (`presentModalOverlay`), which closes the one that had it, and an overlay that sits where another's field is leaves its
+    /// place while another has the canvas. Observed.
+    public private(set) var modalOverlay: PluginID?
+    @ObservationIgnored private var modalOverlayDismiss: (@MainActor () -> Void)?
+
+    /// A card that hangs from no shape is showing (the command bar opened with nothing selected, hung from the top of the canvas's
+    /// clear part): the host overlays on that row (the board's funnel pill) leave their place while it shows, as for a modal overlay,
+    /// since a card is drawn in the canvas and an overlay is over it. Observed, which `card` is not.
+    public internal(set) var showsBoardCard = false
+
+    /// `id`'s overlay opens and has the canvas: the one that had it is closed by its `dismiss`, which `id`'s is given for the same.
+    /// Opening again while it has it changes nothing.
+    public func presentModalOverlay(_ id: PluginID, dismiss: @escaping @MainActor () -> Void) {
+        guard modalOverlay != id else {
+            modalOverlayDismiss = dismiss
+            return
+        }
+        let before = modalOverlayDismiss
+        modalOverlay = id
+        modalOverlayDismiss = dismiss
+        // After the change, so the one closed says it is closed (`dismissModalOverlay`) of an id that isn't the current one.
+        before?()
+    }
+
+    /// `id`'s overlay closed, however it was: it has the canvas no more. Nothing if another has it.
+    public func dismissModalOverlay(_ id: PluginID) {
+        guard modalOverlay == id else { return }
+        modalOverlay = nil
+        modalOverlayDismiss = nil
+    }
+
     /// The part of the view nothing the host puts over the canvas covers, on the board shown, in view
     /// points: the view, less what the host's chrome covers along its edges (`coveredEdges`) and,
     /// under the top's, what its views over the canvas cover there (`coveredTop`). What a fit fits
@@ -696,16 +729,22 @@ public final class CanvasEditor {
             defer { isTransacting = false }
             result = try body(&transaction)
         }
+        // What it moved onto another board and put down nowhere there is judged where it is: refused, it
+        // can't go back alone, so nothing commits.
+        if transaction.judgeCrossings() {
+            refuseChanges(to: transaction.refused, saying: transaction.refusalNotes)
+            return result
+        }
         // Committing can end editing, and an editing view may save as it closes: outside the
         // transaction, so it can.
         if transaction.hasChanges, isReplacingFile {
             commit(transaction)
         } else if transaction.hasChanges {
-            undoHistory.willCommit(transaction.changes, from: storedFile, name: name, coalescing: key, origin: origin)
+            undoHistory.willCommit(transaction.changes, from: storedFile, name: name, renaming: transaction.stepName, coalescing: key, origin: origin)
             commit(transaction)
             undoHistory.didCommit()
         }
-        if !transaction.refused.isEmpty { refuseChanges(to: transaction.refused) }
+        if !transaction.refused.isEmpty { refuseChanges(to: transaction.refused, saying: transaction.refusalNotes) }
         return result
     }
 
@@ -742,6 +781,8 @@ public final class CanvasEditor {
             defer { isTransacting = false }
             result = try body(&transaction)
         }
+        // Refused where it moved shapes and put them down nowhere (`judgeCrossings`), nothing commits.
+        guard !transaction.judgeCrossings() else { return result }
         // The owners too: an empty board isn't among the boards a deletion takes. Whatever the transaction
         // deleted counts, on whichever board, brought there or not.
         guard transaction.hasChanges, transaction.changes.boardsRemoved.isDisjoint(with: boardPath),
@@ -832,6 +873,14 @@ public final class CanvasEditor {
     /// transaction (a writer that finds the shape locked).
     public func refuseChanges(to ids: Set<ShapeID>) {
         for service in serviceOrder { service.didRefuseChanges(to: ids, in: self) }
+    }
+
+    /// `refuseChanges(to:)`, and what the places that refused said of it heard (`announce`), once each, in
+    /// order (`Admission.Verdict.refuses(shaking:saying:)`).
+    func refuseChanges(to ids: Set<ShapeID>, saying notes: [String]) {
+        if !ids.isEmpty { refuseChanges(to: ids) }
+        var said: Set<String> = []
+        for note in notes where said.insert(note).inserted { announce(note) }
     }
 
     /// The color a shape's symbol has wherever it is listed: the first color a plugin gives it
@@ -1364,6 +1413,9 @@ public final class CanvasEditor {
     /// is placed, nothing else happens (the tool stays, nothing's selected), and services hear the
     /// board's owner refused. (Other tools create shapes with `transact { $0.insert(...) }`, as a
     /// port's drag does.)
+    /// Where it settles, it's fitted to the place (`registrar.placementFit`, another kind only for a
+    /// placement whose kind is open, `Placement.kindIsOpen`) and settled again, in the same step; the
+    /// shape an editing placement edits is the fitted one.
     /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
     public func place(_ placement: Placement, at point: CGPoint) {
         put(placement.shape(at: point), placing: placement, from: undoHistory.isPressHeld && session == nil ? point : nil)
@@ -1404,7 +1456,8 @@ public final class CanvasEditor {
     /// `ids` with a box (and what's bound to them alone among `ids`, an arrow between two of them), grown
     /// by `padding` and to `minimumSize` (world units), in the innermost container they're all in, just
     /// below the lowest of them in the stack (`Transaction.enclose`). They stay where they are; what it
-    /// lands on beside them is settled as what a container's drawn over is, gliding there. One step,
+    /// lands on beside them is settled as what a container's drawn over is, gliding there. It's fitted to
+    /// where it goes (`registrar.placementFit`) before it holds them, as a placed shape is. One step,
     /// named as a placement's ("Add Frame", unless a group it's in names it); the default tool comes
     /// back (unless the tool is locked), and services hear `didPlace` (the selection selects it). All or nothing: if one it would
     /// hold is read-only (locked, in a locked container, or on a read-only board), nothing changes, no
@@ -1534,14 +1587,14 @@ public final class CanvasEditor {
         let follows = press != nil && undoHistory.isPressHeld && session == nil
         let before = follows ? undoHistory.snapshots() : [:]
         var nudges: [ShapeID: CGPoint] = [:]
-        if follows || registry.containingKinds.isEmpty {
+        if follows || registry.containingKinds.isEmpty && !registry.fitsPlacements {
             transact(placement.stepName) { transaction in
                 for record in records { transaction.insert(record) }
             }
         } else {
             guard let landed = transactWhole(placement.stepName, { transaction in
                 for record in records { transaction.insert(record) }
-                return transaction.settle(ids)
+                return transaction.settlePlaced(ids, kindIsOpen: false)
             }) else { return false }
             nudges = landed.nudges
         }
@@ -1549,7 +1602,7 @@ public final class CanvasEditor {
         setTool(registry.defaultTool)
         for service in serviceOrder { service.didPlace(ids, in: self) }
         if let press, follows {
-            session = PlacingSession(ids, from: press, edits: false, restoring: before, in: self)
+            session = PlacingSession(ids, from: press, edits: false, kindIsOpen: false, restoring: before, in: self)
             return true
         }
         glide(nudges)
@@ -1570,13 +1623,16 @@ public final class CanvasEditor {
         let follows = point != nil
         let before = follows ? undoHistory.snapshots() : [:]
         var nudges: [ShapeID: CGPoint] = [:]
-        if follows || registry.containingKinds.isEmpty {
+        if follows || registry.containingKinds.isEmpty && !registry.fitsPlacements {
             transact("Add \(label ?? "Shape")") { $0.insert(record) }
         } else {
-            // A refusal throws the insert away with it: nothing is placed, and the container shakes.
+            // A refusal throws the insert away with it: nothing is placed, and the container shakes. It's
+            // fitted to where it lands (`registrar.placementFit`) and settled again, in the same step.
             guard let landed = transactWhole("Add \(label ?? "Shape")", { transaction in
                 transaction.insert(record)
-                return transaction.settle([record.id])
+                let settled = transaction.settlePlaced([record.id], kindIsOpen: placement.kindIsOpen)
+                if placement.kindIsOpen { transaction.nameStepForLanding(of: record.id, putDownAs: record.kind, tools: registry.tools) }
+                return settled
             }) else { return }
             nudges = landed.nudges
         }
@@ -1584,7 +1640,7 @@ public final class CanvasEditor {
         for service in serviceOrder { service.didPlace([record.id], in: self) }
         let edits = placement.completion == .edit
         if let point, session == nil {
-            session = PlacingSession([record.id], from: point, edits: edits, restoring: before, in: self)
+            session = PlacingSession([record.id], from: point, edits: edits, kindIsOpen: placement.kindIsOpen, restoring: before, in: self)
             return
         }
         // Its editing view is laid out where it is.
@@ -1740,6 +1796,11 @@ public final class CanvasEditor {
         }
         undoHistory.editingEnded()
         for service in serviceOrder { service.editingDidEnd(id, in: self) }
+    }
+
+    /// Every service of a rehearsal hears whose it is (`rehearsalDidBegin`), in order.
+    func tellRehearsalBegan(from source: CanvasEditor) {
+        for service in serviceOrder { service.rehearsalDidBegin(from: source, in: self) }
     }
 
     /// Every service hears shapes laid out again with no commit (`shapesDidChangeLayout`), in order.

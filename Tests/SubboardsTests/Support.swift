@@ -6,6 +6,7 @@ import CanvasTesting
 import CanvasUI
 import Colors
 import Connections
+import Constraints
 import ContextMenus
 import DetailPanel
 import Keyboard
@@ -28,7 +29,7 @@ import Types
 @MainActor func subboardPlugins() -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), SubboardsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
      SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), PortsPlugin(), TitlesPlugin(), MentionsPlugin(), BoardsPlugin(),
-     TransformPlugin(), ColorsPlugin(), TypesPlugin()]
+     TransformPlugin(), ColorsPlugin(), ConstraintsPlugin(), TypesPlugin()]
 }
 
 /// A channel of another plugin's, which a subboard has ports on too: it takes every channel there is.

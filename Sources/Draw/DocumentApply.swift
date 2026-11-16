@@ -81,6 +81,8 @@ struct DocumentRun {
     /// What the runs said, each with the shape whose issue it is: the drawing's own shapes' issues are said once, at the end.
     private var warnings: [(about: ShapeID?, said: DocumentResult.Warning)] = []
     private var warned: Set<String> = []
+    /// Each shape of the drawing with the issues its run said of it, for the second look once the answers have come.
+    private var drawnIssues: [DocumentAftermath.Drawn] = []
     /// The edges whose pill was put where the document says now.
     private var movedPills: Set<Int> = []
 
@@ -686,6 +688,7 @@ struct DocumentRun {
             if let pill = row.standIn { own(pill, key: nil, edge: edge.index) }
         }
         warnings.removeAll { warning in warning.about.map { drawn[$0] != nil } ?? false }
+        drawnIssues = []
         var contexts: [BoardID: ShapeContext] = [:]
         for id in order {
             guard let board = copy.file.board(containing: id), let owner = drawn[id] else { continue }
@@ -694,6 +697,7 @@ struct DocumentRun {
             guard let shapes = contexts[board], let record = shapes.shape(id) else { continue }
             let found = registry.drawCheck.map { $0.check(record, shapes) }
                 ?? registry.schemaViolations(of: record).map { DrawIssue($0.message, field: $0.property) }
+            drawnIssues.append(DocumentAftermath.Drawn(id: id, key: key, edge: edge, said: found))
             for issue in found where !issue.isIncomplete {
                 let severity: DrawWarning.Severity = issue.isError ? .error : .warning
                 let name = key.map(quoted) ?? "edges[\(edge ?? 0)]"
@@ -780,7 +784,9 @@ struct DocumentRun {
     }
 
     /// A message with each id it names of the document's shapes said as that node's key.
-    private func keyed(_ message: String) -> String {
+    private func keyed(_ message: String) -> String { Self.keyed(message, ids: ids) }
+
+    private static func keyed(_ message: String, ids: [String: ShapeID]) -> String {
         guard message.contains(ShapeName.idMark) else { return message }
         var out = message
         for (key, id) in ids where out.contains(id.description) {
@@ -818,8 +824,14 @@ struct DocumentRun {
         let deleted = deletes.filter { gone in document.node(gone.key).map { ids[$0.key] != gone.id } ?? true }
             .map { DocumentResult.Deleted(key: $0.key, id: $0.id.description) }
         let board = top.owner.flatMap { copy.file.record($0) }.flatMap { registry.drawNaming?.name($0, registry) }
-        return DocumentResult(drawing: name, dryRun: dryRun ? true : nil, on: DrawBoardSaid(board: top.description, title: board),
-                              nodes: nodes, edges: edgeVerdicts, deleted: deleted, warnings: warnings.map(\.said))
+        var result = DocumentResult(drawing: name, dryRun: dryRun ? true : nil, on: DrawBoardSaid(board: top.description, title: board),
+                                    nodes: nodes, edges: edgeVerdicts, deleted: deleted, warnings: warnings.map(\.said))
+        // A check's answers that come after the drawing is in the file are said then (`laterIssues`).
+        if !dryRun, registry.drawCheck != nil, !drawnIssues.isEmpty {
+            let ids = ids
+            result.aftermath = DocumentAftermath(drawn: drawnIssues, keyed: { Self.keyed($0, ids: ids) })
+        }
+        return result
     }
 }
 

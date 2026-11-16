@@ -630,6 +630,8 @@ extension Severity {
 
 @MainActor
 enum ValidationStyle {
+    /// The Rules tab's title.
+    nonisolated static let rulesTab = "Rules"
     static let error = NSColor.systemRed
     static let warning = NSColor.systemOrange
     // View points.

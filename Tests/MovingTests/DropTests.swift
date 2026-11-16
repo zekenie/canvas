@@ -176,7 +176,7 @@ private let viewSize = CGSize(width: 1000, height: 700)
                                                             box(s, 140, 140, in: g), box(a, 2000, 2000))))
         h.editor.put([a], in: f)
         let before = h.file, step = h.editor.undoHistory.undoName
-        expect(h.drop([s], on: a, .above), "the list took the drop")
+        expect(!h.drop([s], on: a, .above), "the list was asked and moved nothing: no drop")
         expectEqual(h.file, before, "it would only have gone back into the inner corral")
         expectEqual(h.editor.undoHistory.undoName, step)
     },
@@ -208,6 +208,27 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expectEqual(h.editor.holder(of: s), nil)
         expectEqual(h.editor.undoHistory.undoName, step, "no step")
     },
+    test("not taken: a corral, or a pocket's board, that a plugin's judge refuses the shapes (a drop's try, as the canvas drag's hint asks): neither offered nor dropped on, while a place it takes and one the shapes are in are as before") {
+        let picky = Picky()
+        let f = ShapeID(), g = ShapeID(), p = ShapeID(), q = ShapeID(), s = ShapeID(), d = ShapeID(), inside = ShapeID()
+        let h = try droppingHarness(CanvasFile(root: board(corral(f, at(100, 100, 600, 400)), corral(g, at(100, 700, 600, 400)), pocket(p, 2000, 0), pocket(q, 2400, 0),
+                                                            box(s, 3000, 3000), box(inside, 140, 740, in: g), AnyShapeRecord(ShapeRecord(id: d, Disc(at(3200, 3000))))),
+                                            children: [p: board(), q: board()]), [picky.plugin])
+        picky.places = [.container(f), .board(BoardID(owner: p))]
+        expect(!h.admitsDrop([s], on: f, .on), "a corral that refuses boxes")
+        expect(!h.admitsDrop([s], on: p, .on), "a pocket whose board refuses them")
+        expect(h.admitsDrop([s], on: g, .on) && h.admitsDrop([s], on: q, .on), "places that take them")
+        expect(h.admitsDrop([d], on: f, .on), "what it judges nothing of")
+        expect(!h.admitsDrop([inside], on: g, .on), "the corral it is in: nothing moves")
+        let step = h.editor.undoHistory.undoName
+        expect(!h.drop([s], on: f, .on))
+        expect(!h.drop([s], on: p, .on))
+        expectEqual(h.editor.holder(of: s), nil)
+        expectEqual(h.file.board(containing: s), .root)
+        expectEqual(h.editor.undoHistory.undoName, step, "no step")
+        picky.places = []
+        expect(h.admitsDrop([s], on: f, .on), "offered again once it takes them")
+    },
     test("a frozen shape's row doesn't drag, and isn't among a selection's that do") {
         let f = ShapeID(), s = ShapeID(), t = ShapeID()
         let h = try droppingHarness(CanvasFile(root: board(corral(f, at(100, 100, 600, 400)), box(s, 1000, 1000), box(t, 1200, 1000))))
@@ -227,10 +248,24 @@ private let viewSize = CGSize(width: 1000, height: 700)
         h.editor.freeze([k])
         let before = h.file, step = h.editor.undoHistory.undoName
         // No room in F clear of the frozen corral filling it: at F's top-left, 40 in, over it, so that one would take it.
-        expect(h.drop([s], on: f, .on), "the list took the drop")
+        expect(!h.drop([s], on: f, .on), "the list was asked and moved nothing: no drop")
         expectEqual(h.editor.holder(of: s), nil)
         expectEqual(h.file, before)
         expectEqual(h.editor.undoHistory.undoName, step, "no step")
         expectEqual(log.refusals.last, [k])
+    },
+    test("a row of a pocket's board dropped on a corral on another board that refuses boxes is not offered and not taken: the movers are asked about on their own board") {
+        let picky = Picky()
+        let p = ShapeID(), s = ShapeID(), f = ShapeID()
+        let h = try droppingHarness(CanvasFile(root: board(pocket(p, 0, 0), corral(f, at(400, 100, 600, 400))), children: [p: board(box(s, 100, 100))]), [picky.plugin])
+        picky.places = [.container(f)]
+        expect(!h.admitsDrop([s], on: f, .on), "the corral refuses a box that is on another board")
+        expect(!h.drop([s], on: f, .on))
+        expectEqual(h.file.board(containing: s), BoardID(owner: p))
+        picky.places = []
+        expect(h.admitsDrop([s], on: f, .on), "offered once it takes boxes")
+        expect(h.drop([s], on: f, .on))
+        expectEqual(h.file.board(containing: s), .root, "and the move happens")
+        expectEqual(h.editor.holder(of: s), f)
     },
 ])

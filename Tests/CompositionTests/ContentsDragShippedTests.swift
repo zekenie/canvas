@@ -2,12 +2,14 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Constraints
 import CoreGraphics
 import Frames
 import LanguageModels
 import Locking
 import Mentions
 import Selection
+import SlashCommands
 import ShippedTesting
 import StickyNotes
 import Subboards
@@ -88,5 +90,46 @@ import TestKit
         d.editor.transact { $0.update(d.groceries) { $0[LockedProperty.self] = true } }
         expect(d.contents.beginDrag(from: d.other))
         expect(!d.contents.admits(ContentsDropTarget(row: d.groceries, zone: .on)))
+    },
+    test("a frame, or a subboard, whose constraints refuse a note is no drop target for its row, as a locked one isn't: no highlight, no move, no step; a frame that takes it still does") {
+        let d = Desk()
+        let onlyFrames = ConstraintList([Constraint(says: "only frames", query: "frame")])
+        d.editor.transact { transaction in
+            transaction.update(d.groceries) { $0[ConstraintsProperty.self] = onlyFrames }
+            transaction.update(d.plans) { $0[ConstraintsProperty.self] = onlyFrames }
+        }
+        let index = d.editor.constraintIndex
+        expect(spinRunLoop(until: { index?.isSettled ?? true }, timeout: 5), "the constraints settle")
+        let step = d.editor.undoHistory.undoName
+        let move = try require(d.editor.slashCommands?.command(named: "move-to", for: .selection([d.note])))
+        expect(!move.admits(d.groceries) && !move.admits(d.plans), "/move-to's picker offers neither")
+        expect(d.contents.beginDrag(from: d.note))
+        expect(!d.contents.admits(ContentsDropTarget(row: d.groceries, zone: .on)), "a frame that takes only frames")
+        expect(!d.contents.admits(ContentsDropTarget(row: d.plans, zone: .on)), "a subboard whose board takes only frames")
+        expect(!d.contents.admits(ContentsDropTarget(row: d.inside, zone: .above)), "among the rows of the frame")
+        let before = d.editor.file
+        expect(!d.contents.drop(on: ContentsDropTarget(row: d.groceries, zone: .on)))
+        expectEqual(d.editor.file, before)
+        expectEqual(d.editor.undoHistory.undoName, step, "no step")
+        let free = d.editor.add(Frame(frame: CGRect(x: 100, y: 1400, width: 600, height: 400)), title: "Free")
+        expect(move.admits(free), "/move-to offers it")
+        expect(d.drop(d.note, on: free, .on), "a frame with no list takes it")
+        expectEqual(d.holder(of: d.note), free)
+    },
+    test("a drop the try admitted before the answer landed, and the commit refuses once it has, is no drop: the list says so, nothing moves, no step") {
+        let d = Desk()
+        let onlyFrames = ConstraintList([Constraint(says: "only frames", query: "frame")])
+        d.editor.transact("Constrain") { $0.update(d.groceries) { $0[ConstraintsProperty.self] = onlyFrames } }
+        let index = try require(d.editor.constraintIndex)
+        expect(index.isBusy, "the first answer is out")
+        expect(d.contents.beginDrag(from: d.note))
+        let target = ContentsDropTarget(row: d.groceries, zone: .on)
+        expect(d.contents.admits(target), "no answer for the note yet: the try admits it")
+        expect(spinRunLoop(until: { index.isSettled }, timeout: 5), "the constraints settle")
+        let before = d.editor.file, step = d.editor.undoHistory.undoName
+        expect(!d.contents.drop(on: target), "the commit is refused")
+        expectEqual(d.editor.file, before)
+        expectEqual(d.editor.undoHistory.undoName, step, "no step")
+        expectEqual(d.contents.dragShapes, nil, "the drag is over")
     },
 ])

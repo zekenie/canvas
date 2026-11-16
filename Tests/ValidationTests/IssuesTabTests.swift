@@ -86,6 +86,23 @@ extension EditorHarness {
         h.editor.transact { $0.update(tag, as: Tag.self) { $0.props.target = box } }
         expectEqual(try h.layout(tag).tabs, [])
     },
+    test("the Rules tab is Validation's: it shows only where a plugin puts a section in it, before Style and Issues") {
+        let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), emptyBoxRules, boxSections, Contributor(id: "rules-section") { r in
+            r.detailsForEveryBox { DetailSection(in: StyleTab.self, id: "style") { _ in Text("Style") } }
+            r.forEveryShape { every in
+                every.details {
+                    DetailSection<AnyShapeRecord>(in: RulesTab.self, id: "held") { _ in Text("Held") }
+                        .shownWhile { shape, _ in shape.box?.width == 0 }
+                }
+            }
+        }])
+        let flat = h.add(Box(.zero))
+        let fine = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
+        expectEqual(RulesTab.title, "Rules")
+        expectEqual(try h.layout(flat).tabs.map(\.title), ["Box", "Rules", "Style", "Issues"])
+        expectEqual(try h.layout(flat).sections(in: .of(RulesTab.self)).map(\.section), ["held"])
+        expectEqual(try h.layout(fine).tabs.map(\.title), ["Box", "Style"], "no section in it, no tab")
+    },
     test("without validation installed, there's no Issues tab") {
         let h = try harness([DetailPanelPlugin(), ValidationDetailsPlugin()])
         expectEqual(try h.layout(h.add(Box(.zero))).tabs, [])

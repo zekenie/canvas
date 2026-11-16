@@ -2,6 +2,7 @@ import Boards
 import Canvas
 import Colors
 import Connections
+import Constraints
 import CoreGraphics
 import Keyboard
 import Mentions
@@ -84,6 +85,7 @@ public struct SubboardsPlugin: ListedPlugin {
             sub.subboardLinks()                            // and ports: arrows to and from a subboard, on its channel and every other
             sub.typeWords(\.description, drawnIn: { _ in nil })   // its description is its words, drawn nowhere: what a type's fields fill from
             sub.typeable()                                 // and it can be of types: chips above it, its values in the panel's Types tab
+            sub.constrainable()                            // and its board can say what it accepts: its funnel chip, its Rules tab
             sub.accessibility { sub, editor in             // VoiceOver reads what its board holds as its value, as its card says it: "3 shapes"
                 AccessibleTraits(value: SubboardStyle.caption(of: editor.file[BoardID(owner: sub.id)].shapes.count))
             }

@@ -335,6 +335,11 @@ final class ErasedSlashCommand {
     let answer: (@MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Task<SlashAnswer, Never>)?
     let waiting: String?
     let runAbout: (@MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Void)?
+    /// For one about the target that takes a choice (`SelectionSlashCommand.choosing`): its rows, and what a pick runs.
+    let choicesAbout: (@MainActor (SlashTarget, CanvasEditor) -> [SlashChoice])?
+    let chooseAbout: (@MainActor (SlashTarget, SlashChoice, CanvasEditor) -> Void)?
+    /// For one about the target that names it with nothing selected (`SelectionSlashCommand.naming(everything:)`).
+    let everythingName: (@MainActor (CanvasEditor) -> String)?
 
     /// `read` gets the command's value from a record; `write` runs an edit on one shape's live
     /// value, in a transaction.
@@ -357,6 +362,9 @@ final class ErasedSlashCommand {
         answer = nil
         waiting = nil
         runAbout = nil
+        choicesAbout = nil
+        chooseAbout = nil
+        everythingName = nil
         switch command.action {
         case .edit(let edit):
             run = { ids, arguments, editor in
@@ -394,13 +402,23 @@ final class ErasedSlashCommand {
         runChoice = nil
         isOfferedFor = command.isOffered
         waiting = command.waiting
+        everythingName = command.everythingName
         switch command.action {
         case .answer(let answer):
             self.answer = answer
             runAbout = nil
+            choicesAbout = nil
+            chooseAbout = nil
         case .run(let run):
             answer = nil
             runAbout = run
+            choicesAbout = nil
+            chooseAbout = nil
+        case .choose(let choices, let perform):
+            answer = nil
+            runAbout = nil
+            choicesAbout = choices
+            chooseAbout = perform
         }
     }
 

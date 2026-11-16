@@ -65,11 +65,16 @@ public protocol ClickableAdornment: Adornment {
     /// What VoiceOver calls a label of it with no text (a symbol alone): by default its type's name in words,
     /// "Lock Chip".
     static var partTitle: String { get }
+    /// What the canvas shows as the system tooltip while the pointer rests on the chip, asked of the one hovered
+    /// (when the hover begins and after a commit while it lasts: it may read the document, not cheaply): nil, by
+    /// default, for none. The click says which of a group's chips, and on which shape.
+    @MainActor static func help(for click: AdornmentClick, in editor: CanvasEditor) -> String?
     /// What its click is to VoiceOver: `.button` by default, `.menuButton` for one whose click pops a menu.
     static var partRole: PartRole { get }
 }
 
 extension ClickableAdornment {
+    @MainActor public static func help(for click: AdornmentClick, in editor: CanvasEditor) -> String? { nil }
     public static var partTitle: String { AdornmentID.of(Self.self).spokenName }
     public static var partRole: PartRole { .button }
 }
@@ -228,6 +233,15 @@ public struct AdornmentTint: Hashable, @unchecked Sendable {
     }
 }
 
+extension AdornmentTint {
+    /// What a light tint's capsule is filled with and lined with, in the color `color` (it is a dynamic color's, resolved where it
+    /// is drawn): the look of a light chip, for a pill that floats by itself in the same tint (Constraints' funnel on a board).
+    @MainActor
+    public var lightFill: NSColor { color.withAlphaComponent(AdornmentStyle.lightFill[0]) }
+    @MainActor
+    public var lightLine: NSColor { edge ?? color.withAlphaComponent(AdornmentStyle.lightLine) }
+}
+
 /// What an adornment shows on one shape. Adornments draws it, so every plugin's look alike (as
 /// `ContentsLabel` does for rows): a capsule in the title pill's dark gray (green for something
 /// done), white text on one line (dimmed for a placeholder's), a small symbol before it if it has
@@ -284,6 +298,9 @@ public struct AdornmentLabel: Hashable, Sendable {
     /// A word after the text in the ink of the number (`noted(_:)`): what a relationship's pill says of its
     /// first filled value. Kept whole where the text gives way, as a number is.
     public private(set) var note: String? = nil
+    /// What VoiceOver calls the chip's part in place of its text or its adornment's `partTitle` (`spoken(_:)`): a chip
+    /// that says more than it shows ("Constraints, 2 not accepted").
+    public private(set) var spokenName: String? = nil
     /// No text: a dot or a dashed outline (`mark(_:)`), the lead's narrowest face and its offer.
     public private(set) var mark: Mark? = nil
     /// The faces the label's place may take instead, widest first (`narrowing(to:)`): at the lead of an
@@ -387,6 +404,15 @@ public struct AdornmentLabel: Hashable, Sendable {
         var label = self
         let words = note.map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
         label.note = text == nil || lineInk != nil || words?.isEmpty != false ? nil : words
+        return label
+    }
+
+    /// The same label, its part named `name` to VoiceOver where the chip is clickable (by default its text, else its
+    /// adornment's `partTitle`): for a chip whose figure or symbol says more than it shows. Blank is none.
+    public func spoken(_ name: String) -> AdornmentLabel {
+        var label = self
+        let words = name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        label.spokenName = words.isEmpty ? nil : words
         return label
     }
 
@@ -557,6 +583,8 @@ public struct AdornmentContribution {
     let isGroup: Bool
     /// From the type's `ClickableAdornment` conformance, if it has one.
     let click: (@MainActor (AdornmentClick, CanvasEditor) -> Void)?
+    /// From the type's `ClickableAdornment.help(for:in:)`.
+    let help: (@MainActor (AdornmentClick, CanvasEditor) -> String?)?
 
     init<A: Adornment>(_: A.Type, label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
         self.init(A.self, isGroup: false) { shape, context in label(shape, context).map { [$0] } ?? [] }
@@ -568,8 +596,10 @@ public struct AdornmentContribution {
         self.labels = labels
         if let clickable = A.self as? any ClickableAdornment.Type {
             click = { click, editor in clickable.click(click, in: editor) }
+            help = { click, editor in clickable.help(for: click, in: editor) }
         } else {
             click = nil
+            help = nil
         }
     }
 }
@@ -737,7 +767,8 @@ public struct AdornmentsPlugin: ListedPlugin {
         registrar.overlay(AdornmentOverlay())
         // A clickable adornment is a canvas button: the select tool clicks it before anything else.
         registrar.canvasButtons(at: { editor, point in editor.adornmentState?.button(atViewPoint: point) },
-                                click: { button, editor in editor.adornmentState?.click(button) })
+                                click: { button, editor in editor.adornmentState?.click(button) },
+                                help: { button, editor in editor.adornmentState?.help(of: button) })
         // Any other adornment is its shape's: a press, a hover or a double-click on it is on the
         // shape. Every one, a button too, is its shape's for a right-click.
         registrar.decorationHits { editor, point, include in editor.adornmentState?.shape(at: point, where: include) }

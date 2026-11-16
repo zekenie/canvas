@@ -81,6 +81,22 @@ private nonisolated func plainTextOffMain(_ text: MentionText, _ labels: Mention
         expectEqual(l.state.labels.label(of: l.errands), "Errands", "mentioned anew")
         expectEqual(l.state.labels.label(of: l.groceries), nil, "no longer mentioned")
     },
+    test("how far the labels have come moves with a mentioned shape's name, and not with words that leave the mentions as they were") {
+        let l = try Labelled()
+        var revision = l.state.labelsRevision
+        l.editor.transact { $0.update(l.errands) { $0[TitleProperty.self] = "Chores" } }
+        expectEqual(l.state.labelsRevision, revision, "a shape nothing mentions renamed")
+        l.editor.transact { $0.moveBox(l.milk, to: CGPoint(x: 300, y: 300)) }
+        expectEqual(l.state.labelsRevision, revision, "a mentioned shape moved")
+        l.editor.setText(l.jot, mentioning([.text("Buy more "), .mention(l.groceries, label: "Old name"), .text(", "), .mention(l.milk, label: "Milk"),
+                                            .text(", "), .mention(l.box, label: "Box"), .text(" and "), .mention(l.gone, label: "Gone")]))
+        expectEqual(l.state.labelsRevision, revision, "words typed beside the same mentions")
+        l.editor.transact { $0.update(l.milk, as: Token.self) { $0.props.caption = "Oat milk" } }
+        expect(l.state.labelsRevision != revision, "a mentioned shape renamed")
+        revision = l.state.labelsRevision
+        l.editor.setText(l.jot, mentioning([.mention(l.errands, label: "E")]))
+        expect(l.state.labelsRevision != revision, "a shape mentioned anew, and others no longer")
+    },
     test("labels taken are as the file was then: a rename after doesn't change them") {
         let l = try Labelled()
         let taken = l.state.labels

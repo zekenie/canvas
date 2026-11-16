@@ -447,7 +447,7 @@ private func ids(_ document: CanvasDocument) -> [ShapeID] { document.shapes.map(
             try h.editor.transact("Move") { transaction in
                 expect(transaction.move([a], to: pBoard))
                 let settled = transaction.settle([a], on: pBoard)
-                expectEqual(settled, .refused(by: k))
+                expectEqual(settled, .refused(by: [k]))
                 expectEqual(transaction.refusedShapes, [k])
                 expectEqual(transaction.contents(of: pBoard).shapes.map(\.container), [nil, nil], "nothing changed there")
                 if case .refused = settled { throw Refused() }

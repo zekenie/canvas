@@ -270,6 +270,11 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expect(rule.hasSuffix(".\n") && !rule.dropLast().contains("\n"), "the rule is one line, with its line break")
         expectEqual(QueryPrompt.referenceRule + "\n", rule, "which the translator takes without the break")
         expectEqual(QueryPrompt.system, prompt)
+        let accepts = try String(contentsOfFile: "Shipped/\(QueryTranslationPlugin.acceptsFile).txt", encoding: .utf8)
+        expect(ShippedText.named(QueryTranslationPlugin.acceptsFile) == accepts, "and the accepts line")
+        expect(accepts.hasSuffix(".\n") && !accepts.dropLast().contains("\n"), "the accepts line is one line, with its line break")
+        expect(accepts.contains("{holder}") && accepts.components(separatedBy: "{holder}").count == 2, "it names its holder once")
+        expectEqual(QueryPrompt.acceptsLine + "\n", accepts, "which the translator takes without the break")
         expectEqual(ShippedText.named("no-such-text"), nil, "a name the folder has no file of")
     },
     test("the request built by the shipped list carries <fields> after <titles>, then <instances> and <connections> last, the file's types, their fields, which shapes are of each and how arrows join them, and no types' blocks for a file with none") {
@@ -344,6 +349,29 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expect(!(stored.messages.first?.text ?? "").contains("Selected:"), "no selection in <board>")
         expect((person.messages.first?.text ?? "").contains("Selected:"), "a person's has it")
         expect(QueryPrompt.referenceRule.contains(":selected"), "the line names the word the examples teach")
+    },
+    test("an accepting query's request carries the product's accepts line after the rule line, the holder filled in, and the stored vocabulary and board") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(answers: ["sticky-note", "sticky-note"])
+        let h = try QueryStory.harness(pasteboard: pasteboard, model: model)
+        let translator = try require(h.editor.queryTranslator)
+        _ = try awaitResult { try await translator.translate("only notes", about: .accepting(holder: "Payments")) }
+        _ = try awaitResult { try await translator.translate("only notes", about: .accepting(holder: "each Sprint")) }
+        let first = try require(model.requests.first), second = try require(model.requests.last)
+        let line = QueryPrompt.acceptsLine
+        expectEqual(first.system, QueryPrompt.system + "\n" + QueryPrompt.referenceRule + "\n" + line.replacingOccurrences(of: "{holder}", with: "Payments"))
+        expect(second.system?.contains("which shapes each Sprint accepts") == true)
+        expect(line.contains(":not") && line.contains("no bugs"), "it says a negative phrase is a :not")
+        let text = first.messages.first?.text ?? ""
+        expect(text.hasPrefix("<question>\nonly notes\n</question>"), "the words are the question")
+        expect(!text.contains("Selected:") && !text.contains(":selected"), "no selection, and no word that reads the editor")
+        expect(!text.contains("- :scope"), "nor the :scope words of a bound query")
+        // A plain stored request has none of it.
+        let plain = ScriptedLanguageModel(answers: ["sticky-note"])
+        let there = try QueryStory.harness(pasteboard: pasteboard, model: plain)
+        _ = try awaitResult { try await there.editor.queryTranslator?.translate("notes", about: .stored()) }
+        expectEqual(plain.requests.first?.system, QueryPrompt.system + "\n" + QueryPrompt.referenceRule)
     },
     test("a bound query's request carries the product's bound line after the rule line, its type, shapes and sentence filled in, and the :scope words; arrows' ends too") {
         let pasteboard = NSPasteboard.withUniqueName()

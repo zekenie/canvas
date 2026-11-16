@@ -2,6 +2,7 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Constraints
 import CoreGraphics
 import Frames
 import LanguageModels
@@ -79,6 +80,34 @@ import TestKit
         expectEqual(e.frame(e.note)?.origin, CGPoint(x: 100, y: 100), "Undo Move")
         expectEqual(e.editor.document.container(of: e.note, containingKinds: e.editor.registry.containingKinds), nil)
         expectEqual(e.editor.undoHistory.undoName, "Typing", "the step before it is the typing")
+    },
+
+    test("/move-to @ typed in the note's own editor, with time between the keys: a frame whose constraints refuse the note is never listed, as a locked one isn't (each keystroke asks the standing query again), and one that takes it is, and the note goes there") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let e = Errands(pasteboard)
+        let free = e.editor.add(Frame(frame: CGRect(x: 1400, y: 700, width: 600, height: 500)), title: "Free")
+        let onlyFrames = ConstraintList([Constraint(says: "only frames", query: "frame")])
+        e.editor.transact("Constrain") { $0.update(e.groceries) { $0[ConstraintsProperty.self] = onlyFrames } }
+        let index = try require(e.editor.constraintIndex)
+        @MainActor func settle() { expect(spinRunLoop(until: { index.isSettled }, timeout: 5), "the constraints settle") }
+        settle()
+        let view = try e.type("/move-to @")
+        @MainActor func listed() -> [ShapeID] { view.picker?.rows.compactMap(\.candidate?.id) ?? [] }
+        expectEqual(listed(), [e.plans, free], "Groceries refuses a note")
+        for key in "Fre" {
+            settle()
+            e.window.type(String(key))
+            expect(index.isBusy, "the keystroke is an edit: the note's answer is asked again")
+            expectEqual(listed().contains(e.groceries), false, "not listed while it is")
+        }
+        expectEqual(listed(), [free])
+        settle()
+        e.window.pressReturn()
+        e.window.pressReturn()
+        e.window.settle()
+        expectEqual(e.editor.document.container(of: e.note, containingKinds: e.editor.registry.containingKinds), free, "the note moved there")
+        expectEqual(e.editor.undoHistory.undoName, "Move")
     },
 
     test("/move-to for three notes selected puts them in the frame as one block, each where it was to the others, 40 in from the frame's top-left; one step, Undo Move, takes them all back") {

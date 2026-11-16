@@ -30,7 +30,7 @@ extension QueryPlan {
             guard let kind = kindOf(id), !vocabulary.containerKinds.contains(kind), vocabulary.kind(kind) != nil else { continue }
             resolver.problem(QueryError(.cannotContain,
                                         "#\(id.rawValue.uuidString) is \(indefinite(kind.rawValue)), which holds no shapes: nothing is inside it. \(Resolver.notSpatial)",
-                                        hint: vocabulary.containersListed, span: span))
+                                        hint: vocabulary.containersListed, span: span, subject: .shape(id.rawValue)))
         }
         if let problems = resolver.collected { throw problems }
         guard let root else { throw QueryError(.syntax, "The query can't be read.") }

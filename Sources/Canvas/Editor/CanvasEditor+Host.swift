@@ -15,6 +15,14 @@ extension CanvasEditor {
         return isHandHeld ? .openHand : currentTool.cursor(in: self)
     }
 
+    /// The help the view shows as the system tooltip under the pointer: the current tool's (`Tool.help`),
+    /// nil while a press runs or the hand is held (and off the canvas, as a tool clears its hover on `pointerExited`). Set again whenever the
+    /// cursor is (`refreshCursor`).
+    @_spi(Host) public var pointerHelp: String? {
+        guard session == nil, !isHandHeld else { return nil }
+        return currentTool.help(in: self)
+    }
+
     /// The view's new size, in view points.
     @_spi(Host) public func viewportDidResize(to size: CGSize) {
         viewportSize = size

@@ -145,32 +145,6 @@ struct RuleChipLines: View {
             writeQuery: { [weak chips] text in chips?.write(text, forChip: phrase, of: says, type: type) },
             retry: { [weak chips] in chips?.retry(phrase, type: type) },
             interpret: { [weak chips] in chips?.interpret(phrase, type: type) },
-            completions: editor?.queries.map { RuleChipCompletions.completer(for: $0.vocabulary) })
-    }
-}
-
-/// What can be typed in a chip's query: the words (but those that read what the person has selected or looks at, and
-/// with the shape checked's), after a `:`, else the kinds.
-enum RuleChipCompletions {
-    @MainActor static func completer(for vocabulary: QueryVocabulary) -> DetailCodeCompleting {
-        // A word is listed without its colon (`edge-to`), and the range a pick replaces starts at the colon.
-        let words = vocabulary.words.filter { !$0.readsEditor }.map { DetailCodeCompletion(label: ":" + $0.word, detail: $0.summary, insert: ":" + $0.word) }
-            + RulesStyle.scopeWords.map { DetailCodeCompletion(label: $0.word, detail: $0.summary, insert: $0.word) }
-        let kinds = vocabulary.kinds.map { DetailCodeCompletion(label: $0.kind.rawValue, detail: $0.label, insert: $0.kind.rawValue) }
-        return { text, caret in
-            let units = Array(text.utf16)
-            guard caret <= units.count else { return nil }
-            var start = caret
-            while start > 0, let scalar = Unicode.Scalar(units[start - 1]),
-                  CharacterSet.alphanumerics.contains(scalar) || scalar == "-" || scalar == ":" {
-                start -= 1
-                if scalar == ":" { break }
-            }
-            let token = String(utf16CodeUnits: Array(units[start..<caret]), count: caret - start)
-            let range = NSRange(location: start, length: caret - start)
-            if token.hasPrefix(":") { return DetailCodeCompletions(range: range, query: token, items: words) }
-            guard !token.isEmpty else { return nil }
-            return DetailCodeCompletions(range: range, query: token, items: kinds)
-        }
+            completions: editor?.queries.map { QueryCompletions.completer(for: $0.vocabulary, extraWords: RulesStyle.scopeWords) })
     }
 }

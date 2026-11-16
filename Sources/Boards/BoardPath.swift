@@ -63,10 +63,20 @@ public struct BoardPath: View {
     @MainActor
     public static func coveredHeight(on board: BoardID) -> CGFloat {
         guard !board.isRoot else { return 0 }
-        let font = NSFont.systemFont(ofSize: BoardsStyle.fontSize, weight: .medium)
-        let pill = 2 * BoardsStyle.verticalPadding + (font.ascender - font.descender + font.leading).rounded(.up)
-        return BoardsStyle.topInset + pill + ChromeStyle.floatShadowReach
+        return BoardsStyle.topInset + pillHeight + ChromeStyle.floatShadowReach
     }
+
+    /// How tall the pill is.
+    @MainActor
+    static var pillHeight: CGFloat {
+        let font = NSFont.systemFont(ofSize: BoardsStyle.fontSize, weight: .medium)
+        return 2 * BoardsStyle.verticalPadding + (font.ascender - font.descender + font.leading).rounded(.up)
+    }
+
+    /// How far down from the canvas's top the middle of the pill is, where it shows and where it would: what another view
+    /// that floats on the pill's row at the canvas's edge (a pill of its own: Constraints' funnel) centers itself on.
+    @MainActor
+    public static var rowMidline: CGFloat { BoardsStyle.topInset + pillHeight / 2 }
 }
 
 /// Where each crumb is, by its board, for its menu to show below it.
@@ -75,6 +85,12 @@ struct CrumbBounds: PreferenceKey {
     static func reduce(value: inout [BoardID: Anchor<CGRect>], nextValue: () -> [BoardID: Anchor<CGRect>]) {
         value.merge(nextValue()) { $1 }
     }
+}
+
+/// How wide the pill is, as laid out.
+struct PillWidth: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 struct BoardPathPill: View {
@@ -125,6 +141,8 @@ struct BoardPathPill: View {
         .padding(.horizontal, BoardsStyle.horizontalPadding)
         .padding(.vertical, BoardsStyle.verticalPadding)
         .floatingSurface(in: Capsule())
+        .background { GeometryReader { Color.clear.preference(key: PillWidth.self, value: $0.size.width) } }
+        .onPreferenceChange(PillWidth.self) { width in crumbs.pillWidth = width }
         .frame(maxWidth: BoardsStyle.maxWidth)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, BoardsStyle.topInset)

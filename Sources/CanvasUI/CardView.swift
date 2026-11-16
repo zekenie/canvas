@@ -33,6 +33,9 @@ final class CardView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    /// What the card says of itself now, if its view does (`CardAccessibilityLabeling`), else as it opened.
+    override func accessibilityLabel() -> String? { (content as? CardAccessibilityLabeling)?.cardAccessibilityLabel ?? super.accessibilityLabel() }
+
     override var isFlipped: Bool { true }
 
     /// The bubble, in the canvas's coordinates: the frame less the shadow's reach.

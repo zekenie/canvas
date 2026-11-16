@@ -25,17 +25,22 @@ extension Drawing {
     /// than the run's, `on "Area"'s board`), in the order of
     /// those names, at most `broughtLimit` of them and then a count of the rest; the line is the statement's whose
     /// writes alone reach the shape, none where several statements' do.
+    ///
+    /// Beside the warnings it gives what a second look needs of every shape it looked at (`DrawAftermath.Looked`: the issues the
+    /// shape had as the run found it or leaves it, and the statement that brought what it said), so an answer that comes once the
+    /// run has committed is said as it is here; `keeping` is false for a run that commits nothing (a dry run), which keeps
+    /// no look and asks the check of a shape's earlier version only when it has an issue now.
     func brought(by transaction: Transaction, before: ShapeContext, after shapes: ShapeContext,
-                 written: [(line: Int, id: ShapeID)], restated: [ShapeID: Set<String>]) -> [DrawWarning] {
-        guard let check = registry.drawCheck, let touched = check.touched else { return [] }
+                 written: [(line: Int, id: ShapeID)], restated: [ShapeID: Set<String>], keeping: Bool = true) -> (warnings: [DrawWarning], looked: [DrawAftermath.Looked], said: Set<ShapeID>, more: Int) {
+        guard let check = registry.drawCheck, let touched = check.touched else { return ([], [], [], 0) }
         let pending = transaction.pending
-        guard !pending.shapeIDs.isEmpty || !pending.elsewhere.isEmpty else { return [] }
+        guard !pending.shapeIDs.isEmpty || !pending.elsewhere.isEmpty else { return ([], [], [], 0) }
         var looked = touched(pending, shapes)
         looked.formUnion(pending.added)
         looked.formUnion(pending.changed.subtracting(pending.moved))
         looked.formUnion(pending.elsewhere)
         for (_, id) in written { looked.remove(id) }
-        guard !looked.isEmpty else { return [] }
+        guard !looked.isEmpty else { return ([], [], [], 0) }
 
         // Each board's shapes as the run found them and as it leaves them, made once: a shape on another board is
         // checked against its own board's.
@@ -57,18 +62,26 @@ extension Drawing {
         }
 
         var broken: [(name: String, id: ShapeID, issues: [DrawIssue])] = []
+        // What each shape had as the run found it or leaves it: what the run's second look takes as said.
+        var known: [ShapeID: [DrawIssue]] = [:]
         let file = editor.file
         for id in looked {
             guard let board = transaction.board(containing: id) else { continue }
             let now = asLeft(board)
             guard let record = now.document[id] else { continue }
             let has = check.check(record, now.shapes)
-            guard !has.isEmpty else { continue }
             var had: [DrawIssue: Int] = [:]
-            if let board = file.board(containing: id) {
+            if keeping || !has.isEmpty, let board = file.board(containing: id) {
                 let was = asFound(board)
                 if let record = was.document[id] { for issue in check.check(record, was.shapes) { had[issue, default: 0] += 1 } }
             }
+            // An answer that is yet to come is no news when the shape had it before the run, though the run's own check cannot say it.
+            var seen = had
+            var counted: [DrawIssue: Int] = [:]
+            for issue in has { counted[issue, default: 0] += 1 }
+            for (issue, count) in counted { seen[issue] = max(seen[issue] ?? 0, count) }
+            if keeping { known[id] = seen.flatMap { Array(repeating: $0.key, count: $0.value) } }
+            guard !has.isEmpty else { continue }
             let new = has.filter { issue in
                 guard let count = had[issue], count > 0 else { return !(issue.isIncomplete && restated[id]?.contains(issue.message) == true) }
                 had[issue] = count - 1
@@ -76,7 +89,10 @@ extension Drawing {
             }
             if !new.isEmpty { broken.append((brokenName(record, on: board, shapes: now.shapes), id, new)) }
         }
-        guard !broken.isEmpty else { return [] }
+        let looks = { (lines: [ShapeID: Int]) in
+            looked.sorted { $0.description < $1.description }.map { DrawAftermath.Looked(id: $0, line: lines[$0], known: known[$0] ?? []) }
+        }
+        guard !broken.isEmpty else { return ([], looks([:]), [], 0) }
         broken.sort { ($0.name, $0.id.description) < ($1.name, $1.id.description) }
         let said = broken.prefix(Self.broughtLimit)
 
@@ -101,9 +117,11 @@ extension Drawing {
         }
 
         var warnings: [DrawWarning] = []
+        var lineOf: [ShapeID: Int] = [:]
         for shape in said {
             let by = reaching[shape.id] ?? []
             let line = by.count == 1 ? by.first : nil
+            if let line { lineOf[shape.id] = line }
             for issue in shape.issues {
                 warnings.append(DrawWarning(line: line, shape.name, issue: issue, about: shape.id))
             }
@@ -115,13 +133,13 @@ extension Drawing {
             count.countsMore = true
             warnings.append(count)
         }
-        return warnings
+        return (warnings, looks(lineOf), Set(said.map(\.id)), max(more, 0))
     }
 
     /// A shape the run broke, named for a message: by its title, or by its path where the title is not its alone; with none,
     /// by its id as a script writes it, which a later script can name it by (an arrow and a pill for a shape it names, that a
     /// script cannot name, by their kind and where they are on their own board); and, when that is not the run's board, which board.
-    private func brokenName(_ record: AnyShapeRecord, on board: BoardID, shapes: ShapeContext) -> String {
+    func brokenName(_ record: AnyShapeRecord, on board: BoardID, shapes: ShapeContext) -> String {
         guard let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) else {
             let place = registry.drawCanName(record) ? ShapeName.id(record.id.description).written : Drawing.location(of: record, in: shapes)
             return board == target.board ? place : "\(place) on \(FileNames.named(board, in: editor, naming: naming))"

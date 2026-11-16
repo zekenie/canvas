@@ -35,7 +35,8 @@ import Geometry
 /// paints above it, and is read-only while it is (a shape in a read-only container changes not at
 /// all, and nothing joins or leaves one); deleting a container lets go of what it holds into its own
 /// container. `setContainer` puts a shape in one, and `settle` keeps what's put down from sitting
-/// across a container's edge (Settling.swift).
+/// across a container's edge (Settling.swift). A place may refuse what comes into it from somewhere
+/// else, by a plugin's judge (`registrar.admission`, Admission.swift), as a read-only container does.
 ///
 /// A board is read-only while the shape that owns it is (a locked subboard, one in a locked frame,
 /// one on a read-only board: `isBoardReadOnly`, the editor's rule), as a container is: every shape
@@ -50,6 +51,16 @@ import Geometry
 /// holds them, and they commit with the rest, in the same undo step.
 @MainActor
 public struct Transaction {
+    /// The name a body gives its step once it knows it (a placement that became another kind), over the name `transact` was given.
+    var stepName: String?
+
+    /// Names the step "Add <tool label>" for the kind `record` landed as, when settling made it another than it was put down as
+    /// (a placement whose kind is open: a double-click's).
+    mutating func nameStepForLanding(of id: ShapeID, putDownAs kind: ShapeKind, tools: [ToolDescriptor]) {
+        guard let landed = document[id]?.kind, landed != kind,
+              let label = tools.first(where: { $0.id == ToolID(placing: landed) })?.label else { return }
+        stepName = "Add \(label)"
+    }
     public private(set) var document: CanvasDocument
     /// The board `document` is: the one the editor shows.
     public let board: BoardID
@@ -144,6 +155,25 @@ public struct Transaction {
     /// wouldn't: what `editor.transactWhole` reads, so work that must change everything or nothing
     /// commits nothing and shakes them.
     public var refusedShapes: Set<ShapeID> { refused }
+    /// What the places that refused shapes said of it (`Admission.Verdict.refuses(shaking:saying:)`), in
+    /// order: heard (`editor.announce`) with the refusal, once each, and what a caller that reports a
+    /// refusal in words of its own (Draw's) says it with.
+    public internal(set) var refusalNotes: [String] = []
+    /// Shapes a placement put down earlier in the press it settles (`PlacingSession`): new as it settles
+    /// them, as those it inserts are, leaving no place for what judges what a place takes.
+    var placing: Set<ShapeID> = []
+    /// Shapes it puts in that come back to the file rather than being made here (`treatAsMoved`).
+    var movedIn: Set<ShapeID> = []
+    /// What `move(_:to:)` took onto another board, and what an insert put back moved (`treatAsMoved`, or
+    /// deleted earlier in the transaction), that nothing has judged since (`refusal(of:)`, where a settle
+    /// puts it down): judged where it is as the transaction ends (`judgeCrossings`).
+    var crossing: Set<ShapeID> = []
+    /// While true, nothing is asked of what judges what a place takes (`enclose`, which asks once at the
+    /// end about where what it holds ends up).
+    var holdsAdmission = false
+    /// The file as the editor had it when the transaction it was made from began: set on a transaction
+    /// over another board (`transaction(on:)`), whose `file` may read through the one that made it.
+    private(set) var began: FileAccess?
     /// Shapes whose willDelete handlers have run in this transaction; removed together at the end
     /// of the outermost `delete`.
     private var deleting: Set<ShapeID> = []
@@ -326,7 +356,17 @@ public struct Transaction {
         record.stackingKey = keys.key(between: document.shapes.last?.stackingKey, and: nil)
         // A container it comes with (a paste's copy, `copy(as:container:)`) it's in if that's a
         // container on the board by now that takes it; else it's on the board directly.
+        let asked = record.container
         if let container = record.container, !takes(container, record) { record.container = nil }
+        // One that comes back moved (not made here), put down where its insert said, is judged again where
+        // it is as the transaction ends with what's put in it since (`judgeCrossings`), unless a settle
+        // judges it first: its insert's ask carried nothing yet. Not one carried in by a container this
+        // transaction puts in too (the container's judged, carrying it), nor one its insert refused.
+        if registry.judgesAdmission, record.box != nil, asked == record.container,
+           movedIn.contains(record.id) || fileBefore.locate(record.id) != nil,
+           !(record.container.map(changes.added.contains) ?? false) {
+            crossing.insert(record.id)
+        }
         tops = [:]
         document.append(record)
         changes.added.insert(record.id)
@@ -337,14 +377,24 @@ public struct Transaction {
     }
 
     /// Whether a shape going in can be in `container`: a box, and a container on this board that takes
-    /// it; a read-only one doesn't, and services hear it was refused.
+    /// it; a read-only one doesn't, and services hear it was refused, nor one whose place refuses it
+    /// (`registrar.admission`, asked with no place it leaves), which services hear as its judge says.
     private mutating func takes(_ container: ShapeID, _ record: AnyShapeRecord) -> Bool {
         guard record.box != nil, let holder = document[container], registry.isContainer(holder) else { return false }
         guard !holds(holder) else {
             refused.insert(container)
             return false
         }
-        return true
+        // One put in with a container this transaction puts in too (a paste's) comes with it, into nothing
+        // new: the container is judged where it's put down, with what it carries.
+        guard registry.judgesAdmission, !holdsAdmission, !changes.added.contains(container) else { return true }
+        var put = record
+        put.container = container
+        // Going in now: new unless the file had it when the transaction began, or it's said to be moved.
+        let isNew = !movedIn.contains(record.id) && fileBefore.locate(record.id) == nil
+        let arrival = Admission.Arrival(record: put, from: isNew ? nil : origin(of: record.id), to: .container(container), carried: [],
+                                        isNew: isNew)
+        return refusal(of: [arrival]) == nil
     }
 
     /// On no board of the file, nor going in with one, unless this transaction deleted it, from this
@@ -891,7 +941,9 @@ public struct Transaction {
     /// keeps its place. Only a box shape is put in a container, never in itself or in a shape it
     /// holds, nor in one on another board: those ask for nothing. Read-only, it's refused, and so is
     /// a read-only container it would join (services hear it was the container: nothing joins a
-    /// locked frame); a shape in a read-only container is read-only, so nothing leaves one either.
+    /// locked frame); a shape in a read-only container is read-only, so nothing leaves one either. A
+    /// place that judges what it takes (`registrar.admission`) may refuse it too: then nothing joins,
+    /// and services hear what the judge names.
     public mutating func setContainer(_ id: ShapeID, to container: ShapeID?) { setContainer([id], to: container) }
 
     /// Puts shapes in a container on this board, or on the board directly, as `setContainer(_:to:)`
@@ -920,6 +972,10 @@ public struct Transaction {
                 guard !refuses(record) else { continue }
             }
             joining.append(id)
+        }
+        if registry.judgesAdmission {
+            let place = container.map(ShapePlace.container) ?? .board(board)
+            guard refusal(of: joining.compactMap { document[$0] }.map { ($0, to: place) }) == nil else { return }
         }
         join(joining, container)
     }
@@ -1148,7 +1204,7 @@ public struct Transaction {
     /// shapes is not what it was), and the shapes it moved. What this transaction had
     /// brought onto that board and is gone now, named or not, is on no board and brings no boards in.
     private mutating func absorb(_ there: Transaction) {
-        refused.formUnion(there.refused)
+        takeRefusals(of: there)
         takeInWrites(of: there)
         deleted.formUnion(there.deleted)
         rode.formUnion(there.rode)
@@ -1378,7 +1434,11 @@ public struct Transaction {
     /// container, or this board is read-only), or the board's owner is (as `setContainer` holds a
     /// container, on its own board as this transaction leaves it, a board up the tree from it being
     /// read-only too: the board itself is), nothing moves, services hear which were refused
-    /// (`refusedShapes`), and this returns false. It's false too, nothing moving and nothing refused, for a board the
+    /// (`refusedShapes`), and this returns false. What judges what a place takes (`registrar.admission`)
+    /// isn't asked here: what moves whole (each shape no other moving one holds, with what it carries) is
+    /// judged where it's put down on that board (`settle(_:on:)`), from where it was when the transaction
+    /// began, or, put down nowhere, where it is as the transaction ends, a refusal then committing nothing
+    /// (`CanvasEditor.transact`). It's false too, nothing moving and nothing refused, for a board the
     /// editor couldn't show once this transaction commits (`canShow`'s rule, each owner on the way up
     /// where this transaction leaves it: one not in the file, kept aside, or of a kind that owns no
     /// board). Nothing else is asked of a shape that moves (no handlers run). `board` can't be this
@@ -1458,6 +1518,11 @@ public struct Transaction {
         }
         stage(target, on: board)
         for id in moving { stagedIDs[id] = board }
+        // What moves whole comes into that board, judged where it's put down there (`settle(_:on:)`), or,
+        // put down nowhere, where it is as the transaction ends (`judgeCrossings`).
+        if registry.judgesAdmission {
+            crossing.formUnion(leaving.lazy.filter { $0.box != nil && $0.container == nil }.map(\.id))
+        }
         changes.reordered = true
         return true
     }
@@ -1477,7 +1542,7 @@ public struct Transaction {
         precondition(destination != source, "shapes can't move onto the board they're on")
         guard var there = transaction(on: source, readingThrough: true) else { return false }
         let moved = there.move(ids, to: destination)
-        refused.formUnion(there.refused)
+        takeRefusals(of: there)
         takeFileValues(of: there)
         guard moved else { return false }
         rode.formUnion(there.rode)
@@ -1585,7 +1650,7 @@ public struct Transaction {
         if there.didChange {
             take(there, reserving: false)
         } else {
-            refused.formUnion(there.refused)
+            takeRefusals(of: there)
             if wasStaged { stagedBoards[board] = there.document }
         }
     }
@@ -1710,6 +1775,12 @@ public struct Transaction {
         }
         there.mayReachBoardShown = mayReachBoardShown
         there.stagedFileValues = stagedFileValues
+        // What judges what a place takes is told the same of a shape there as here.
+        there.began = fileBefore
+        there.placing = placing
+        there.movedIn = movedIn
+        there.crossing = crossing
+        there.holdsAdmission = holdsAdmission
         return there
     }
 
@@ -1724,7 +1795,7 @@ public struct Transaction {
     /// Takes in what a transaction over another board did (`transaction(on:)`): that board as it
     /// leaves it, if it changed anything there, and what it refused.
     mutating func take(_ there: Transaction, reserving: Bool = true) {
-        refused.formUnion(there.refused)
+        takeRefusals(of: there)
         takeInWrites(of: there)
         takeFileValues(of: there)
         if there.didChange { stage(there.document, on: there.board, reserving: reserving) }

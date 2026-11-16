@@ -36,7 +36,7 @@ struct Drop {
     /// place; a place that goes with them (in one of them, beside one, or on a board one of them, or
     /// a shape in one, owns: `goesWith`); a board the editor can't show, or that's read-only (a locked
     /// subboard's, at any depth); a container that's read-only or too small for the box around them
-    /// (moving in from elsewhere). Cheap: the
+    /// (moving in from elsewhere); a place a plugin refuses them (`editor.admits(_:on:into:)`). Cheap: the
     /// table of contents asks it as a drag moves over its rows, and it lays nothing out.
     init?(_ ids: [ShapeID], to place: ContentsPlace, in editor: CanvasEditor) {
         guard let all = Block(ids, in: editor), editor.canShow(place.board) else { return nil }
@@ -64,6 +64,10 @@ struct Drop {
         } else {
             way = .onto
         }
+        // Last, the dearest: a place a plugin refuses them (a constrained frame, `registrar.admission`) is no
+        // place for them, as a locked one isn't, and what's pending isn't refused (it's a try).
+        let destination = place.container.map(ShapePlace.container) ?? .board(place.board)
+        guard editor.admits(movers.map(\.id), on: source, into: destination) else { return nil }
         self.editor = editor
         dropped = all.shapes.map(\.id)
         self.block = block
@@ -73,18 +77,20 @@ struct Drop {
     /// Moves the block where it lands, and restacks every shape dropped where the drop says, in one step,
     /// Move (`Block.commit`). Landing worked out now, against the boards as they are. Where the in-or-out
     /// rule leaves them out of the place (no room there clear of what's in it: put down over a frame in
-    /// it, which takes them), nothing changes: a drop puts them where it says, or nowhere.
-    func commit() {
-        guard let surroundings = Surroundings(on: place.board, moving: block, in: editor) else { return }
+    /// it, which takes them), nothing changes: a drop puts them where it says, or nowhere. Whether it moved them: a move the
+    /// commit refuses (judged again, with the answers that came since the drop was asked) moved nothing.
+    @discardableResult
+    func commit() -> Bool {
+        guard let surroundings = Surroundings(on: place.board, moving: block, in: editor) else { return false }
         let landing: Landing?
         switch way {
         case .into(let container): landing = surroundings.inside(container)
         case .onto: landing = surroundings.anywhere()
         case .beside(let left, within: let holder): landing = surroundings.near(left, within: holder)
         }
-        guard let landing else { return }
+        guard let landing else { return false }
         let place = place, dropped = dropped, moved = block.ids, kinds = editor.registry.containingKinds
-        block.commit(landing) { transaction in
+        return block.commit(landing) { transaction in
             let there = transaction.contents(of: place.board)
             guard moved.allSatisfy({ there[$0] != nil && there.container(of: $0, containingKinds: kinds) == place.container }) else {
                 throw Transaction.Refused()

@@ -26,19 +26,23 @@ extension CanvasEditor {
         guard !taking.isEmpty else { return }
         transact(TypesStyle.addType) { transaction in
             for shape in taking {
-                transaction.update(inFile: shape) { record in
-                    var list = record[IsAProperty.self] ?? []
-                    list.append(TypeLink(type))
-                    record[IsAProperty.self] = list
-                    // A note with no title and a value already there is titled once, as the field titles it.
-                    if TitleProperty.folded(record[TitleProperty.self]) == nil, record[TypeSchemaProperty.self] == nil,
-                       registry.properties(for: record.kind).contains(TitleProperty.key),
-                       let source = fieldBook?.titleSource(types: list.map(\.shape)),
-                       let title = FieldTitling.firstTitle(values: record[FieldValuesProperty.self] ?? FieldValues(), source) {
-                        record[TitleProperty.self] = title
-                    }
-                }
+                transaction.update(inFile: shape) { record in self.addType(type, to: &record) }
             }
+        }
+    }
+
+    /// `type` at the end of the record's `is` list, and a note with no title and a value already there titled once, as the
+    /// field titles it: the one place a type is given to a record, for a step (`addTypeLink`) and for a record not yet in the
+    /// document (what a query says a shape is, `IsAFit`).
+    func addType(_ type: ShapeID, to record: inout AnyShapeRecord) {
+        var list = record[IsAProperty.self] ?? []
+        list.append(TypeLink(type))
+        record[IsAProperty.self] = list
+        if TitleProperty.folded(record[TitleProperty.self]) == nil, record[TypeSchemaProperty.self] == nil,
+           registry.properties(for: record.kind).contains(TitleProperty.key),
+           let source = fieldBook?.titleSource(types: list.map(\.shape)),
+           let title = FieldTitling.firstTitle(values: record[FieldValuesProperty.self] ?? FieldValues(), source) {
+            record[TitleProperty.self] = title
         }
     }
 

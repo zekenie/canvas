@@ -144,7 +144,9 @@ extension ContentsState {
 
     /// Drops the drag under way at `target`, if it admits it: restacked where it points, in one step
     /// called Reorder, if its shapes are all in the place's container already; else moved there by
-    /// `ContentsMoves`' contributor. Whether it did. The drag is over either way.
+    /// `ContentsMoves`' contributor. Whether it did: a move the contributor says moved nothing (the commit refuses it, as it
+    /// is judged again with the answers that came since `admits`; it lands where the shapes are) is no drop. The drag is
+    /// over either way.
     @discardableResult
     public func drop(on target: ContentsDropTarget) -> Bool {
         defer {
@@ -154,10 +156,9 @@ extension ContentsState {
         guard admits(target), let shapes = dragShapes, let place = place(for: target) else { return false }
         if isIn(shapes, place) {
             restack(shapes, at: place)
-        } else {
-            mover?.move(shapes, place, editor)
+            return true
         }
-        return true
+        return mover?.move(shapes, place, editor) ?? false
     }
 
     /// The place a target names: on a frame's row, in the frame, in front of what it holds; on a

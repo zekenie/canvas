@@ -473,6 +473,16 @@ struct AskPlugin: CanvasPlugin {
     }
 }
 
+/// `tidy`, a command about the bar's target that acts on the board shown as a whole (`SelectionSlashCommand.naming(everything:)`): with
+/// nothing selected the bar calls its target "Plans" while it is the command typed, else "All shapes"; on a selection it names nothing.
+struct BoardNamingPlugin: CanvasPlugin {
+    var id: PluginID { "board-naming-commands" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.selectionSlashCommand(SelectionSlashCommand.atOnce("tidy") { _, _, _ in }.naming(everything: { _ in "Plans" }))
+    }
+}
+
 /// What `NowPlugin`'s command ran with, and whether the bar was still open as it ran.
 @MainActor final class NowLog {
     var ran: [(target: SlashTarget, arguments: SlashArguments, barOpen: Bool)] = []
@@ -492,6 +502,34 @@ struct NowPlugin: CanvasPlugin {
             return false
         }) { target, arguments, editor in
             log.ran.append((target, arguments, editor.slashBar?.isOpen == true))
+            editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(Disc(CGRect(x: 0, y: 0, width: 10, height: 10))))) }
+        })
+    }
+}
+
+/// What `TakePlugin`'s picks ran with: the target, the row and the editor's selection then.
+@MainActor final class TakeLog {
+    var picked: [(target: SlashTarget, choice: SlashChoice)] = []
+    var rowsAskedFor: [SlashTarget] = []
+}
+
+/// `take`, a command about the bar's target that takes one choice (`SelectionSlashCommand.choosing`): offered with nothing
+/// selected, on an empty board too, and for one shape; its rows are what the target says (the shapes' count), a pick puts a disc
+/// down so it commits.
+struct TakePlugin: CanvasPlugin {
+    let log: TakeLog
+    var id: PluginID { "take-commands" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let log = log
+        registrar.selectionSlashCommand(.choosing("take", argument: "which", when: { target, _ in
+            if case .selection(let ids) = target { return ids.count == 1 }
+            return true
+        }, choices: { target, _ in
+            log.rowsAskedFor.append(target)
+            return [SlashChoice("first", title: "First", step: "Take First"), SlashChoice("second", title: "Second", group: 1)]
+        }) { target, choice, editor in
+            log.picked.append((target, choice))
             editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(Disc(CGRect(x: 0, y: 0, width: 10, height: 10))))) }
         })
     }

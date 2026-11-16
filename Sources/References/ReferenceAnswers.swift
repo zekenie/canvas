@@ -48,6 +48,8 @@ public enum ReferenceFailure: Equatable, Sendable {
     case noQuery
     /// The model's query, and its second, were refused.
     case unusable
+    /// They were refused for a title no shape has.
+    case unknownTitle(String)
 
     /// What the Query section says of it: a translation's failures in the words every host of words says
     /// (`InterpretationWords`).
@@ -59,6 +61,7 @@ public enum ReferenceFailure: Equatable, Sendable {
         case .model(let message): message
         case .noQuery: InterpretationWords.noQuery
         case .unusable: InterpretationWords.unusable
+        case .unknownTitle(let title): InterpretationWords.noShapeCalled(title)
         }
     }
 

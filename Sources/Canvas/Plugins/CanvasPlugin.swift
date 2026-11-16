@@ -173,6 +173,31 @@ public struct PluginRegistrar {
         contribute(isReadOnly, to: CorePoints.ReadOnlyRules.self)
     }
 
+    /// What a place takes in: `judge` is asked about shapes about to come into a container, or onto a
+    /// board's top level, from somewhere else or new to the file (`Admission`: each shape as it would be
+    /// put, the place it leaves and the one it goes to, what it carries, the file as the transaction
+    /// leaves it, and whether it's a change or only a try), and any judge's refusal refuses them all, as a
+    /// read-only container refuses what would join it: nothing changes, a drop glides back with no step,
+    /// a key's nudges go back, `editor.transactWhole` gives the whole up (a paste, a move), a container
+    /// resized over a shape leaves it out, a drag's hint outlines no container that would refuse what's
+    /// dragged, and what the verdict names shakes, with what it says heard. Never asked for a shape
+    /// staying where it is, for what a deletion lets go of, for an undo or a redo putting a step back,
+    /// or with no judge installed. Keep it cheap: every drop, placement and move asks it.
+    public mutating func admission(_ judge: @escaping @MainActor (Admission) -> Admission.Verdict) {
+        contribute(judge, to: CorePoints.Admissions.self)
+    }
+
+    /// What a shape a person places is written as, where it lands (`PlacementFit`): every placement of
+    /// the core's (`editor.place(_:at:)`, `place(_:in:)`, `placeAtKeyboard`, Insert, shapes placed later,
+    /// `place(_:around:)`'s new container) hands `fit` the shape, once settling has said where it goes, in
+    /// the placement's own step, and writes back what it answers (nil: nothing), under the shape's id, of
+    /// another kind only when the placement's kind is open (`Placement.kindIsOpen`); the shape is settled
+    /// again, since it may be laid out another size. Each plugin's in plugin order, each handed the
+    /// record as the last wrote it. Never asked of a paste, a duplicate, a draw or any other insert.
+    public mutating func placementFit(_ fit: @escaping @MainActor (PlacementFit) -> AnyShapeRecord?) {
+        contribute(fit, to: CorePoints.PlacementFits.self)
+    }
+
     /// The color a shape's symbol has wherever it is listed by its kind, when it has one of its own
     /// (Colors' shapes with a color), asked of one shape at a time: `editor.tint(of:)` answers the
     /// first plugin's color that isn't nil, else the kind's (`ShapeRegistrar.tint`). Asked per row
@@ -329,6 +354,11 @@ public struct Placement {
     /// a `size:` under it, and the kind's own resizing, which it hands this (`resizable(minimumSize:)`).
     /// Zero for none.
     public let minimumSize: CGSize
+    /// Whether what it places may become another kind where it lands (a double-click's: what the canvas
+    /// makes there is open), as a plugin that fits a placed shape to its place says
+    /// (`registrar.placementFit`); a tool keeps its kind. False unless `openingKind()` says so, and kept
+    /// by `mapping`, `sized` and `setting`.
+    public private(set) var kindIsOpen = false
     let completion: Completion
     let make: @MainActor (CGRect) -> AnyShapeRecord
 
@@ -369,13 +399,29 @@ public struct Placement {
             let record = transform(make(frame))
             precondition(record.kind == kind, "a placement of \(kind) shapes can't make \(record.kind) ones")
             return record
-        }
+        }.keeping(self)
     }
 
     /// The same placement, of shapes this size: what it makes is placed in a frame of `size` centered
     /// where it lands (or in the rect it is given, `editor.place(_:in:)`). Its smallest size stays.
     public func sized(_ size: CGSize) -> Placement {
-        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion, make: make)
+        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion, make: make).keeping(self)
+    }
+
+    /// The same placement, its kind open (`kindIsOpen`): what it places may be made another kind where it
+    /// lands, by a plugin that fits a placed shape to its place. A double-click's, which makes whatever
+    /// suits the spot; a tool's stays closed.
+    public func openingKind() -> Placement {
+        var open = self
+        open.kindIsOpen = true
+        return open
+    }
+
+    /// This placement with what `other` says beyond what it makes (`kindIsOpen`).
+    private func keeping(_ other: Placement) -> Placement {
+        var kept = self
+        kept.kindIsOpen = other.kindIsOpen
+        return kept
     }
 
     /// The same placement, with an added property set on every shape it places:
@@ -387,6 +433,6 @@ public struct Placement {
             var record = make(frame)
             record[P.self] = value
             return record
-        }
+        }.keeping(self)
     }
 }

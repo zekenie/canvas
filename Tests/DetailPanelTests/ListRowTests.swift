@@ -61,7 +61,38 @@ struct FlagPlugin: CanvasPlugin {
     return darkness
 }
 
+/// The darkness of each of the last `columns` pixel columns of a row drawn 228 points wide.
+@MainActor private func rightEdge(_ row: DetailShapeRow, columns: Int) -> [Int] {
+    let view = NSHostingView(rootView: row.frame(width: 228).background(Color.white).environment(\.colorScheme, .light))
+    view.frame = CGRect(origin: .zero, size: CGSize(width: 228, height: view.fittingSize.height))
+    let rep = snapshot(view)
+    return (rep.pixelsWide - columns..<rep.pixelsWide).map { x in
+        (0..<rep.pixelsHigh).reduce(0) { sum, y in
+            var value = [Int](repeating: 0, count: 4)
+            rep.getPixel(&value, atX: x, y: y)
+            return sum + 255 - value[0]
+        }
+    }
+}
+
 @MainActor let listRowTests = Suite("Panel list rows", [
+    test("a shape row's detail count is its own text at the end: the detail is cut before it, so a long detail leaves it whole") {
+        let long = String(repeating: "only tiles in the long run ", count: 6)
+        let counted = rightEdge(DetailShapeRow(symbol: "note", name: "Plan", detail: long, detailTruncation: .tail, detailCount: "+2"), columns: 14)
+        let short = rightEdge(DetailShapeRow(symbol: "note", name: "Plan", detail: "x", detailTruncation: .tail, detailCount: "+2"), columns: 14)
+        let uncounted = rightEdge(DetailShapeRow(symbol: "note", name: "Plan", detail: long, detailTruncation: .tail), columns: 14)
+        expect(short.reduce(0, +) > 0, "the count is drawn")
+        expectEqual(counted, short, "the same count at the same place however long the words")
+        expect(counted != uncounted, "and the words alone end in their cut, not in the count")
+    },
+    test("a view that heads itself in a section's look is DetailSectionTitle: as wide as the bold 11-point words a section's title is, wider than the plain ones") {
+        let words = "Inside each sprint"
+        let title = NSHostingView(rootView: DetailSectionTitle(words)).fittingSize
+        let bold = NSHostingView(rootView: Text(words).font(.system(size: 11, weight: .bold))).fittingSize
+        let plain = NSHostingView(rootView: Text(words).font(.system(size: 11))).fittingSize
+        expectEqual(title, bold)
+        expect(title.width > plain.width, "bold: \(title) against \(plain)")
+    },
     test("a section for every shape a where picks shows for those shapes only, over the whole record, and writes through it") {
         let editor = try gadgetEditor([PickingPlugin()], scheduler: TaskScheduler())
         let picked = editor.add(Gadget(gadgetFrame, name: "pick")), other = editor.add(Gadget(gadgetFrame, name: "other"))

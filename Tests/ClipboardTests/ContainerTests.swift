@@ -40,6 +40,9 @@ import TestKit
     return try require(try JSONSerialization.jsonObject(with: data) as? [String: Any])["format"] as? Int
 }
 
+/// The corral a test's judge refuses what's moved into.
+@MainActor private final class PenID { var id: ShapeID? }
+
 @MainActor let containerTests = Suite("Copying what a container holds", [
     test("copying a corral copies what it holds, at any depth (format 5); pasted in place, each copy is in its copied container, and the copy lies over the original, beside it") {
         let pasteboard = privatePasteboard()
@@ -282,5 +285,32 @@ import TestKit
         expectEqual(h.editor.document[copy]?.box, CGRect(x: 250, y: 166, width: 100, height: 60))
         expectEqual(h.editor.holder(of: copy), pen)
         expectEqual(h.editor.document[stretch]?.box?.origin, CGPoint(x: 350, y: 150), "the original is where it was")
+    },
+    test("a corral that refuses shapes moved in refuses a cut's paste as it refuses a drop, and takes a copy's") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let log = RefusalLog()
+        // Lets in what's made, as a container's constraints will; refuses what's moved into the pen.
+        let pen = PenID()
+        let judge = Contributor(id: "judge") { r in
+            r.admission { admission in
+                admission.arrivals.contains { !$0.isNew && $0.to == pen.id.map(ShapePlace.container) }
+                    ? .refuses(shaking: [], saying: nil) : .admits
+            }
+        }
+        let h = try harness(pasteboard, [CorralsPlugin(), FreezingPlugin(log: log), judge])
+        pen.id = h.add(Corral(CGRect(x: 0, y: 0, width: 400, height: 300)))
+        let box = h.add(Box(CGRect(x: 600, y: 0, width: 100, height: 100)))
+        h.editor.cut([box])
+        h.editor.paste(centeredAt: CGPoint(x: 200, y: 150))
+        expectEqual(h.editor.document[box], nil, "nothing put down")
+        expectEqual(log.refusals, [[box]])
+        h.editor.paste(centeredAt: CGPoint(x: 800, y: 150))
+        expectEqual(h.editor.document[box]?.box, CGRect(x: 750, y: 100, width: 100, height: 100), "outside it, moved back under its id")
+        h.editor.copy([box])
+        h.editor.paste(centeredAt: CGPoint(x: 200, y: 150))
+        let copy = try require(h.editor.selection)
+        expect(copy != box)
+        expectEqual(h.editor.holder(of: copy), pen.id, "a copy is made there: let in")
     },
 ])

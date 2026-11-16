@@ -72,7 +72,11 @@ public final class RelationshipIndex {
     let standIns: StandIns
 
     /// The ends of every relationship type and the rows they give its end types.
-    private var ends = RelationshipEnds()
+    private var ends = RelationshipEnds() {
+        didSet { endsRevision &+= 1 }
+    }
+    /// Moves with every write of the ends.
+    private var endsRevision = 0
     /// By end arrow: the relationship type it is an end of and the side.
     private var endOf: [ShapeID: (type: ShapeID, side: RelationshipSide)] = [:]
     /// By relationship type: its end arrows.
@@ -157,6 +161,10 @@ public final class RelationshipIndex {
 
     /// The types and the ends, as the last commit left them. O(1).
     public var graph: RelationshipGraph { RelationshipGraph(types: types.graph, ends: ends) }
+
+    /// Moves whenever `graph` may: the types' (`TypeIndex.graphRevision`) or the ends' moved. What `:misfit`'s fact says
+    /// how far it has come by.
+    public var graphRevision: Int { types.graphRevision &+ endsRevision }
 
     /// Moves when what is said of this one shape may have changed: a stamp never restarts, and an entry is
     /// dropped only with its shape or when everything is compiled again.

@@ -6,9 +6,11 @@ public enum Settlement: Equatable, Sendable {
     /// Each shape it nudged, by how far it moved (world units): what was put down, what that holds,
     /// and what rode with it; empty when nothing needed nudging. What `CanvasEditor.glide` takes.
     case settled(nudges: [ShapeID: CGPoint])
-    /// A read-only container (a locked frame) would have taken what was put down: nothing changed,
-    /// and services hear it was refused (`EditorService.didRefuseChanges`), so it shakes.
-    case refused(by: ShapeID)
+    /// A read-only container (a locked frame) would have taken what was put down, or a place that judges
+    /// what it takes (`registrar.admission`) refused it: nothing changed, and services hear it was
+    /// refused (`EditorService.didRefuseChanges`), so what refused shakes: the container, or the shapes
+    /// the judge named.
+    case refused(by: Set<ShapeID>)
 
     /// What it nudged: none for a refusal.
     public var nudges: [ShapeID: CGPoint] {
@@ -53,9 +55,16 @@ extension Transaction {
     /// lands on (`settle(container:)`). Read-only shapes stay as they are. A read-only container (a
     /// locked frame) takes nothing: if any of them would go into one, nothing changes, services hear
     /// that container refused, and the answer names it, for the caller to send them back (a drop) or
-    /// report it. Joining a container raises a shape just above what it holds (`setContainer`).
-    /// Nothing happens without a `ShapeContaining` kind installed. O(the board).
-    public mutating func settle(_ ids: some Sequence<ShapeID>) -> Settlement {
+    /// report it. So with a place that judges what it takes (`registrar.admission`): those whose place
+    /// changes (into a container, or onto the board from one; a shape new here, onto either) are asked
+    /// about together, with what each carries, and a refusal changes nothing, the shapes the judge names
+    /// noted refused and named in the answer. Joining a container raises a shape just above what it
+    /// holds (`setContainer`). Nothing happens without a `ShapeContaining` kind installed. O(the board).
+    public mutating func settle(_ ids: some Sequence<ShapeID>) -> Settlement { settle(ids, takingIn: true) }
+
+    /// `settle(_:)`, a container among them taking in what it lands on only with `takingIn` (a placement
+    /// fits one first: `settlePlaced`).
+    mutating func settle(_ ids: some Sequence<ShapeID>, takingIn: Bool) -> Settlement {
         let kinds = registry.containingKinds
         guard !kinds.isEmpty else { return .settled(nudges: [:]) }
         let put = Set(ids).compactMap { document.index(of: $0) }.sorted().map { document.shapes[$0] }.filter { !holds($0) }
@@ -104,7 +113,13 @@ extension Transaction {
         for plan in plans {
             guard let target = plan.verdict.target, let holder = document[target], holds(holder) else { continue }
             refused.insert(target)
-            return .refused(by: target)
+            return .refused(by: [target])
+        }
+        if registry.judgesAdmission {
+            let coming = plans.flatMap { plan in
+                plan.members.compactMap { document[$0] }.map { ($0, to: plan.verdict.target.map(ShapePlace.container) ?? .board(board)) }
+            }
+            if let shaking = refusal(of: coming) { return .refused(by: shaking) }
         }
         var nudges: [ShapeID: CGPoint] = [:]
         for plan in plans {
@@ -115,7 +130,7 @@ extension Transaction {
             }
         }
         // A container put down takes in what it lands on.
-        for record in judged where registry.isContainer(record) {
+        for record in judged where takingIn && registry.isContainer(record) {
             for (id, delta) in settle(container: record.id) { nudges[id] = (nudges[id] ?? .zero) + delta }
         }
         return .settled(nudges: nudges)
@@ -147,8 +162,10 @@ extension Transaction {
     /// hangs over its edge, nudged in, unless it's mostly outside, when it leaves. Read-only shapes
     /// stay as they are, in or out, and so does a shape a read-only container would take. The
     /// container itself isn't judged: one put down, or grown across its own container's edge,
-    /// settles first (`settle(_:)`). Returns what it nudged, by how far (world units), what they
-    /// hold included. O(the board).
+    /// settles first (`settle(_:)`). A shape a place that judges what it takes refuses
+    /// (`registrar.admission`, asked about each whose place would change, alone) stays as it is too,
+    /// heard by no one, as one a read-only container would take does. Returns what it nudged, by how
+    /// far (world units), what they hold included. O(the board).
     @discardableResult
     public mutating func settle(container id: ShapeID) -> [ShapeID: CGPoint] {
         let kinds = registry.containingKinds
@@ -192,6 +209,8 @@ extension Transaction {
             // frame's copy, pasted: copies are locked).
             if let target = verdict.target, target != document.container(of: record, containingKinds: kinds),
                let into = document[target], isReadOnly(into) { continue }
+            // So does a place that refuses it, silently.
+            if registry.judgesAdmission, refusal(of: [(record, to: verdict.target.map(ShapePlace.container) ?? .board(board))], noting: false) != nil { continue }
             if name(verdict.target, for: shape), let target = verdict.target { joined[target, default: []].append(shape) }
             if verdict.delta != .zero {
                 for moved in translated([shape], by: verdict.delta) { nudges[moved] = (nudges[moved] ?? .zero) + verdict.delta }

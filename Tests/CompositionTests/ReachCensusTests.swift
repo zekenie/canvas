@@ -5,6 +5,7 @@ import Arrows
 import CanvasTesting
 @_spi(Host) import CanvasUI
 import Connections
+import Constraints
 import Frames
 import Geometry
 import Keyboard
@@ -72,6 +73,11 @@ final class CensusBoard {
         let pill = ShapeRecord(reference)
         var frame = ShapeRecord(Frame(frame: CGRect(x: 1100, y: 860, width: 400, height: 300)))
         frame[TitleProperty.self] = "Plans"
+        // It accepts no subboards, and one is tucked in it: the funnel chip (red), its menu's items and the breaker's Move Out and
+        // Show Constraint are swept with the rest.
+        frame[ConstraintsProperty.self] = ConstraintList([Constraint(says: "no subboards", query: ":not(subboard)")])
+        var tucked = ShapeRecord(Subboard(frame: CGRect(x: 1120, y: 900, width: 240, height: 160)))
+        tucked[TitleProperty.self] = "Tucked"
         var subboard = ShapeRecord(Subboard(frame: CGRect(x: 1600, y: 900, width: 240, height: 160)))
         subboard[TitleProperty.self] = "Ship"
         let sticker = ShapeRecord(Sticker(frame: CGRect(x: 2200, y: 900, width: 96, height: 96), emoji: "🎉"))
@@ -92,14 +98,16 @@ final class CensusBoard {
             t.insert(pill)
             t.insert(frame)
             t.insert(subboard)
+            t.insert(tucked)
             t.insert(sticker)
             t.insert(arrow)
             t.insert(gig)
         }
+        editor.put([tucked.id], in: frame.id)
         editor.makePrivate([ask.id])
         editor.lock([budget.id])
         var names = [m.feature: "Feature", m.layer: "Layer", m.featureNote: "the Feature note", m.layerNote: "the Layer note", made: "in",
-                 budget.id: "Budget", ask.id: "Ask", pill.id: "the reference", frame.id: "Plans", subboard.id: "Ship",
+                 budget.id: "Budget", ask.id: "Ask", pill.id: "the reference", frame.id: "Plans", subboard.id: "Ship", tucked.id: "Tucked",
                      account: "Customer Account", gig.id: "Gig", sticker.id: "the sticker"]
         for arrow in m.arrows {
             let from = arrow.props.start.binding.flatMap { names[$0.shapeID] } ?? "?", to = arrow.props.end.binding.flatMap { names[$0.shapeID] } ?? "?"

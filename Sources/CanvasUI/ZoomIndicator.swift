@@ -144,12 +144,12 @@ public final class ZoomIndicator: NSView {
 /// short as it is (`MinimapStyle`'s panel, surface, border and shadow).
 @MainActor
 enum ZoomIndicatorStyle {
-    static let height: CGFloat = 22
+    static let height = ChromeStyle.floatPillHeight
     /// Either side of the text.
-    static let padding: CGFloat = 7
+    static let padding = ChromeStyle.floatPillPadding
     /// Above the minimap. With none showing, it's the minimap's margin from the canvas's corner.
     static let gap: CGFloat = 8
-    static var font: NSFont { .monospacedDigitSystemFont(ofSize: 11, weight: .medium) }
+    static var font: NSFont { .monospacedDigitSystemFont(ofSize: ChromeStyle.floatPillTextSize, weight: .medium) }
     static var textColor: NSColor { .secondaryLabelColor }
     /// How long it stays after the last change, and then how long it takes to fade out.
     static let holdDuration: Duration = .milliseconds(1000)

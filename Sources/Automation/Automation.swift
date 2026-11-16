@@ -7,8 +7,9 @@ import Foundation
 /// plugin that gives it its meaning, one plugin per name. A command is a name, what help says about
 /// it, its params (a list of properties, `SchemaDefined`, whose schema `canvas` reads its arguments
 /// by), and what it does, on the main actor, through transactions, as anything else changes a
-/// board: at once (`run:`, as `draw` and `kinds` do) or, for one that waits on something (a
-/// language model), later (`runAsync:`), its output then written off the main actor. The app's
+/// board: at once (`run:`, as `kinds` and `show` do) or, for one that waits on something (a
+/// language model; the file's answers after a commit, as `draw` and `apply` wait for them to say what the commit
+/// breaks), later (`runAsync:`), its output then written off the main actor. The app's
 /// command server takes them from the host's slot for them (`registry.hostCommands`,
 /// which this plugin fills with `automationCommands` and `runAutomationCommand`), and does the
 /// talking: this plugin never sees a socket, and the core never sees a command. It registers

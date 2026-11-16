@@ -671,17 +671,31 @@ final class Lingering {
     }
 }
 
-/// `draw`, as the app's command server runs it, in this process, on `editor`.
+/// `draw`, as the app's command server runs it, in this process, on `editor`. A real run waits for the file's answers (`laterIssues`),
+/// whose timers are the editor's scheduler's: on a manual one, time passes while the command waits, so an answer that waits for quiet
+/// comes, as it does in the app.
 @MainActor func drawInProcess(_ script: String, on editor: CanvasEditor) -> Result<JSON, RPCError> {
     let commands = editor.registry.hostCommands
-    let result = try? awaitResult { () async -> Result<JSON, RPCError> in
+    let outcome = DrawOutcome()
+    let task = Task { @MainActor in
         do throws(RPCError) {
-            return .success(try await commands.run("draw", ["script": .string(script)], editor))
+            outcome.result = .success(try await commands.run("draw", ["script": .string(script)], editor))
         } catch {
-            return .failure(error)
+            outcome.result = .failure(error)
         }
     }
-    return result ?? .failure(RPCError(RPCError.internalError, reason: "timed_out", "draw didn't answer."))
+    let manual = editor.scheduler as? ManualScheduler
+    let end = Date(timeIntervalSinceNow: 5)
+    while outcome.result == nil, Date() < end {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        if outcome.result == nil { manual?.advance(by: .milliseconds(50)) }
+    }
+    task.cancel()
+    return outcome.result ?? .failure(RPCError(RPCError.internalError, reason: "timed_out", "draw didn't answer."))
+}
+
+@MainActor private final class DrawOutcome {
+    var result: Result<JSON, RPCError>?
 }
 
 @MainActor func drawnInProcess(_ script: String, on editor: CanvasEditor) throws -> JSON {

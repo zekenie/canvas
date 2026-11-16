@@ -46,4 +46,7 @@ struct MentionedNames: QueryFileFact {
     static func current(in editor: CanvasEditor) -> MentionedNames {
         MentionedNames(labels: editor.mentions?.labels ?? MentionLabels())
     }
+
+    /// `MentionState.labelsRevision`.
+    static func revision(in editor: CanvasEditor) -> Int? { editor.mentions?.labelsRevision ?? 0 }
 }

@@ -13,6 +13,10 @@ final class GroupIndex {
     private(set) var groups = BoardGroups([])
     /// The boards shown lately, for going back to them without looking through their shapes again.
     private var kept = BoardStash<Set<ShapeID>>()
+    /// Moves whenever a commit may have changed the groups of the file, on any board: a shape's path written,
+    /// a shape that held one gone or moved to another board, a document or file put in place. What a query's
+    /// fact of the file's groups says how far it has come by (`GroupedFile`).
+    private(set) var fileRevision = 0
     #if DEBUG
     /// How many times a whole board has been looked through for the paths its shapes hold (debug builds).
     private(set) var boardsScanned = 0
@@ -45,9 +49,11 @@ extension GroupIndex: EditorService {
     /// stack, which orders a group's shapes; then tells Selection, if the groups changed.
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         if changes.replacedDocument {
+            fileRevision &+= 1
             read(editor.document)
             return editor.selectionGroupsDidChange()
         }
+        if movesFileGroups(changes, in: editor) { fileRevision &+= 1 }
         // A drag's commits only move shapes, which hold the paths they did.
         if changes.added.isEmpty, changes.removed.isEmpty, changes.changed.count == changes.moved.count, !changes.reordered { return }
         var changed = false
@@ -66,6 +72,16 @@ extension GroupIndex: EditorService {
         if changed || groups.paths != before { editor.selectionGroupsDidChange() }
     }
 
+    /// Whether the commit wrote a path, anywhere in the file, or took away or moved a shape that held one:
+    /// a look at each shape it names, its path now beside the one it held. Nothing for a drag.
+    private func movesFileGroups(_ changes: ChangeSet, in editor: CanvasEditor) -> Bool {
+        guard !changes.onlyMoves else { return false }
+        func path(_ record: AnyShapeRecord?) -> [String] { record?[GroupsProperty.self] ?? [] }
+        if changes.removed.contains(where: { !path(changes.before($0)).isEmpty }) { return true }
+        let file = editor.withoutObservingDocument { editor.file }
+        return changes.edited.union(changes.elsewhere).contains { id in path(file.record(id)) != path(changes.before(id)) }
+    }
+
     /// The board left's holders are kept for when it's shown again.
     func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
         guard old != new else { return }
@@ -75,6 +91,8 @@ extension GroupIndex: EditorService {
     /// Another board is shown: its groups, from the holders kept if the board hasn't changed since it was
     /// left, else looked for.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        // A file put in place has groups of its own.
+        if change.isFileReplaced { fileRevision &+= 1 }
         guard let taken = kept.take(for: change.to, in: editor) else { return read(editor.document) }
         holders = taken
         regroup()

@@ -113,6 +113,8 @@ public final class JumpToState {
         top = editor.hostViewsReach + JumpToStyle.topOffset
         query = ""
         isOpen = true
+        // It has the canvas: a popover of another plugin's that had it is closed, and its pill leaves the palette's field clear.
+        editor.presentModalOverlay(.jumpTo) { [weak self] in self?.close() }
         if case .unbuilt = phase { startBuild() }
         refreshRows()
     }
@@ -122,6 +124,7 @@ public final class JumpToState {
         guard isOpen else { return }
         isOpen = false
         query = ""
+        editor.dismissModalOverlay(.jumpTo)
         onClose?()
     }
 

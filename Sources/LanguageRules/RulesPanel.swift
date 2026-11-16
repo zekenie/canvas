@@ -12,14 +12,6 @@ import Validation
 // it inherits, dimmed; a box to add one), and a checked shape's Rules section in the Issues tab (each rule of its
 // chain with what its check says, and Shown: what the model was shown, group by group).
 
-/// A type's rules: on every shape that holds a schema, after its Schema.
-public enum RulesTab {}
-
-extension RulesTab: DetailTab {
-    public static var title: String { RulesStyle.tab }
-    public static var order: Order<Self> { .after(TypeSchemaTab.self) }
-}
-
 @MainActor
 func registerRulePanels(into registrar: inout PluginRegistrar) {
     registrar.forShapes(holding: TypeSchemaProperty.self) { types in
@@ -67,6 +59,10 @@ struct TypeRulesView: View {
         let rules = record[TypeSchemaProperty.self].map { RuleBook.rules(inSchema: $0.text) } ?? []
         let inherited = inheritedRules(of: type)
         VStack(alignment: .leading, spacing: 8) {
+            // The section's title follows the shape (a section's own is fixed), so the view heads itself, in the look of one.
+            if let index, let heading = RulesStyle.heading(of: type, in: index) {
+                DetailSectionTitle(heading)
+            }
             if !rules.isEmpty || !inherited.isEmpty, let failure = checks?.failure {
                 DetailStatusLine(DetailStatus(failure.message, tone: .warning), actions: actions(for: failure))
             }

@@ -1,0 +1,16 @@
+[
+  {
+    "query" : "task",
+    "reach" : "children",
+    "says" : "only tasks"
+  },
+  {
+    "query" : ":not(bug)",
+    "reach" : "descendants",
+    "says" : "no bugs anywhere inside"
+  },
+  {
+    "reach" : "children",
+    "says" : "only what the team agreed"
+  }
+]

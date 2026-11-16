@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([typeQueriesTests, incompleteTests, fieldPathQueryTests, askFieldsTests])
+runTests([typeQueriesTests, incompleteTests, fieldPathQueryTests, askFieldsTests, isAFitTests, fieldFitTests])

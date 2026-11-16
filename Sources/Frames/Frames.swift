@@ -1,6 +1,7 @@
 import Canvas
 import Colors
 import Connections
+import Constraints
 import CoreGraphics
 import Keyboard
 import Mentions
@@ -84,6 +85,7 @@ public struct FramesPlugin: ListedPlugin {
             frame.frameHeader()                                             // renamed in the panel's header
             frame.turnable(through: ContainerChannel.self)                  // turned through the container channel: into a subboard, where Subboards takes it
             frame.typeable(fillsFromWords: false)                           // of types: chips above it, its values in the panel's Types tab (no words to fill them from)
+            frame.constrainable()                                           // and it can say what it accepts: its funnel chip, its Rules tab
             frame.accessibility { frame, editor in                          // VoiceOver reads what it holds as its value: "3 shapes"
                 editor.document[frame.id] == nil ? nil : AccessibleTraits(value: FrameStyle.accessibleContents(editor.shapeContext.contents(of: frame.id).count))
             }

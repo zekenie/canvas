@@ -4,6 +4,7 @@ import DetailPanel
 import Foundation
 import Selection
 import Types
+import Validation
 
 /// The one writer of rules and of what a shape ignores: a type's `$rules`, written into its schema with the rest of
 /// its JSON as typed (`HeldDirective`), and a shape's `ignoredRules`. Each write is one step; a shape that can't change

@@ -17,12 +17,14 @@ import Geometry
 /// any tool (dragging a selection).
 ///
 /// With containers about, past the drag threshold, each drag event outlines the container what's
-/// dragged would go into (the hint), unless it's read-only; and the release settles what was dropped
+/// dragged would go into (the hint), unless it's read-only or would refuse it (`registrar.admission`,
+/// asked as a try); and the release settles what was dropped
 /// (`Transaction.settle`: in or out, nudged fully in or out across an edge), in the press's step, a
 /// container dropped taking in what it lands on (`settle(container:)`), and what's nudged glides there
 /// (`CanvasEditor.glide`). A read-only container (a locked frame) takes nothing: dropped into one,
 /// what was dragged goes back where it was, gliding from where it was dropped, and the press leaves
-/// no step.
+/// no step. So with a place that refuses what comes into it (`registrar.admission`), what the refusal
+/// names shaking.
 @MainActor
 public final class TranslatingSession {
     private let origin: CGPoint                                  // world units, at the press
@@ -51,10 +53,25 @@ public final class TranslatingSession {
     private var sites: [ShapeID]?
     /// The container outlined as the hint (`editor.hintedShapeID`).
     private var hinted: ShapeID?
+    /// Whether what moves is a placement's, new to the file (`PlacingSession`): it leaves no place, as
+    /// what judges what a place takes is told.
+    private let arePlaced: Bool
+    /// The container last found under what's dragged, and whether it would take it, asked once each
+    /// time it changes (`editor.admits`).
+    private var judged: (target: ShapeID, admits: Bool)?
+    /// Whether the release was refused (a read-only container, a place that refuses what comes in): what was dragged went
+    /// back and the press leaves no step of its own. Read after `end`, by a session that carries copies.
+    public private(set) var endWasRefused = false
 
     /// `origin` is where the drag began, in world units. Every `beginTranslation` runs now, and then
     /// the translation adjuster's `begin`, if a plugin claims it.
-    public init(ids: [ShapeID], from origin: CGPoint, in editor: CanvasEditor) {
+    public convenience init(ids: [ShapeID], from origin: CGPoint, in editor: CanvasEditor) {
+        self.init(ids: ids, from: origin, arePlaced: false, in: editor)
+    }
+
+    /// `arePlaced`: what moves is a placement's, just put down (`PlacingSession`).
+    init(ids: [ShapeID], from origin: CGPoint, arePlaced: Bool, in editor: CanvasEditor) {
+        self.arePlaced = arePlaced
         let document = editor.document, registry = editor.registry, kinds = registry.containingKinds
         var seen: Set<ShapeID> = []
         let asked = ids.filter { seen.insert($0).inserted }.compactMap { document[$0] }
@@ -162,6 +179,7 @@ extension TranslatingSession: Session {
         case .settled(let nudges):
             editor.glide(nudges)
         case .refused:
+            endWasRefused = true
             putBack(in: editor)
             let back = CGPoint(x: -moved.x, y: -moved.y)
             editor.glide(Dictionary(before.map { ($0.id, back) }, uniquingKeysWith: { first, _ in first }))
@@ -197,8 +215,9 @@ extension TranslatingSession: Session {
     /// Outlines the container what's dragged would go into (the hint), as the board is now: by the
     /// in-or-out rule over what was asked for that moves, judged by the container each came from as
     /// the release judges them, among the containers that don't move; none for a read-only one, none
-    /// where the groups would go different ways, or none at all. The containers are found once, so each event
-    /// costs what they are, not the board.
+    /// for one that would refuse it (`editor.admits`, asked once each time the container under it
+    /// changes), none where the groups would go different ways, or none at all. The containers are
+    /// found once, so each event costs what they are, not the board.
     private func outlineTarget(in editor: CanvasEditor) {
         let kinds = editor.registry.containingKinds
         guard !kinds.isEmpty else { return }
@@ -222,6 +241,10 @@ extension TranslatingSession: Session {
         let targets = Set(groups.values.map { ContainerRule.target(of: $0, among: found) })
         var target = targets.count == 1 ? targets.first! : nil
         if let id = target, editor.isReadOnly(id) { target = nil }
+        if let id = target, editor.registry.judgesAdmission {
+            if judged?.target != id { judged = (id, editor.admits(roots, into: .container(id), areNew: arePlaced)) }
+            if judged?.admits == false { target = nil }
+        }
         guard target != hinted else { return }
         hinted = target
         editor.hintedShapeID = target
@@ -239,7 +262,8 @@ extension TranslatingSession: Session {
 /// that placed them lasts: they follow the pointer as a `TranslatingSession` moves them (snapping, ⇧
 /// keeping them to an axis), whatever the placement, and on the release they settle
 /// (`Transaction.settle`: into the container holding most of them, or out, nudged across an edge, gliding
-/// there; a container placed takes in what it lands on), and an editing placement's one shape is edited
+/// there; a container placed takes in what it lands on), new to whatever judges what a place takes, are
+/// fitted to where they land (`registrar.placementFit`) and settled again, and an editing placement's one shape is edited
 /// (a click's at once, as far as anyone can tell), where it is, with no glide. A read-only container (a
 /// locked frame) takes nothing: placed into one, they're taken away, as Escape takes them, and services
 /// hear the container refused (it shakes). Escape takes them away again and puts back what the undo
@@ -251,13 +275,20 @@ final class PlacingSession {
     private let ids: [ShapeID]
     private let move: TranslatingSession
     private let edits: Bool
+    /// Whether the placement may make them another kind where they land (`Placement.kindIsOpen`).
+    private let kindIsOpen: Bool
     private let before: [ObjectIdentifier: any Sendable]
+    /// The kind the one shape was put down as, to name the step for what it landed as.
+    private let kind: ShapeKind?
 
-    init(_ ids: [ShapeID], from point: CGPoint, edits: Bool, restoring before: [ObjectIdentifier: any Sendable], in editor: CanvasEditor) {
+    init(_ ids: [ShapeID], from point: CGPoint, edits: Bool, kindIsOpen: Bool, restoring before: [ObjectIdentifier: any Sendable],
+         in editor: CanvasEditor) {
         self.ids = ids
         self.edits = edits && ids.count == 1
+        self.kindIsOpen = kindIsOpen
         self.before = before
-        move = TranslatingSession(ids: ids, from: point, in: editor)
+        kind = ids.count == 1 ? ids.first.flatMap { editor.document[$0]?.kind } : nil
+        move = TranslatingSession(ids: ids, from: point, arePlaced: true, in: editor)
     }
 }
 
@@ -268,8 +299,14 @@ extension PlacingSession: Session {
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         move.clearHint(in: editor)
-        let ids = ids
-        let settlement = editor.registry.containingKinds.isEmpty ? Settlement.settled(nudges: [:]) : editor.transact { $0.settle(ids) }
+        let ids = ids, kindIsOpen = kindIsOpen, registry = editor.registry
+        // Settled, new as they were put down, and fitted to where they land (`registrar.placementFit`).
+        let settlement = registry.containingKinds.isEmpty && !registry.fitsPlacements ? Settlement.settled(nudges: [:]) : editor.transact { transaction in
+            transaction.placing = Set(ids)
+            let settled = transaction.settlePlaced(ids, kindIsOpen: kindIsOpen)
+            if kindIsOpen, let id = ids.first, let was = kind { transaction.nameStepForLanding(of: id, putDownAs: was, tools: registry.tools) }
+            return settled
+        }
         switch settlement {
         case .refused:
             takeAway(in: editor)

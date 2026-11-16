@@ -18,7 +18,7 @@ import Titles
         let registry = try Registry(plugins: framePlugins())
         let schema = try require(registry.schema(for: Frame.kind)).json
         expectEqual(schema["title"]?.stringValue, "Frame")
-        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "title", "color", "frozen", "is", "fieldValues"])
+        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "title", "color", "frozen", "is", "fieldValues", "constraints"])
         expectEqual(schema["properties"]?["autofill"], nil, "a frame has no words to fill its fields from")
         expectEqual(schema["required"], ["frame"])
         expectEqual(schema["properties"]?["title"]?["x-canvas-owner"]?.stringValue, "titles")

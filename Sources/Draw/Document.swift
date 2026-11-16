@@ -156,7 +156,10 @@ public struct DocumentResult: Encodable, Sendable {
     let nodes: [NodeVerdict]
     let edges: [EdgeVerdict]
     let deleted: [Deleted]
-    let warnings: [Warning]
+    var warnings: [Warning]
+    /// What a second look at the drawing's shapes' issues needs, once the answers a commit starts have come
+    /// (`laterIssues`): never said, and none on a dry run.
+    var aftermath: DocumentAftermath?
 
     enum CodingKeys: String, CodingKey { case drawing, dryRun, on, nodes, edges, deleted, warnings }
 }

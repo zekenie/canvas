@@ -117,6 +117,21 @@ import Topology
         // The frame holding the shape goes nowhere it holds.
         expectEqual(moveItems(try menu(h, on: big)).map(\.count) ?? 0, 0, "a frame is not offered itself or what it holds")
     },
+    test("a place a plugin's judge refuses the shape, on this board or another's, is not offered, as a locked one isn't; /move-to takes the same places") {
+        let picky = Picky()
+        let near = ShapeID(), refusing = ShapeID(), p = ShapeID(), s = ShapeID()
+        let h = try EditorHarness(plugins: [SelectionPlugin()] + movingPlugins(log: RefusalLog(), [picky.plugin]),
+                                  file: CanvasFile(root: board(box(s, 0, 0), corral(near, at(300, 0, 400, 400)), corral(refusing, at(1000, 0, 400, 400)), pocket(p, 2000, 0)),
+                                                   children: [p: board()]))
+        picky.places = [.container(refusing), .board(BoardID(owner: p))]
+        let items = try require(moveItems(try menu(h, on: s)))
+        expectEqual(items.count, 1, "only the corral that takes it: \(items)")
+        expect(h.admits("move-to", onSelection: [s], near))
+        expect(!h.admits("move-to", onSelection: [s], refusing), "the picker leaves out a corral that refuses it")
+        expect(!h.admits("move-to", onSelection: [s], p), "and a subboard whose board does")
+        picky.places = []
+        expectEqual(try require(moveItems(try menu(h, on: s))).count, 3, "all three once none refuses")
+    },
     test("at most twenty places") {
         var records = [box(ShapeID(), 0, 0)]
         let s = records[0].id

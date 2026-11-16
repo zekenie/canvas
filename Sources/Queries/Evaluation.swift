@@ -293,6 +293,44 @@ final class Evaluation {
         return answers
     }
 
+    /// A standing query's ask (`StandingQuery`): every match and what each anchor matched, for the
+    /// whole file; or, for a commit's shapes, which of them match, once the shapes `checked` are found
+    /// to leave every anchor as the last whole answer had it (inside ones first, so each is checked
+    /// with those inside it as kept). An anchor they move makes it the whole file's ask, over this
+    /// snapshot (`escalated`). Names are not checked: a title or id no shape has matches nothing, so
+    /// "no bugs" holds of every shape while no type is called Bug.
+    func standing(_ ask: StandingAsk) async throws(QueryError) -> StandingAnswer {
+        guard let shapes = ask.shapes else { return try await wholeFile(ask, escalated: false) }
+        sets = ask.anchors
+        for anchor in ask.anchorPlaces {
+            try checkCancelled()
+            guard let kept = ask.anchors[anchor.id] else { return try await wholeFile(ask, escalated: true) }
+            let now: Set<ShapeID> = switch anchor {
+            case .list(let list): try await matches(list, among: .only(ask.checked))
+            case .node(let node): try await matches(node, among: .only(ask.checked))
+            }
+            guard now == kept.intersection(ask.checked) else { return try await wholeFile(ask, escalated: true) }
+        }
+        try checkCancelled()
+        return .shapes(matching: try await matches(ask.plan.root, among: .only(shapes)))
+    }
+
+    /// The whole file's answer to a standing query: every match, and every anchor's among every shape
+    /// (one the plan's answer never reached, as a compound that matched nothing before it, is worked out too).
+    private func wholeFile(_ ask: StandingAsk, escalated: Bool) async throws(QueryError) -> StandingAnswer {
+        sets.removeAll(keepingCapacity: true)
+        let found = try await matches(ask.plan.root, among: .all)
+        var anchors: [PlanNodeID: Set<ShapeID>] = [:]
+        for anchor in ask.anchorPlaces {
+            try checkCancelled()
+            anchors[anchor.id] = switch anchor {
+            case .list(let list): try await matches(list, among: .all)
+            case .node(let node): try await matches(node, among: .all)
+            }
+        }
+        return .whole(matches: found, anchors: anchors, escalated: escalated)
+    }
+
     /// What each request of a batch reaches (`QueryState.reaches(_:)`), in order, all over this one
     /// snapshot, as `admitted` answers a batch: each request is its own (its `scope`, what its nodes
     /// matched), what the requests read is shared, a request refused (an unknown id, a query that is
@@ -605,8 +643,7 @@ final class Evaluation {
                 guard let named = index.shapes(named: folded) else {
                     let guesses = Suggestions.closest(to: written, among: index.names, limit: 3).map(quoted)
                     let gone = try anchoring[node.id].flatMap(danglingHint)
-                    problems.append(QueryError(.unknownTitle, "No shape is titled \(written).", hint: sentences(didYouMean(guesses), gone),
-                                               span: node.span))
+                    problems.append(QueryError(unknownTitle: written, hint: sentences(didYouMean(guesses), gone), span: node.span))
                     continue
                 }
                 if plan.containerTitles.contains(node.id), let refusal = holdsNothing(written, named, span: node.span) { problems.append(refusal) }
@@ -829,7 +866,7 @@ final class Evaluation {
                 : index.shapes(named: test.name) != nil
             guard !exists else { continue }
             let guesses = Suggestions.closest(to: test.name, among: index.names, limit: 3).map(quoted)
-            warnings.append(QueryWarning(.noTitleMatch, sentences("No shape is titled \(test.name).", didYouMean(guesses))!))
+            warnings.append(QueryWarning(.noTitleMatch, sentences(QueryError.noShapeTitled(test.name), didYouMean(guesses))!))
         }
         return warnings
     }
@@ -951,6 +988,12 @@ final class Evaluation {
         case .kinds(let wanted):
             return try ofKinds(wanted, among: candidates)
         case .title(let folded, _):
+            // A few shapes before every name has been read (a standing query's ask): their names alone.
+            if case .only(let ids) = candidates, named == nil, everyName == nil, ids.count < QueryBudget.seedFromAnchors {
+                let pool = Array(ids)
+                try await readNames(pool)
+                return Set(pool.filter { name($0) == folded })
+            }
             return restrict(Set(try await titleIndex().shapes(named: folded) ?? []), to: candidates)
         case .id(let id):
             return entry(id) == nil ? [] : restrict([id], to: candidates)
@@ -1435,6 +1478,11 @@ final class Evaluation {
     /// and a shape in one is related to itself.
     private func related(_ word: String, to anchors: Set<ShapeID>, among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
         guard case .fileRelation(let relation)? = vocabulary.contributedWords[word]?.meaning, let prepared = snapshot.words[word] else { return [] }
+        // A few candidates, and the relation not read backward yet: each followed forward from itself,
+        // so the shapes no candidate leads to are never read (a standing query's ask of a commit's shapes).
+        if case .only(let ids) = candidates, ids.count < QueryBudget.relatedForward, reversedRelations[word] == nil {
+            return try relatedForward(ids, relation, prepared, to: anchors)
+        }
         let back = try reversed(word, relation, prepared)
         var found: Set<ShapeID> = []
         var level = Array(anchors)
@@ -1447,6 +1495,32 @@ final class Evaluation {
             level = relation.transitive ? next : []
         }
         return restrict(found.filter { entry($0) != nil }, to: candidates)
+    }
+
+    /// Those of `ids` related to an anchor: each followed forward (`related`), breadth first, each
+    /// shape once, as far as the relation goes (one step for one that isn't transitive). The same
+    /// shapes the relation read backward from the anchors finds among them.
+    private func relatedForward(_ ids: Set<ShapeID>, _ relation: ContributedFileRelation, _ prepared: any Sendable,
+                                to anchors: Set<ShapeID>) throws(QueryError) -> Set<ShapeID> {
+        var found: Set<ShapeID> = []
+        for id in ids where entry(id) != nil {
+            var seen: Set<ShapeID> = [], level = [id]
+            walk: while !level.isEmpty {
+                var next: [ShapeID] = []
+                for shape in level {
+                    try tick()
+                    for other in relation.related(shape, prepared) where seen.insert(other).inserted {
+                        if anchors.contains(other) {
+                            found.insert(id)
+                            break walk
+                        }
+                        next.append(other)
+                    }
+                }
+                level = relation.transitive ? next : []
+            }
+        }
+        return found
     }
 
     /// A file relation read forward for every shape that has any, as each shape's relatives

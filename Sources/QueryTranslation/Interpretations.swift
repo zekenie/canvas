@@ -179,7 +179,11 @@ public final class Interpretations {
         entry.host = host
         entries[key] = entry
         if interprets, let editor, let queries = editor.queries {
-            if let plan = try? queries.check(words) {
+            // Words for a stored query pass only as the translator would let one through: no word that reads the editor,
+            // and `:scope` only where the query is bound.
+            let context = host.context(of: key)
+            let checked = try? (context.isStored ? queries.checkStored(words, binding: context.binding == nil ? nil : .scope) : queries.check(words))
+            if let plan = checked {
                 entries[key]?.stage = .drafted
                 entries[key]?.draft = Entry.Draft(query: plan.canonical, found: nil)
                 evaluateDraft(at: key)

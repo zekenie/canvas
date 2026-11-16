@@ -26,7 +26,9 @@ public struct AutomationPlugin: ListedPlugin {
                 style. A statement about a title the board has changes that shape; one about a title it doesn't \
                 makes a new one. A shape with no title is named by its id (#<id>), the one a query's row gives, \
                 where a statement names a shape that's there: it never makes one. It's applied all at once, as one step of the app's undo, or not at all, and the \
-                result says what each statement did and where its shape landed. A title names a shape on any board \
+                result says what each statement did and where its shape landed. A real run then waits a moment for \
+                the app's checks to answer, and warns of any issue they find in what it wrote or touched that it \
+                hasn't said; a dry run can't know. A title names a shape on any board \
                 of the file (the one the window shows first), and in "X" puts a shape on the board X holds (a \
                 subboard's), or in X, where X holds shapes on its own board (a frame's): a run draws on the board \
                 what it names is on, else the one the window shows, without \
@@ -46,15 +48,18 @@ public struct AutomationPlugin: ListedPlugin {
                 CommandExample(#"\#(canvas) draw 'group "API" and "DB"'"#, "Put the two in one group: a click on either selects both."),
                 CommandExample(#"\#(canvas) draw '<kind> "Cache" in "Backend"'"#, "A shape on the board of the subboard titled Backend."),
                 CommandExample("\(canvas) draw --dry-run - < plan.txt", "Read the script from standard input, and say what it would do."),
-            ]
-        ) { params, context throws(AutomationError) in
-            let editor = try context.board()
-            do throws(DrawError) {
-                return try draw(script: params.script, dryRun: params.dryRun, reveal: params.reveal, program: canvas, drawing: params.drawing, in: editor)
-            } catch {
-                throw AutomationError(error)
-            }
-        }
+            ],
+            // It answers once the file's answers have come (`laterIssues`): the run is drawn in one turn, then waited for.
+            runAsync: { (params: DrawParams, context: AutomationContext) async throws(AutomationError) -> DrawResult in
+                let editor = try context.board()
+                let result: DrawResult
+                do throws(DrawError) {
+                    result = try draw(script: params.script, dryRun: params.dryRun, reveal: params.reveal, program: canvas, drawing: params.drawing, in: editor)
+                } catch {
+                    throw AutomationError(error)
+                }
+                return await laterIssues(of: result, in: editor)
+            })
         registrar.automationCommand(
             "apply", "Draw a whole document by key, on every board it reaches, in one step, or not at all.",
             discussion: """
@@ -74,15 +79,17 @@ public struct AutomationPlugin: ListedPlugin {
                 CommandExample("\(canvas) apply --dry-run - < drawing.json", "Say what drawing.json would do, changing nothing."),
                 CommandExample("\(canvas) apply - < drawing.json", "Draw it, or bring the drawing it names up to date."),
                 CommandExample(#"\#(canvas) apply --on "Proposal" - < drawing.json"#, "Draw its top on the board of the subboard titled Proposal."),
-            ]
-        ) { params, context throws(AutomationError) in
-            let editor = try context.board()
-            do throws(DocumentError) {
-                return try apply(document: params.document, dryRun: params.dryRun, on: params.on, program: canvas, in: editor)
-            } catch {
-                throw AutomationError(error)
-            }
-        }
+            ],
+            runAsync: { (params: ApplyParams, context: AutomationContext) async throws(AutomationError) -> DocumentResult in
+                let editor = try context.board()
+                let result: DocumentResult
+                do throws(DocumentError) {
+                    result = try apply(document: params.document, dryRun: params.dryRun, on: params.on, program: canvas, in: editor)
+                } catch {
+                    throw AutomationError(error)
+                }
+                return await laterIssues(of: result, in: editor)
+            })
         registrar.automationCommand(
             "rehearse", "Draw several scripts in turn on a copy of the board's file, and say what each would do, changing nothing.",
             discussion: """

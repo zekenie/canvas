@@ -43,6 +43,13 @@ import TestKit
         h.key(Chord.return)
         expectEqual(clicks.map(\.tag), [AdornmentTag("Place")])
     },
+    test("a label that is spoken (`spoken(_:)`) names its part for VoiceOver in place of its text or its type") {
+        let h = try adornedHarness([everyShape(Pin.self) { _ in AdornmentLabel("2", systemImage: "pin").spoken("  Pins,   2 loose ") }])
+        let box = h.add(Box(boxFrame))
+        expectEqual(h.editor.shapeParts(of: box).map(\.title), ["Pins, 2 loose"], "on one line")
+        expectEqual(AdornmentLabel("2").spoken("  ").spokenName, nil, "blank is none")
+        expect(AdornmentLabel("2") != AdornmentLabel("2").spoken("two"), "a label of its own, laid out again")
+    },
     test("a chip that shows a moment and fades is no part: what its click does has a command") {
         let h = try adornedHarness([fadingChips()])
         let box = h.add(Box(boxFrame))

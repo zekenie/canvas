@@ -232,12 +232,21 @@ import Topology
     },
 
     test("a repair that still refuses is an unusable answer, to try again") {
-        let model = ScriptedLanguageModel(answers: [#""Plan C""#, #""Plan D""#])
+        let model = ScriptedLanguageModel(answers: [":picked", ":picked"])
         let h = try interpretHarness(model)
         let id = h.addReference(words: "blocked work")
         try require(h.editor.references).interpret(id)
         spin({ if case .failed? = h.status(id) { true } else { false } }())
         expectEqual(try content(h, id).status, ReferenceStatusLine(text: "Unusable answer", isWarning: true, isBusy: false, action: .retry))
+    },
+
+    test("a title no shape has is said by name, in the words every host says, to try again once the shape exists") {
+        let model = ScriptedLanguageModel(answers: [#""Plan C""#, #""Plan D""#])
+        let h = try interpretHarness(model)
+        let id = h.addReference(words: "blocked work")
+        try require(h.editor.references).interpret(id)
+        spin({ if case .failed? = h.status(id) { true } else { false } }())
+        expectEqual(try content(h, id).status, ReferenceStatusLine(text: "No shape is called Plan D", isWarning: true, isBusy: false, action: .retry))
     },
 
     test("a call that outlives editing, the words unchanged, lands as its own step, \"Interpret\"; undo leaves the words and asks nothing") {

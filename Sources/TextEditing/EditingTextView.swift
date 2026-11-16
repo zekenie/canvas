@@ -88,6 +88,11 @@ open class EditingTextView: NSTextView {
     public var placeholder: String? {
         didSet { if placeholder != oldValue { needsDisplay = true } }
     }
+    /// Whether the box is enabled: its placeholder is drawn dimmer when it isn't, as its text is (`showEnabled(_:)`), so an empty
+    /// box that can't be typed in doesn't look like one that can. The panel's box says it on every update.
+    public var placeholderIsEnabled = true {
+        didSet { if placeholderIsEnabled != oldValue { needsDisplay = true } }
+    }
     /// Ranges of the text drawn on a rounded background under it. Set by the owner that marks them,
     /// and taken away when the view is made read-only; or derived from the text (`highlighting`).
     public var highlights: [TextHighlight] = [] {
@@ -398,7 +403,7 @@ open class EditingTextView: NSTextView {
         drawHighlights(in: rect)
         guard let placeholder, string.isEmpty else { return }
         let origin = textContainerOrigin, padding = textContainer?.lineFragmentPadding ?? 0
-        NSAttributedString(string: placeholder, attributes: [.font: font ?? TextEditingStyle.placeholderFont, .foregroundColor: NSColor.placeholderTextColor])
+        NSAttributedString(string: placeholder, attributes: [.font: font ?? TextEditingStyle.placeholderFont, .foregroundColor: placeholderIsEnabled ? NSColor.placeholderTextColor : NSColor.disabledControlTextColor])
             .draw(with: NSRect(x: origin.x + padding, y: origin.y, width: bounds.width - origin.x - padding * 2, height: bounds.height - origin.y),
                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }

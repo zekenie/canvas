@@ -115,16 +115,29 @@ public enum TranslationContext: Sendable, Hashable {
     /// (`binding`), each as `:scope`: the model is told so and the sentence the words are in (`BoundWords`), and the
     /// query may use the `:scope` words.
     case stored(binding: StoredBinding? = nil, sentence: String? = nil)
+    /// A query stored and run later as `.stored()` is, whose words say which shapes a container accepts (a constraint's:
+    /// "only tasks", "no bugs"): `holder` is the container as the person names it ("Backlog", "each Sprint"), and one more
+    /// line (`Shipped/ask-accepts.txt`) tells the model the query matches exactly the shapes the holder lets in, written
+    /// as a test of one shape. Unbound: it may not use `:scope`, so one query serves every holder it is kept for.
+    case accepting(holder: String)
 
     /// Whether the query is stored and run later.
     public var isStored: Bool {
-        if case .stored = self { return true }
-        return false
+        switch self {
+        case .stored, .accepting: true
+        case .person, .selection: false
+        }
     }
 
     /// What a stored query is bound to, if anything.
     public var binding: StoredBinding? {
         if case .stored(let binding, _) = self { return binding }
+        return nil
+    }
+
+    /// The container whose accepted shapes the words name (`.accepting`); nil otherwise.
+    public var holder: String? {
+        if case .accepting(let holder) = self { return holder }
         return nil
     }
 }
@@ -161,16 +174,20 @@ public final class QueryTranslator {
     public let referenceRule: String
     /// What a bound one adds (`TranslationContext.stored(binding:sentence:)`).
     public let bound: BoundWords
+    /// The line added for words that say what a container accepts, `{holder}` where its name goes (`TranslationContext.accepting`);
+    /// empty for none.
+    public let accepts: String
     public let style: AskStyle
     /// Weak: a question in flight never keeps a closed file's editor alive. Nor does a call hold it
     /// in a local across its awaits: what a question needs of it is taken at once (`inputs(for:)`), so
     /// the editor can go while a model call is out, and what cancels with it stops that call.
     private weak var editor: CanvasEditor?
 
-    init(system: String, referenceRule: String, bound: BoundWords, style: AskStyle, editor: CanvasEditor) {
+    init(system: String, referenceRule: String, bound: BoundWords, accepts: String, style: AskStyle, editor: CanvasEditor) {
         self.system = system
         self.referenceRule = referenceRule
         self.bound = bound
+        self.accepts = accepts
         self.style = style
         self.editor = editor
     }
@@ -305,6 +322,8 @@ public final class QueryTranslator {
             if !line.isEmpty { prompt += "\n" + line }
             if !words.isEmpty { vocabulary += "\n" + words }
         }
+        // Accepting: the line that says the words name what a holder lets in.
+        if let holder = context.holder, !accepts.isEmpty { prompt += "\n" + accepts.replacingOccurrences(of: "{holder}", with: holder) }
         var request = AskRequest.request(question: question, vocabulary: vocabulary, where: place, titles: titles, system: prompt, style: style,
                                          selection: !stored, narrowing: context == .selection, facts: facts)
         var tokens = (input: 0, output: 0), answers: [String] = []
@@ -370,41 +389,46 @@ public struct QueryTranslationPlugin: ListedPlugin {
     let prompt: String
     let referenceRule: String
     let bound: BoundWords
+    let accepts: String
     let style: AskStyle
 
     /// `prompt` is the system prompt the model is asked with, `referenceRule` the one line added to it when the query
-    /// is stored and run later (`TranslationContext.stored`), and `bound` what a bound one adds (none unless given);
-    /// `style` which model it asks, and how (`AskStyle.shipped` unless an evaluation tries another).
-    public init(prompt: String, referenceRule: String, bound: BoundWords = .none, style: AskStyle = .shipped) {
+    /// is stored and run later (`TranslationContext.stored`), `bound` what a bound one adds, and `accepts` the line a
+    /// query whose words say what a container accepts adds (`TranslationContext.accepting`, `{holder}` filled in): none
+    /// unless given; `style` which model it asks, and how (`AskStyle.shipped` unless an evaluation tries another).
+    public init(prompt: String, referenceRule: String, bound: BoundWords = .none, accepts: String = "", style: AskStyle = .shipped) {
         self.prompt = prompt
         self.referenceRule = referenceRule
         self.bound = bound
+        self.accepts = accepts
         self.style = style
     }
 
     /// The product's translator: asked with the product's prompt and rule line, which are text
-    /// files of its own (`Shipped/ask-prompt.txt` and `ask-rule.txt`, `ShippedText`), since their
+    /// files of its own (`Shipped/ask-prompt.txt` and `ask-rule.txt`, `ask-bound.txt` and `ask-accepts.txt`, `ShippedText`), since their
     /// examples name the shipped kinds, edge types and words, which no module knows all of. The
     /// prompt is the file byte for byte; the rule is its one line, without the line break. Only an
-    /// executable that is the product has them: anything else passes its own (`init(prompt:referenceRule:style:)`).
+    /// executable that is the product has them: anything else passes its own (`init(prompt:referenceRule:bound:accepts:style:)`).
     public init() {
         guard let prompt = ShippedText.named(Self.promptFile), let rule = ShippedText.named(Self.ruleFile),
-              let bound = ShippedText.named(Self.boundFile).flatMap(BoundWords.init(text:)) else {
-            preconditionFailure("QueryTranslationPlugin() reads Shipped/\(Self.promptFile).txt, \(Self.ruleFile).txt and \(Self.boundFile).txt, which the build puts only in the product's executables: pass a prompt")
+              let bound = ShippedText.named(Self.boundFile).flatMap(BoundWords.init(text:)), let accepts = ShippedText.named(Self.acceptsFile) else {
+            preconditionFailure("QueryTranslationPlugin() reads Shipped/\(Self.promptFile).txt, \(Self.ruleFile).txt, \(Self.boundFile).txt and \(Self.acceptsFile).txt, which the build puts only in the product's executables: pass a prompt")
         }
-        self.init(prompt: prompt, referenceRule: rule.trimmingCharacters(in: .newlines), bound: bound)
+        self.init(prompt: prompt, referenceRule: rule.trimmingCharacters(in: .newlines), bound: bound,
+                  accepts: accepts.trimmingCharacters(in: .newlines))
     }
 
     /// The product's files this plugin reads (`Shipped/<name>.txt`).
     public nonisolated static let promptFile = "ask-prompt"
     public nonisolated static let ruleFile = "ask-rule"
     public nonisolated static let boundFile = "ask-bound"
+    public nonisolated static let acceptsFile = "ask-accepts"
 
     public var id: PluginID { .queryTranslation }
 
     public func register(into registrar: inout PluginRegistrar) {
-        let prompt = prompt, referenceRule = referenceRule, bound = bound, style = style
-        registrar.service { QueryTranslator(system: prompt, referenceRule: referenceRule, bound: bound, style: style, editor: $0) }
+        let prompt = prompt, referenceRule = referenceRule, bound = bound, accepts = accepts, style = style
+        registrar.service { QueryTranslator(system: prompt, referenceRule: referenceRule, bound: bound, accepts: accepts, style: style, editor: $0) }
         registrar.service { Interpretations(editor: $0) }
     }
 }

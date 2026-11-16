@@ -72,8 +72,8 @@ import Types
         s.slash()
         expect(s.bar?.isOpen == true, "nothing selected: every note")
         expectEqual(s.bar?.label, "All shapes")
-        expectEqual(s.listed, ["lock", "private", "is-a", "color", "move-to", "move-near", "create-frame", "create-subboard", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind", "bulk-create", "query"],
-                    "what three notes offer, then the commands about every shape: /bulk-create, /query")
+        expectEqual(s.listed, ["lock", "private", "is-a", "color", "move-to", "move-near", "create-frame", "create-subboard", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind", "bulk-create", "constrain", "query"],
+                    "what three notes offer, then the commands about every shape: /bulk-create, /constrain (the board's), /query")
         model.queue(#":contains("buy")"#)
         s.window.type("query the shopping")
         s.window.pressReturn()
@@ -92,6 +92,29 @@ import Types
         s.slash()
         expect(!s.listed.contains("query"), "one note: no /query")
         expectEqual(s.editor.undoHistory.undoName, nil, "selecting is no step")
+    },
+
+    test("/constrain with nothing selected names the board it is about, the root by the file's name; /query keeps All shapes; a selection is as ever") {
+        let s = ShippedBar()
+        s.editor.nameRoot("Plans")
+        let note = s.note(100, 100, "Buy milk")
+        _ = s.note(400, 100, "Buy eggs")
+        s.slash()
+        expectEqual(s.bar?.label, "All shapes")
+        s.window.type("constrain")
+        expectEqual(s.bar?.label, "Plans", "the root's list, by the file's name")
+        expectEqual(s.editor.card?.view.superview?.superview?.accessibilityLabel(), "Command for Plans")
+        s.window.pressEscape()
+        s.window.pressEscape()
+        s.slash()
+        s.window.type("query")
+        expectEqual(s.bar?.label, "All shapes", "/query is about the shapes")
+        s.window.pressEscape()
+        s.window.pressEscape()
+        s.editor.selection = note
+        s.slash()
+        s.window.type("constrain")
+        expectEqual(s.bar?.label, "Note", "a selection: its shape, as VoiceOver calls it")
     },
 
     test("a note selected: / lists what the bar can run on it, col and Return open the colors, bl and Return color it blue in one step, the bar gone and the canvas with the keyboard") {

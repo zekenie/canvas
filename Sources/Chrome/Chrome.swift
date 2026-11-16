@@ -51,6 +51,15 @@ public enum ChromeStyle {
         $0.isDark ? NSColor(white: 1, alpha: 0.05) : NSColor(white: 0, alpha: 0.05)
     }
 
+    /// A small pill that floats over the board by itself (the zoom's label, the board's funnel): how far in from the canvas's edge
+    /// it sits (the minimap's margin too), how tall it is, how far in its content starts from its ends, and its type, the zoom
+    /// label's, with the figures' own width left to the label.
+    public static let floatMargin: CGFloat = 12
+    public static let floatPillHeight: CGFloat = 22
+    public static let floatPillPadding: CGFloat = 7
+    public static let floatPillTextSize: CGFloat = 11
+    public static var floatPillFont: NSFont { .systemFont(ofSize: floatPillTextSize, weight: .medium) }
+
     // MARK: Corners
 
     /// One rule gives every corner. An item (a row, a tab, a field, a button, a crumb) is rounded

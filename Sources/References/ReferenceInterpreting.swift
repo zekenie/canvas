@@ -224,6 +224,7 @@ extension ReferenceStatus {
         case .model(let message): self = .failed(.model(message))
         case .noQuery: self = .failed(.noQuery)
         case .unusable: self = .failed(.unusable)
+        case .unknownTitle(let title): self = .failed(.unknownTitle(title))
         }
     }
 }

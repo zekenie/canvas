@@ -4,6 +4,7 @@ import AppKit
 import CanvasTesting
 import Colors
 import Connections
+import Constraints
 import ContextMenus
 import DetailPanel
 import Frames
@@ -24,7 +25,7 @@ import Types
 /// contents; the keys), CanvasTesting's fixtures, for boxes to put in frames, and its freezing, for
 /// read-only shapes (a locked frame, without Locking).
 @MainActor func framePlugins(_ refusals: RefusalLog = RefusalLog()) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), FramesPlugin(), ColorsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), FramesPlugin(), ColorsPlugin(), ConstraintsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
      SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), PortsPlugin(), TitlesPlugin(), MentionsPlugin(), TransformPlugin(), TypesPlugin(),
      FreezingPlugin(log: refusals)]
 }

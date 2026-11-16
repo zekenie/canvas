@@ -22,6 +22,9 @@ import TestKit
 let queryCasesPath = "scripts/query-prompts/cases.tsv"
 let queryResultsPath = "scripts/query-prompts/results.tsv"
 
+/// The container the accepts cases' words are for.
+let queryAcceptsHolder = "Backlog"
+
 /// A case of the evaluation: a row of cases.tsv.
 struct QueryEvalCase: Sendable {
     enum File: String, Sendable {
@@ -29,6 +32,9 @@ struct QueryEvalCase: Sendable {
         case evalBoard = "eval-board"
         case fields
         case school
+        /// The accepts board (`QueryAcceptsBoard`): its question is the words of a constraint, asked as one is
+        /// (`TranslationContext.accepting`), and scored by the shapes the query it becomes matches.
+        case accepts
     }
 
     /// What a right answer is.
@@ -42,7 +48,7 @@ struct QueryEvalCase: Sendable {
     }
 
     static let categories = ["kinds", "titles", "mentions", "inside", "direction", "transitive", "state", "combined", "unanswerable",
-                             "robustness", "types"]
+                             "robustness", "types", "accepts"]
 
     let id: String
     let file: File
@@ -73,7 +79,7 @@ func queryEvalCases() throws -> [QueryEvalCase] {
     return try lines.dropFirst().filter { !$0.isEmpty }.map { line in
         let cells = line.components(separatedBy: "\t")
         _ = try require(cells.count == 7 ? true : nil, "seven columns: \(line)")
-        let file = try require(QueryEvalCase.File(rawValue: cells[1]), "a file, story, eval-board, fields or school: \(line)")
+        let file = try require(QueryEvalCase.File(rawValue: cells[1]), "a file, story, eval-board, fields, school or accepts: \(line)")
         let selection = QueryEvalCase.names(cells[3])
         let board = selection.first { $0.hasPrefix("in ") }.map { String($0.dropFirst(3)) }
         let expected: QueryEvalCase.Expected = switch cells[4] {
@@ -96,7 +102,8 @@ func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboa
     -> (editor: CanvasEditor, names: QueryCaseNames) {
     // The shipped list, asking in `style`.
     let plugins = ShippedPlugins.plugins(pasteboard: pasteboard, model: model).map { plugin in
-        plugin.id == .queryTranslation ? QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule, style: style) : plugin
+        plugin.id == .queryTranslation
+            ? QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule, accepts: QueryPrompt.acceptsLine, style: style) : plugin
     }
     let registry = try Registry(plugins: plugins)
     let file = switch evalCase.file {
@@ -104,6 +111,7 @@ func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboa
     case .evalBoard: QueryEvalBoard.file(in: registry)
     case .fields: QueryFieldsBoard.file(in: registry)
     case .school: QuerySchoolBoard.file(in: registry)
+    case .accepts: QueryAcceptsBoard.file(in: registry)
     }
     let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
     editor.viewportDidResize(to: QueryStory.viewport)
@@ -202,6 +210,12 @@ private let apiRetries = 4
 private let apiRetryWait: Duration = .seconds(2)
 
 /// What `/query` came to, when it was no selection: the bar's words for it.
+/// An accepts case's query that says where the shape sits.
+struct QueryReadsLocation: Error, CustomStringConvertible {
+    let query: String
+    var description: String { "the query says where the shape sits: \(query)" }
+}
+
 struct QuerySlashFailure: Error, CustomStringConvertible {
     let message: String
     var description: String { message }
@@ -268,6 +282,16 @@ func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, style: AskStyle) async -
             do {
                 if evalCase.asksAsSlash {
                     outcome = .success(try await askAsSlash(evalCase, editor: opened.editor, board: board, selected: selected))
+                } else if evalCase.file == .accepts {
+                    // Asked as a container's constraint is: the words become a stored query, which is then run.
+                    let translator = try require(opened.editor.queryTranslator), queries = try require(opened.editor.queries)
+                    let translated = try await translator.translate(evalCase.question, about: .accepting(holder: queryAcceptsHolder))
+                    // The query is a test of one shape: a word that says where the shape sits fails the case, though on this
+                    // file (every shape on the top board, no holder) it would match the same shapes.
+                    for word in [":top-level", ":inside", ":current-board", " > ", "\" >"] where translated.query.contains(word) {
+                        throw QueryReadsLocation(query: translated.query)
+                    }
+                    outcome = .success(try await queries.run(QueryRequest(translated.query, limit: QueryRequest.every, properties: .none)).rows.map(\.id))
                 } else {
                     let translator = try require(opened.editor.queryTranslator)
                     outcome = .success(try await translator.ask(evalCase.question, limit: QueryRequest.every, properties: .none).result.rows.map(\.id))

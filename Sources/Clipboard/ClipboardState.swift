@@ -280,7 +280,9 @@ final class ClipboardState {
     /// (`Transaction.settle`): into the container holding most of it, nudged in across its edge, or
     /// out of those it reaches into, gliding there; what's selected is what isn't in another shape
     /// pasted with it. A read-only container (a locked frame) takes nothing: a paste it would take
-    /// puts nothing down, and services hear the container refused (it shakes).
+    /// puts nothing down, and services hear the container refused (it shakes). What a cut took is
+    /// moved, not made, to what judges what a place takes (`Transaction.treatAsMoved`), so a place that
+    /// refuses a drop refuses its paste the same way.
     ///
     /// What a reader read from text lands centered on `point`, else in the middle of the view: it was
     /// copied from nowhere on the board.
@@ -313,6 +315,8 @@ final class ClipboardState {
         // A read-only container a paste would go in refuses it whole (`transactWhole`): nothing is put
         // down, no step is left, and the container shakes.
         let outcome = editor.transactWhole(name) { transaction -> (selected: [ShapeID], nudges: [ShapeID: CGPoint]) in
+            // What a cut took comes back moved, not made: a place refuses it as it refuses a drop.
+            transaction.treatAsMoved(ids.lazy.filter { $0.key == $0.value }.map(\.key))
             let carried = carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes)
             let groups = copiedGroups(of: carried, renaming: ids)
             for record in carried {

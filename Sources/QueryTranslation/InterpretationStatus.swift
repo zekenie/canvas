@@ -19,6 +19,9 @@ public enum InterpretationStatus: Equatable, Sendable {
     case noQuery
     /// The model's query, and its second, were refused.
     case unusable
+    /// They were refused for a title no shape has (the words name a shape the file doesn't hold yet): asking again
+    /// mends it once the shape exists.
+    case unknownTitle(String)
 
     /// What a person can do about it.
     public enum Action: Equatable, Sendable {
@@ -37,7 +40,7 @@ public enum InterpretationStatus: Equatable, Sendable {
         case .model(.unauthorized, _): self = .keyRejected
         case .model(let error, _): self = .model(error.message)
         case .declined, .unanswerable: self = .noQuery
-        case .unusable: self = .unusable
+        case .unusable(_, _, let refusal): self = refusal?.unknownTitle.map { .unknownTitle($0) } ?? .unusable
         // The engine refused something no second try mends (a closed file, no Topology): in its own words.
         case .refused(let refusal): self = .model(refusal.message)
         case .tooSlow: self = .model(LanguageModelError.timedOut.message)
@@ -54,6 +57,7 @@ public enum InterpretationStatus: Equatable, Sendable {
         case .model(let message): message
         case .noQuery: InterpretationWords.noQuery
         case .unusable: InterpretationWords.unusable
+        case .unknownTitle(let title): InterpretationWords.noShapeCalled(title)
         }
     }
 
@@ -63,7 +67,7 @@ public enum InterpretationStatus: Equatable, Sendable {
         switch self {
         case .interpreting, .unavailable: nil
         case .notSignedIn, .keyRejected: .openSettings
-        case .model, .noQuery, .unusable: .retry
+        case .model, .noQuery, .unusable, .unknownTitle: .retry
         }
     }
 
@@ -79,6 +83,7 @@ public enum InterpretationWords {
     public static let keyRejected = "Key rejected"
     public static let noQuery = "No query for these words"
     public static let unusable = "Unusable answer"
+    public static func noShapeCalled(_ title: String) -> String { "No shape is called \(title)" }
     public static let retry = "Retry"
     public static let openSettings = "Open Settings…"
     /// Under rows of what a query found, past the most a host lists.

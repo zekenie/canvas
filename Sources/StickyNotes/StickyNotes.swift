@@ -98,7 +98,7 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.colorable(default: .yellow)                   // a note has a color: its paper, yellow without one
             note.checkedByRules()                              // a note of a type is checked against the type's rules
             note.tint(NoteStyle.tint)                          // its yellow, wherever it's listed by its kind
-            note.createOnDoubleClick(place)                    // opts into the selection's double-click
+            note.createOnDoubleClick(place.openingKind())      // opts into the selection's double-click, its kind open: a place that accepts another kind makes that
             note.resizable(minimumSize: StickyNote.minimumSize) // and its handles, on the paper as it's laid out
             note.title(coverSurface: NoteStyle.color)          // and titles: a title, its pill, its cover, and its row's name
             note.titlePillLook { shape, _ in                   // a type's note is white paper, so its cover's ink is chosen for that

@@ -19,11 +19,18 @@ extension Transaction {
     /// mostly inside it comes in, nudged fully in, rising above what it holds; what's mostly outside is
     /// nudged out; read-only shapes stay. Those it took out of a container that it then took in are put
     /// down again (`settle(_:)`, with the others from that container), so they go back into it rather
-    /// than lying under it; those from a container it didn't take in stay in it.
+    /// than lying under it; those from a container it didn't take in stay in it. As it goes in, before it
+    /// holds anything, it's fitted to where it goes, as a placed shape is (`fit`, `registrar.placementFit`),
+    /// so what judges what a place takes (`registrar.admission`) judges them coming into it as it is: once,
+    /// at the end, what it holds directly, each from where it was when the transaction began, with what it
+    /// carries (a shape it took out of a container it then took in, put back there, is carried, never
+    /// asked about as passing through it); what it lands on beside them is asked about as it's taken in
+    /// too (`settle(container:)`), and left out where it's refused.
     ///
     /// Returns what settling nudged, by how far; nil, changing nothing, when none of them can be held,
     /// or when one that would be is read-only (all or nothing: noted in `refusedShapes`, for
-    /// `editor.transactWhole` to give it all up, as a refusal settling meets on the way is).
+    /// `editor.transactWhole` to give it all up, as a refusal settling meets on the way is, and as a
+    /// place's refusal of them is).
     mutating func enclose(_ ids: [ShapeID], in container: AnyShapeRecord, padding: CGFloat, minimumSize: CGSize) -> [ShapeID: CGPoint]? {
         let kinds = registry.containingKinds
         guard registry.isContainer(container), let found = putDown(for: ids), let lowest = found.held.first else { return nil }
@@ -38,13 +45,21 @@ extension Transaction {
         record.container = parent
         insert(record)
         guard document[record.id] != nil else { return nil }
+        // Written to suit where it goes (`registrar.placementFit`) before it holds anything, so what it
+        // takes in comes into it as it will be.
+        _ = fit([record.id], kindIsOpen: false)
         move(record.id, below: lowest.id)
         // Those it takes out of a container inside the one it goes in, with the container each leaves.
         let leaving = held.compactMap { member -> (id: ShapeID, from: ShapeID)? in
             guard let from = document.container(of: member, containingKinds: kinds), from != parent else { return nil }
             return (member.id, from)
         }
+        // Into it without asking what judges what a place takes: some only pass through it, going back
+        // into the container they left once it takes that in; where each ends up is asked below.
+        let wasHolding = holdsAdmission
+        holdsAdmission = true
         setContainer(held.map(\.id), to: record.id)
+        holdsAdmission = wasHolding
         var nudges = settle(container: record.id)
         var froms: [ShapeID] = [], back: [ShapeID: [ShapeID]] = [:]
         for member in leaving where document.containers(of: member.from, containingKinds: kinds).contains(record.id) {
@@ -53,6 +68,12 @@ extension Transaction {
         }
         for from in froms {
             nudges.merge(settle(back[from] ?? []).nudges) { $0 + $1 }
+        }
+        // What it holds directly, each from where it was when the transaction began, with what it carries
+        // (those put back in the container they left among it): asked together, all or nothing.
+        if registry.judgesAdmission {
+            let inside = document.contents(of: record.id, containingKinds: kinds).compactMap { document.index(of: $0) }.sorted()
+            guard refusal(of: inside.map { (document.shapes[$0], to: ShapePlace.container(record.id)) }) == nil else { return nil }
         }
         return nudges
     }

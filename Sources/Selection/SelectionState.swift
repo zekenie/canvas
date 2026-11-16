@@ -92,10 +92,14 @@ final class SelectionState {
     @ObservationIgnored var hoveredButton: ButtonHit? {
         didSet {
             guard hoveredButton?.button != oldValue?.button || hoveredButton?.source.cursor != oldValue?.source.cursor else { return }
+            hoveredHelp = hoveredButton?.help(in: editor)
             editor.setNeedsDisplay()
             editor.refreshCursor()
         }
     }
+    /// What the hovered button says it is (its plugin's `help`), asked when the hover begins and again after a
+    /// commit (`findHoveredButton`), so the host's tooltip is only set again when it changes.
+    @ObservationIgnored private(set) var hoveredHelp: String?
     @ObservationIgnored var pressedButton: AnyHashable? {
         didSet { if pressedButton != oldValue { editor.setNeedsDisplay() } }
     }
@@ -163,11 +167,25 @@ final class SelectionState {
     func findHoveredButton() {
         guard !buttonSources.isEmpty, editor.currentToolID == .select, editor.session == nil else { return }
         let hit = lastPointer.flatMap { editor.buttonHit(atViewPoint: $0) }
+        let unchanged = hit != nil && hit?.button == hoveredButton?.button
         hoveredButton = hit
+        // The same button, whose help may read what the commit changed: the tooltip is set again if it did.
+        if unchanged { askHoveredHelpAgain() }
         if hit != nil {
             hoveredHandle = nil
             hover(nil)
         }
+    }
+
+    /// The hovered button's help, asked again: what a commit changed may be what it reads, and the tooltip is set
+    /// again only if the text did change. A click's own commit lands while its press still runs (the look for
+    /// buttons waits for the press to end), so the click asks again itself.
+    func askHoveredHelpAgain() {
+        guard let hit = hoveredButton else { return }
+        let help = hit.help(in: editor)
+        guard help != hoveredHelp else { return }
+        hoveredHelp = help
+        editor.refreshCursor()
     }
 
     /// What the pointer at a view point hovers in the select tool, as it moves there: a canvas

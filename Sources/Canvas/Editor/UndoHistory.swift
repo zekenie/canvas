@@ -340,7 +340,7 @@ public final class UndoHistory {
 
     /// A commit is about to take the document from `old`, as `changes` says: it goes into the step
     /// it's part of, which opens (and clears what there was to redo) if none is.
-    func willCommit(_ changes: ChangeSet, from old: CanvasFile, name: String?, coalescing key: AnyHashable?, origin: Origin) {
+    func willCommit(_ changes: ChangeSet, from old: CanvasFile, name: String?, renaming rename: String? = nil, coalescing key: AnyHashable?, origin: Origin) {
         if let holder = opening(coalescing: key, origin: origin) {
             // Inside a commit: the transaction has built its document, and what the step closing would
             // finish with would be written over (`willTransact` closed it first, if it could).
@@ -354,7 +354,7 @@ public final class UndoHistory {
         guard var step = open else { return }
         step.builder.willCommit(changes, from: old)
         if step.groupName == nil { step.groupName = groupNames.lazy.compactMap { $0 }.first }
-        if step.firstName == nil { step.firstName = name }
+        if let rename { step.firstName = rename } else if step.firstName == nil { step.firstName = name }
         open = step
     }
 

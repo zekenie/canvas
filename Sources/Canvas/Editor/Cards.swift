@@ -2,6 +2,14 @@ import AppKit
 import CoreGraphics
 import Geometry
 
+/// A card's view that says what VoiceOver calls the card as it is now, for one whose name changes while it shows
+/// (the command bar's, with what is typed): asked as VoiceOver asks, in place of `CanvasCard.accessibilityLabel`,
+/// which is what it is called as it opens.
+@MainActor
+public protocol CardAccessibilityLabeling: AnyObject {
+    var cardAccessibilityLabel: String? { get }
+}
+
 /// A plugin's view shown under a rect of the board: sized in view points, following the camera, taking
 /// clicks and keys. A row of a plugin's that holds more than a row can show opens into one.
 /// The core knows nothing of what is in it: the host (`CanvasView`) frames the view and gives it the
@@ -111,10 +119,12 @@ extension CanvasEditor {
         // The one it replaces is taken down without telling the host, which hears of the new one.
         if let old = shownCard {
             shownCard = nil
+            showsBoardCard = false
             undoHistory.letGo()
             old.didClose(.replaced)
         }
         shownCard = card
+        showsBoardCard = card.shape == nil
         if let name = card.stepName { undoHistory.keep(card.id, named: name, adopting: card.adoptsPress) }
         delegate?.editorCardDidChange(self)
         setNeedsDisplay()
@@ -129,6 +139,7 @@ extension CanvasEditor {
     @_spi(Host) public func closeCard(_ reason: CanvasCardClosing) {
         guard let card = shownCard else { return }
         shownCard = nil
+        showsBoardCard = false
         undoHistory.letGo()
         delegate?.editorCardDidChange(self)
         setNeedsDisplay()

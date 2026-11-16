@@ -121,7 +121,7 @@ public final class SettleSource {
 /// waiter's timeout ends its wait even when the index has gone.
 @MainActor
 final class SettleWaiters {
-    private var waiting: [Int: (continuation: CheckedContinuation<Bool, Never>, timeout: ScheduledTask?, edgesOnly: Bool)] = [:]
+    private var waiting: [Int: (continuation: CheckedContinuation<Bool, Never>, timeout: ScheduledTask?, scope: SettleScope)] = [:]
     private var next = 0
 
     var isEmpty: Bool { waiting.isEmpty }
@@ -132,8 +132,8 @@ final class SettleWaiters {
         return next
     }
 
-    func wait(_ key: Int, _ continuation: CheckedContinuation<Bool, Never>, timeout: ScheduledTask?, edgesOnly: Bool = false) {
-        waiting[key] = (continuation, timeout, edgesOnly)
+    func wait(_ key: Int, _ continuation: CheckedContinuation<Bool, Never>, timeout: ScheduledTask?, scope: SettleScope = .everything) {
+        waiting[key] = (continuation, timeout, scope)
     }
 
     /// Ends one wait, saying whether it settled: nothing for one that's ended.
@@ -143,8 +143,18 @@ final class SettleWaiters {
         waiter.continuation.resume(returning: settled)
     }
 
-    /// Ends every wait whose settling `isSettled` says is over (by whether it waits for edges alone), settled.
-    func finishAll(where isSettled: (_ edgesOnly: Bool) -> Bool = { _ in true }) {
-        for key in waiting.keys.sorted() where waiting[key].map({ isSettled($0.edgesOnly) }) == true { finish(key, settled: true) }
+    /// Ends every wait whose settling `isSettled` says is over (by what it waits for), settled.
+    func finishAll(where isSettled: (_ scope: SettleScope) -> Bool = { _ in true }) {
+        for key in waiting.keys.sorted() where waiting[key].map({ isSettled($0.scope) }) == true { finish(key, settled: true) }
     }
+}
+
+/// Which sources a wait for settling waits for (`TopologyIndex.settled(timeout:)`).
+enum SettleScope {
+    /// Every source.
+    case everything
+    /// The sources of edges (`keepsSettling(edges:)`).
+    case edges
+    /// The sources whose answers a check reads (`keepsSettling(feedsChecks:)`).
+    case checks
 }

@@ -58,6 +58,9 @@ public final class BoardCrumbs {
     /// under it is too), which the path marks with a lock, once. Nil while none is. The editor's
     /// (`editor.readOnlyStart`), kept with the crumbs, so each crumb asks in O(1).
     public private(set) var readOnlyStart: BoardID?
+    /// How wide the pill is as drawn, in view points, for a view beside it that keeps clear of it; zero while it shows nothing
+    /// (the root's). Told by the pill itself as it is laid out.
+    public internal(set) var pillWidth: CGFloat = 0
     /// The crumb whose menu shows, by its board (`menu(of:)` says what the menu lists); nil while
     /// none does. One at a time, as the pointer goes (`pointerEntered(crumb:)` and the rest).
     public private(set) var openMenu: BoardID?
@@ -123,6 +126,7 @@ public final class BoardCrumbs {
             BoardCrumb(board: path[$0], title: editor.name(of: path[$0], root: ""), systemImage: editor.symbol(of: path[$0]), isReadOnly: $0 >= from)
         }
         if made != crumbs { crumbs = made }
+        if made.isEmpty, pillWidth != 0 { pillWidth = 0 }
         if start != readOnlyStart { readOnlyStart = start }
         noteEmptiness()
         if let openMenu, menu(of: openMenu) == nil { closeMenu() }

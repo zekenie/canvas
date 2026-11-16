@@ -44,7 +44,7 @@ public struct MovingPlugin: ListedPlugin {
         // Move To ▸ in the selection's menu, on the same kinds.
         registrar.forShapes(adopting: .box) { registerMoveToMenu(into: &$0) }
         registrar.contentsMoves(admits: { shapes, place, editor in Drop(shapes, to: place, in: editor) != nil },
-                                move: { shapes, place, editor in Drop(shapes, to: place, in: editor)?.commit() })
+                                move: { shapes, place, editor in Drop(shapes, to: place, in: editor)?.commit() ?? false })
     }
 }
 
@@ -90,8 +90,9 @@ func movePlace(of target: ShapeID, in editor: CanvasEditor) -> ContentsPlace? {
 /// (or have no box), a place that goes with them (the shape itself, what it holds at any depth, what's on a
 /// board it, or a shape it holds, owns), shapes or a place that's read-only (locked, in a locked frame, or
 /// on a board that takes no shapes: a locked subboard's, at any depth), shapes already in the place (the
-/// frame they're directly in, the subboard whose board they are on), a board the app can't show, and a frame
-/// too small for the box around the shapes coming in from elsewhere. It lays nothing out. What it's asked of
+/// frame they're directly in, the subboard whose board they are on), a board the app can't show, a frame
+/// too small for the box around the shapes coming in from elsewhere, and a place a plugin refuses them (a
+/// constrained frame: `editor.admits(_:on:into:)`). It lays nothing out. What it's asked of
 /// is the kinds the command names (frames and subboards).
 @MainActor
 func admitsInto(_ target: ShapeID, for shapes: [ShapeID], in editor: CanvasEditor) -> Bool {

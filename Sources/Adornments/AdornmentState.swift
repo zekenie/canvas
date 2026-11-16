@@ -517,8 +517,20 @@ final class AdornmentState {
     func click(_ button: AdornmentButton) {
         guard let record = editor.document[button.shape],
               let click = candidates(for: record.kind).first(where: { $0.adornment == button.adornment })?.click else { return }
+        click(clickOn(button, of: record), editor)
+    }
+
+    /// What a clickable adornment says it is, for the tooltip: its type's `help`, asked of the one button
+    /// hovered. Nil for a shape or an adornment that's gone.
+    func help(of button: AdornmentButton) -> String? {
+        guard let record = editor.document[button.shape],
+              let help = candidates(for: record.kind).first(where: { $0.adornment == button.adornment })?.help else { return nil }
+        return help(clickOn(button, of: record), editor)
+    }
+
+    private func clickOn(_ button: AdornmentButton, of record: AnyShapeRecord) -> AdornmentClick {
         let rect = frames(of: record).first { $0.adornment == button.adornment && $0.tag == button.tag && $0.isOverflow == button.isOverflow }?.rect ?? .null
-        click(AdornmentClick(shape: button.shape, tag: button.tag, rect: rect, isOverflow: button.isOverflow), editor)
+        return AdornmentClick(shape: button.shape, tag: button.tag, rect: rect, isOverflow: button.isOverflow)
     }
 }
 
@@ -685,7 +697,7 @@ enum AdornmentParts {
         let adornment = AdornmentID.of(A.self)
         return editor.adornmentFrames(of: id).filter { $0.adornment == adornment }.map { frame in
             let button = AdornmentButton(adornment, on: id, tag: frame.tag, isOverflow: frame.isOverflow)
-            return ShapePart(id: button, title: frame.label.text ?? clickable.partTitle, role: clickable.partRole, rect: frame.rect) { editor in
+            return ShapePart(id: button, title: frame.label.spokenName ?? frame.label.text ?? clickable.partTitle, role: clickable.partRole, rect: frame.rect) { editor in
                 editor.adornmentState?.click(button)
             }
         }

@@ -77,6 +77,9 @@ public struct DrawResult: Encodable, Sendable {
     /// What settling nudged into or out of containers, by how far (world units), for the glide;
     /// never said.
     var nudges: [ShapeID: CGPoint] = [:]
+    /// What a second look at the issues needs of the run, once the answers a commit starts have come (`laterIssues`): never said.
+    /// A dry run has none (nothing committed, so nothing comes).
+    var aftermath: DrawAftermath?
 
     enum CodingKeys: String, CodingKey {
         case changes, warnings, dryRun, on
@@ -363,7 +366,7 @@ private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, d
         let result = try editor.transact(on: drawing.target.board, DrawStyle.stepName) { transaction in
             // An agent's change, not the person's: what acts on a person's edits leaves it be.
             transaction.byAgent = true
-            let result = try drawing.apply(to: &transaction, reveals: reveals)
+            let result = try drawing.apply(to: &transaction, reveals: reveals, keepsAftermath: !dryRun)
             if !dryRun, let name, let records = editor.registry.drawRecording {
                 join(name, result, on: drawing.target.board, records: records, file: editor.file, registry: editor.registry, in: &transaction)
             }

@@ -48,6 +48,24 @@ public struct TypeChange: Sendable {
     public var isEmpty: Bool { !everything && types.isEmpty && marks.isEmpty && membership.isEmpty && lineage.isEmpty && lists.isEmpty }
 }
 
+/// What a commit changed in what the file's types hold aside or are drawn in, told to `TypeIndex.onHeldChange`: none of it
+/// is a change to a type's fields, so none is in `TypeChange`.
+public struct TypeHeldChange: Sendable {
+    /// Types whose schema changed only in what it holds aside (`HeldDirectives`: `$color`, `$autofill`, `$rules`, `$constraints`):
+    /// a change to anything else in it is `TypeChange.types`'.
+    public let held: Set<ShapeID>
+    /// Types whose shape holds another color now, or came or went holding one, or that name a color of the file that changed:
+    /// what their pills and their shapes are drawn in.
+    public let recolored: Set<ShapeID>
+
+    public init(held: Set<ShapeID> = [], recolored: Set<ShapeID> = []) {
+        self.held = held
+        self.recolored = recolored
+    }
+
+    public var isEmpty: Bool { held.isEmpty && recolored.isEmpty }
+}
+
 /// The file's types, on every board: each shape that holds a schema (`TypeSchemaProperty`), its
 /// name (its title, Titles') and a revision that moves whenever its schema or its name changes, so
 /// what depends on a type (a `$ref`'s completion, a type's highlights, an instance's chips) can tell
@@ -86,10 +104,13 @@ public final class TypeIndex {
         var lineage: Set<ShapeID> = [], lists: Set<ShapeID> = [], renamed: Set<ShapeID> = []
         /// Types whose shape holds another color now (or that came or went holding one): what their notes take.
         var recolored: Set<ShapeID> = []
+        /// Types whose schema's text changed in what it holds aside alone.
+        var held: Set<ShapeID> = []
         /// A type's shape says otherwise of whether its shapes fill their fields (or came or went saying it).
         var autofills = false
 
         var change: TypeChange { TypeChange(types: types, marks: marks, membership: membership, lineage: lineage, lists: lists) }
+        var heldChange: TypeHeldChange { TypeHeldChange(held: held, recolored: recolored) }
     }
 
     /// What a list's chain gives the shapes that hold it (`color(inheritedBy:)`): the colors its types' shapes
@@ -114,6 +135,7 @@ public final class TypeIndex {
     /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
     @ObservationIgnored private let standInKinds: Set<ShapeKind>
     @ObservationIgnored private var observers: [@MainActor (TypeChange) -> Void] = []
+    @ObservationIgnored private var heldObservers: [@MainActor (TypeHeldChange) -> Void] = []
     /// Each shape's types, in the order of its list (only the shapes that are some: Topology's `is-a`
     /// edges as drawn, so on a board the app can show), and the names of the types: kept as a value, so a
     /// query takes it up in O(1), the relationships' fit reads it off the main actor and a run lays its
@@ -258,6 +280,13 @@ public final class TypeIndex {
         observers.append(body)
     }
 
+    /// Calls `body` after each commit that changed what types hold aside (a schema's `$constraints`, `$rules`, `$color`, with
+    /// nothing else of it changed) or what they are drawn in: `TypeHeldChange`. A commit that changed neither tells nobody,
+    /// and a change to a type's fields is `onChange`'s.
+    public func onHeldChange(_ body: @escaping @MainActor (TypeHeldChange) -> Void) {
+        heldObservers.append(body)
+    }
+
     /// Whether the shape is a type that is no relationship type: one a field may hold the fields of in
     /// place (a `$ref`). A relationship type's fields belong to its arrows.
     public func canBeEmbedded(_ id: ShapeID) -> Bool {
@@ -325,6 +354,15 @@ public final class TypeIndex {
     /// (`:is-a`, a type's title where `is` is read). Copy on write: held by a query, a commit copies
     /// what it changes, once.
     public var graph: TypeGraph { kept }
+
+    /// Moves whenever `graph` may say something new of a shape that shape's own record doesn't show: a
+    /// type comes, goes, is renamed or remarked (or its schema changes), a type's own list changes, the
+    /// list of a shape that is no type but that another shape's list names changes or goes with it (the
+    /// chain `:is-a` follows runs through it: myCar is a Car through Toyota, though Toyota is no type
+    /// now), or a file is put in place. Not for the list of a shape no list names, which only that shape
+    /// reads: what a query's fact of the types says how far it has come by (`TypeFacts`,
+    /// `QueryFileFact.revision(in:)`).
+    @ObservationIgnored public private(set) var graphRevision = 0
 
     /// The shapes that read through these: every instance of them, and every instance of those, and
     /// so on, each once (the shapes themselves only where the chain comes back to them). What a
@@ -481,6 +519,7 @@ public final class TypeIndex {
         let same = sameSchema && kept?.name == name
         if var kept, same, kept.isRelationship == mark {
             guard kept.color != color || kept.schema != schema.text || kept.autofill != autofill else { return }
+            if kept.schema != schema.text { heard.held.insert(record.id) }
             let recolored = kept.color != color
             if kept.autofill != autofill { heard.autofills = true }
             kept.color = color
@@ -494,6 +533,7 @@ public final class TypeIndex {
             return
         }
         if kept == nil { heard.membership.insert(record.id) }
+        if sameSchema, let kept, kept.schema != schema.text { heard.held.insert(record.id) }
         if kept?.autofill != autofill { heard.autofills = true }
         if kept == nil || kept?.name != name || kept?.color != color { heard.renamed.insert(record.id) }
         if kept?.color != color { recolor(record.id, heard: &heard) }
@@ -533,6 +573,7 @@ public final class TypeIndex {
     }
 
     private func put(_ id: ShapeID, _ entry: Entry) {
+        graphRevision &+= 1
         entries[id] = entry
         kept.names[id] = entry.name
         kept.types.insert(id)
@@ -544,6 +585,7 @@ public final class TypeIndex {
     private func drop(_ id: ShapeID, heard: inout Heard) {
         kept.names[id] = nil
         guard let entry = entries.removeValue(forKey: id) else { return }
+        graphRevision &+= 1
         kept.types.remove(id)
         kept.relationshipTypes.remove(id)
         chainRevision &+= 1
@@ -564,20 +606,27 @@ public final class TypeIndex {
 
     /// A list changed: it is told in `lists`. A type's own list changing is told in `types` and `lineage`
     /// too, and moves the stamp: what its instances resolve to may have changed. An instance's list is in
-    /// no chain, so it moves nothing else.
+    /// no chain a row reads, so it moves nothing else, but the graph's revision when a list names the
+    /// instance: `:is-a` follows the chain through it.
     private func readLinks(of id: ShapeID, in topology: TopologyIndex, heard: inout Heard) {
         guard readLinks(of: id, in: topology) else { return }
         heard.lists.insert(id)
-        guard entries[id] != nil else { return }
+        guard entries[id] != nil else {
+            if hasInstances(id) { graphRevision &+= 1 }
+            return
+        }
         chainRevision &+= 1
+        graphRevision &+= 1
         heard.types.insert(id)
         heard.lineage.insert(id)
     }
 
-    /// A shape that's gone from the file holds no list.
+    /// A shape that's gone from the file holds no list: the chain through it, from the shapes whose
+    /// lists still name it, ends there now (the graph's revision).
     private func forgetLinks(of id: ShapeID, heard: inout Heard) {
         guard kept.links.removeValue(forKey: id) != nil else { return }
         heard.lists.insert(id)
+        if hasInstances(id) { graphRevision &+= 1 }
     }
 
     private func readEveryShape(in editor: CanvasEditor) {
@@ -599,6 +648,11 @@ public final class TypeIndex {
         // What the views of a type's fields observe moves for a change to a type, never for a list alone.
         if !change.types.isEmpty || change.everything { withMutation(keyPath: \.changeCount) { changesTold &+= 1 } }
         for observer in observers { observer(change) }
+    }
+
+    private func tell(_ change: TypeHeldChange) {
+        guard !change.isEmpty else { return }
+        for observer in heldObservers { observer(change) }
     }
 
     /// A type's name, its color, or whether it's there, changed: the readers of its name hear it, and
@@ -626,6 +680,7 @@ public final class TypeIndex {
         editor.adornmentsDidChange(for: named)
         told(renamed: named, in: editor)
         if named.contains(where: hasInstances) { editor.colors?.inheritedColorsDidChange() }
+        editor.onceHeard { [weak self] in self?.tell(TypeHeldChange(recolored: named)) }
     }
 
     /// Everything read again, for a file put in place, which forgets what its types were called (they
@@ -634,6 +689,7 @@ public final class TypeIndex {
         let before = Set(entries.keys), instances = Set(kept.links.keys)
         let marksBefore = kept.relationshipTypes
         chainRevision &+= 1
+        graphRevision &+= 1
         entries = [:]
         kept = TypeGraph()
         lastNames = [:]
@@ -693,16 +749,17 @@ extension TypeIndex: EditorService {
             if kinds.contains(record.kind) { read(record, registry: registry, heard: &heard) }
             if let topology, typeableKinds.contains(record.kind) { readLinks(of: id, in: topology, heard: &heard) }
         }
-        let change = heard.change, renamed = heard.renamed
+        let change = heard.change, renamed = heard.renamed, heldChange = heard.heldChange
         // What a type's shapes are drawn in follows its color (its id's where it holds none) and its chain, which no
         // commit to them says: a type that has shapes of it (or went) recolored, come or gone, or given another list
         // of its own (which may put another type first for a shape of it and of a type it is built on now).
         func gives(_ types: Set<ShapeID>) -> Bool { types.contains { entries[$0] == nil || hasInstances($0) } }
         let recolors = gives(heard.recolored) || gives(heard.membership) || gives(heard.lineage)
         let autofills = heard.autofills
-        guard !change.isEmpty || !renamed.isEmpty || autofills else { return }
+        guard !change.isEmpty || !renamed.isEmpty || autofills || !heldChange.isEmpty else { return }
         editor.onceHeard { [weak self, unowned editor] in
             self?.tell(change)
+            self?.tell(heldChange)
             self?.told(renamed: renamed, in: editor)
             if recolors { editor.colors?.inheritedColorsDidChange() }
             if autofills { self?.toldAutofills() }

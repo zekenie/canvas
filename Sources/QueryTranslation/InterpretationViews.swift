@@ -14,13 +14,16 @@ import SwiftUI
 /// wrapped.
 public struct InterpretedQueryView: View {
     let query: String
+    let label: String?
 
-    public init(_ query: String) {
+    /// `label` is what VoiceOver calls the box where the surrounding row doesn't say it.
+    public init(_ query: String, label: String? = nil) {
         self.query = query
+        self.label = label
     }
 
     public var body: some View {
-        DetailCodeEditor(.constant(query), height: InterpretationStyle.queryBoxHeight, isEditable: false, coloring: QueryColoring.spans)
+        DetailCodeEditor(.constant(query), height: InterpretationStyle.queryBoxHeight, isEditable: false, coloring: QueryColoring.spans, label: label)
     }
 }
 

@@ -30,6 +30,25 @@ import TestKit
     try EditorHarness(plugins: [SelectionPlugin()] + movingPlugins(log: log, more), file: file)
 }
 
+// MARK: A judge of what a place takes
+
+/// What refuses boxes moved into the places it names (`registrar.admission`), as a constrained frame's list does: a
+/// corral, or a pocket's board. It lets in a shape new to the file and anything that isn't a box.
+@MainActor final class Picky {
+    var places: Set<ShapePlace> = []
+
+    var plugin: Contributor {
+        Contributor(id: "picky") { registrar in
+            registrar.admission { [self] admission in
+                for arrival in admission.arrivals where !arrival.isNew && arrival.record.kind == Box.kind && places.contains(arrival.to) {
+                    return .refuses(shaking: [], saying: "Picky takes no boxes.")
+                }
+                return .admits
+            }
+        }
+    }
+}
+
 // MARK: A pin
 
 /// A shape bound to another as an arrow's end is (`ShapeReferencing`), drawn at that shape's middle: let

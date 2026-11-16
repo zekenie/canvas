@@ -172,11 +172,6 @@ public enum RuleBook {
         return noun(of: name)
     }
 
-    /// A type's name as a noun in a sentence.
-    public static func noun(of name: String) -> String {
-        let letters = Array(name)
-        guard let first = letters.first, first.isUppercase else { return name }
-        if letters.count > 1, letters[1].isUppercase { return name }
-        return first.lowercased() + String(letters.dropFirst())
-    }
+    /// A type's name as a noun in a sentence (Types' `TypeNoun`).
+    public static func noun(of name: String) -> String { TypeNoun.of(name) }
 }

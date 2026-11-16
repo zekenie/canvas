@@ -45,8 +45,14 @@ public struct OfferedSlashCommand {
     /// For a command about the target as a whole that runs at once (`SelectionSlashCommand.atOnce`): it run
     /// with what was typed, bound as `answering` is. Nil for any other command.
     fileprivate let acting: (@MainActor (SlashArguments) -> Void)?
+    /// For a command about the target as a whole that takes a choice (`SelectionSlashCommand.choosing`): what a pick runs, bound
+    /// as `answering` is. Nil for any other command.
+    fileprivate let choosingAbout: (@MainActor (SlashChoice) -> Void)?
     /// What VoiceOver hears while the bar waits for a command that answers later ("Interpreting…"), if it says.
     public let waiting: String?
+    /// What a command about the target as a whole calls it with nothing selected, when it says (`SelectionSlashCommand.naming(everything:)`),
+    /// bound to the editor (held weakly) and asked as the bar's label is; nil for any other command.
+    fileprivate let naming: (@MainActor () -> String)?
 
     /// One command, on the shapes of the target that offer it.
     struct Part {
@@ -68,6 +74,11 @@ public struct OfferedSlashCommand {
         self.shapes = shapes
         declaredTitle = command.command.flatMap { editor.registry.title(of: $0) }
         waiting = command.waiting
+        if let name = command.everythingName {
+            naming = { [weak editor] in editor.map(name) ?? "" }
+        } else {
+            naming = nil
+        }
         if let answer = command.answer {
             answering = { [weak editor] arguments in editor.map { answer(target, arguments, $0) } }
         } else {
@@ -78,7 +89,15 @@ public struct OfferedSlashCommand {
         } else {
             acting = nil
         }
-        if parts.count == 1, let choices = command.choices {
+        if let perform = command.chooseAbout {
+            choosingAbout = { [weak editor] choice in editor.map { perform(target, choice, $0) } }
+        } else {
+            choosingAbout = nil
+        }
+        if parts.count == 1, let about = command.choicesAbout {
+            choiceRows = { [weak editor] in editor.map { about(target, $0) } ?? [] }
+            choiceOtherwise = nil
+        } else if parts.count == 1, let choices = command.choices {
             choiceRows = { [weak editor] in editor.map { choices(shapes, $0) } ?? [] }
             let otherwise = command.otherwise
             choiceOtherwise = { [weak editor] typed in editor.flatMap { otherwise?(typed, shapes, $0) } }
@@ -108,6 +127,9 @@ public struct OfferedSlashCommand {
             admitsShape = admits
         }
     }
+
+    /// What it calls the target with nothing selected, in the bar's label, if it says (`SelectionSlashCommand.naming(everything:)`).
+    public var everythingName: String? { naming?() }
 
     /// Whether the target has shapes it doesn't act on: a list says how many it does ("3 of 5").
     public var isPartial: Bool { shapes.count < targetCount }
@@ -410,6 +432,11 @@ public final class SlashCommandState {
     /// for a command that takes no choice.
     @discardableResult
     public func run(_ command: OfferedSlashCommand, choosing choice: SlashChoice) -> Bool {
+        // One about the target as a whole acts on the target it was found for, shapes or none (an empty board's).
+        if let choosing = command.choosingAbout {
+            editor.undoHistory.group(choice.step ?? command.stepName) { choosing(choice) }
+            return true
+        }
         let parts = live(command)
         guard let part = parts.first, parts.count == 1, let runChoice = part.command.runChoice else { return false }
         editor.undoHistory.group(choice.step ?? command.stepName) { runChoice(part.shapes, choice, editor) }

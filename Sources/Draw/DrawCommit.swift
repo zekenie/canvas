@@ -43,7 +43,9 @@ private struct ColumnKey: Hashable {
 }
 
 extension Drawing {
-    func apply(to transaction: inout Transaction, reveals: Bool) throws(DrawError) -> DrawResult {
+    /// `keepsAftermath`: whether the result keeps what a second look needs (`DrawAftermath`); a dry run's does not, so it
+    /// asks its check no more than it says.
+    func apply(to transaction: inout Transaction, reveals: Bool, keepsAftermath: Bool = true) throws(DrawError) -> DrawResult {
         var changes: [DrawChange] = []
         var warnings = notes
         let before = target.shapes
@@ -275,23 +277,33 @@ extension Drawing {
                 }
             }
         }
+        var wrote: [DrawAftermath.Written] = []
         for (line, name, record) in changed {
+            let found = issues(of: record, in: shapes)
+            wrote.append(DrawAftermath.Written(line: line, name: name, id: record.id, said: found))
             // What the shape still needs is no warning of a shape the run wrote: its row's `problems` say it.
-            for issue in issues(of: record, in: shapes) where !issue.isIncomplete {
+            for issue in found where !issue.isIncomplete {
                 warnings.append(DrawWarning(line: line, name, issue: issue, about: record.id))
             }
         }
         // And every issue the run brought to a shape it did not write (DrawBrought.swift).
         // A shape a statement restated as it is has a row too: what its `problems` say it still needs is not said again.
-        warnings += brought(by: transaction, before: before, after: shapes, written: changed.map { ($0.line, $0.record.id) },
-                            restated: rowsSay)
+        let brings = brought(by: transaction, before: before, after: shapes, written: changed.map { ($0.line, $0.record.id) },
+                             restated: rowsSay, keeping: keepsAftermath)
+        warnings += brings.warnings
         if outside > 0, !reveals {
             warnings.append(DrawWarning(line: nil, "\(outside) \(outside == 1 ? "shape" : "shapes") landed outside the view — --reveal brings them into view"))
         }
 
         let rows = changes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
         let said = warnings.enumerated().sorted { ($0.element.line ?? .max, $0.offset) < ($1.element.line ?? .max, $1.offset) }.map(\.element)
-        return DrawResult(changes: rows, warnings: said, nudges: nudges)
+        var result = DrawResult(changes: rows, warnings: said, nudges: nudges)
+        // What a second look at the issues needs, once the file's answers have come (`DrawAftermath`): only with a check to ask.
+        if keepsAftermath, registry.drawCheck != nil, !wrote.isEmpty || !brings.looked.isEmpty {
+            result.aftermath = DrawAftermath(written: wrote, looked: brings.looked, said: brings.said, more: brings.more, restated: rowsSay,
+                                             named: { record, board, shapes in self.brokenName(record, on: board, shapes: shapes) })
+        }
+        return result
     }
 
     /// A restated shape as the statement leaves it: what it says, and where it's placed. A
@@ -325,15 +337,26 @@ extension Drawing {
         guard !registry.containingKinds.isEmpty else { return }
         let id = item.record.id
         let before = transaction.document[id]?.box.map { CGRect(origin: CGPoint(x: $0.minX + item.roomOffset.x, y: $0.minY + item.roomOffset.y), size: item.room) }
-        switch transaction.settle([id] + column.map(\.record.id)) {
-        case .refused(let container):
-            let named = transaction.document[container].map { self.named($0) } ?? "a container"
+        let said = transaction.refusalNotes.count, settled = Set([id] + column.map(\.record.id))
+        switch transaction.settle(settled) {
+        case .refused(let refusing):
+            // The container that refused (a read-only one is the one shape named), the lowest named if several.
+            let container = refusing.compactMap { transaction.document.index(of: $0) }.min().map { transaction.document.shapes[$0] }
+            let named = container.map { self.named($0) } ?? "a container"
             // A stand-in put beside an end has no placement of its own to change: where it goes is the side of what it's
             // beside. One its edge places is placed clear as a shape is.
             let clear = !item.implied ? "place it clear of \(named)"
                 : "name another side for it with \(EdgeKey.from.rawValue): or \(EdgeKey.to.rawValue): to put it clear of \(named)"
-            throw DrawError(item.statement, .readOnly, "\(subject(of: item)) would go in \(named), which is read-only (locked, say)",
-                            hint: "\(clear), or ask the user to unlock it")
+            if let container, transaction.isReadOnly(container) {
+                throw DrawError(item.statement, .readOnly, "\(subject(of: item)) would go in \(named), which is read-only (locked, say)",
+                                hint: "\(clear), or ask the user to unlock it")
+            }
+            // Not a lock: a place that judges what it takes (`registrar.admission`) refused it, in its own words.
+            let words = transaction.refusalNotes.dropFirst(said).joined(separator: " ")
+            let place = container.flatMap { settled.contains($0.id) ? nil : self.named($0) }
+            throw DrawError(item.statement, .cannotContain,
+                            "\(subject(of: item)) isn't taken where it would go\(place.map { ", in \($0)" } ?? "")\(words.isEmpty ? "" : ": \(words)")",
+                            hint: place.map { "place it clear of \($0)" } ?? "place it elsewhere")
         case .settled(let moved):
             for (shape, delta) in moved { nudges[shape] = (nudges[shape] ?? .zero) + delta }
             let own = moved[id] ?? .zero

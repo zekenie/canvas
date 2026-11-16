@@ -1,3 +1,5 @@
+import Foundation
+
 /// Why a query can't be answered: a reason to branch on, a message in the query's own terms, a hint
 /// when there's a fix (usually the query to write), and where in the query it is. The message is
 /// the problem; the hint, what to write instead.
@@ -31,6 +33,14 @@ public struct QueryError: Error, Sendable, Equatable, CustomStringConvertible {
         case boardClosed = "board_closed"
     }
 
+    /// What a refusal is about, as data, for a caller that must act on it and never reads the message back: the title an
+    /// `unknown_title` names, as written, and the shape a `cannot_contain` names by its id. Not part of how a refusal is
+    /// reported (the wire's and `canvas query`'s fields are the message, hint and span); nil for a refusal about neither.
+    public enum Subject: Sendable, Equatable {
+        case title(String)
+        case shape(UUID)
+    }
+
     public var reason: Reason
     public var message: String
     /// What's safe to say without knowing what only the app can say (`premise`).
@@ -44,14 +54,23 @@ public struct QueryError: Error, Sendable, Equatable, CustomStringConvertible {
     /// Several at once, this one first; empty when it's alone. Reading stops at the first syntax
     /// error; resolution collects every problem that doesn't depend on another.
     public var errors: [QueryError]
+    /// What it is about, if it is about a title or a shape (`Subject`): set where the refusal is built.
+    public var subject: Subject?
 
-    public init(_ reason: Reason, _ message: String, hint: String? = nil, premise: HintPremise? = nil, span: QuerySpan? = nil) {
+    public init(_ reason: Reason, _ message: String, hint: String? = nil, premise: HintPremise? = nil, span: QuerySpan? = nil,
+                subject: Subject? = nil) {
         self.reason = reason
         self.message = message
         self.hint = hint
         self.premise = premise
         self.span = span
+        self.subject = subject
         self.errors = []
+    }
+
+    /// The refusal of a title no shape has: its words (`noShapeTitled`) and the title, as written, as its subject.
+    public init(unknownTitle title: String, hint: String? = nil, span: QuerySpan? = nil) {
+        self.init(.unknownTitle, Self.noShapeTitled(title), hint: hint, span: span, subject: .title(title))
     }
 
     /// Several problems as one error: the first leads, and `errors` holds them all (each alone, up
@@ -65,6 +84,23 @@ public struct QueryError: Error, Sendable, Equatable, CustomStringConvertible {
         }
         self = alone[0]
         if alone.count > 1 { errors = Array(alone) }
+    }
+
+    /// The words of a title no shape has: "No shape is titled Task." The one owner of them, for the refusal and the warning.
+    public static func noShapeTitled(_ title: String) -> String { "No shape is titled \(title)." }
+
+    /// The title a refusal of `unknownTitle` names, as it was written; nil for any other refusal. What a caller says in
+    /// its own words ("No shape is called Task") without reading the engine's.
+    public var unknownTitle: String? {
+        guard reason == .unknownTitle, case .title(let title)? = subject, !title.isEmpty else { return nil }
+        return title
+    }
+
+    /// The shapes this refusal and each of `errors` name by id (`Subject.shape`).
+    public var shapesNamed: Set<UUID> {
+        var found: Set<UUID> = []
+        for problem in errors.isEmpty ? [self] : errors { if case .shape(let id)? = problem.subject { found.insert(id) } }
+        return found
     }
 
     /// Where the span is in `text` (the query it's about, as sent): its line from 1; the line as

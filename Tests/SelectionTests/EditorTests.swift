@@ -86,6 +86,30 @@ import TestKit
             }])
         }
     },
+    test("a double-click's placement reaches the core as it was claimed: an open kind open, fitted where it lands, on empty canvas and in a container") {
+        final class Opens { var asked: [Bool] = [] }
+        let opens = Opens()
+        let fits = Contributor(id: "fits") { r in
+            r.placementFit { fit in
+                opens.asked.append(fit.kindIsOpen)
+                return nil
+            }
+        }
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin { card, place in card.createOnDoubleClick(place.openingKind()) },
+                                            CorralsPlugin(), fits])
+        let corral = h.add(Corral(CGRect(x: 0, y: 0, width: 400, height: 300)))
+        h.press(at: CGPoint(x: 600, y: 150), clickCount: 2); h.release()
+        h.editor.endEditing()
+        h.press(at: CGPoint(x: 200, y: 150)); h.release()
+        h.press(at: CGPoint(x: 200, y: 150), clickCount: 2); h.release()
+        expectEqual(h.editor.document.shapes.filter { $0.kind == Card.kind }.count, 2)
+        expectEqual(opens.asked, [true, true])
+        expectEqual(h.editor.holder(of: try require(h.editor.document.shapes.last?.id)), corral)
+        h.editor.endEditing()
+        h.editor.setTool(ToolID(placing: Card.kind))
+        h.press(at: CGPoint(x: 600, y: 400)); h.release()
+        expectEqual(opens.asked, [true, true, false], "the tool's own placement keeps its kind")
+    },
     test("double-clicking a shape edits it only if its kind is editable; Return does the same") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CardsPlugin()])
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))

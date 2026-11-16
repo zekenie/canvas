@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -169,6 +170,9 @@ public func runAsTest(_ body: @MainActor () throws -> Void, afterEach: @MainActo
 /// (BenchmarkTests in a debug build) says `holdsBudgets: false`.
 @MainActor
 public func runTests(_ suites: [Suite], closing: [Suite] = [], holdsBudgets: Bool = true, afterEach: @MainActor () -> Void = {}) -> Never {
+    // The application exists before the first test, as it does in the app: what a test fires through `NSApp` (a menu item's action, an event)
+    // otherwise works only if an earlier test in the process happened to make it, so it failed alone, and when another suite's order changed.
+    _ = NSApplication.shared
     // Line-buffered even into a file (test.sh sends this to one), so a crash doesn't swallow what came before.
     setvbuf(stdout, nil, _IOLBF, 0)
     budgetsHeld = holdsBudgets

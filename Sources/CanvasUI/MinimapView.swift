@@ -485,7 +485,7 @@ enum MinimapStyle {
     static let heights: ClosedRange<CGFloat> = 72...150
     static let widthFraction: CGFloat = 0.25
     /// From the bottom-left corner of the part of the canvas left clear.
-    static let margin: CGFloat = 12
+    static let margin = ChromeStyle.floatMargin
     /// It floats over the board as the window's chrome does: on the chrome's surface, its corners a
     /// float's (`ChromeStyle`), the board in a well of the canvas's own color `wellInset` in, its corners
     /// concentric with the minimap's.

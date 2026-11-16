@@ -28,6 +28,11 @@ enum QueryPrompt {
     /// one line, without its line break, as the shipped translator takes it.
     static let referenceRule = (ShippedText.named(QueryTranslationPlugin.ruleFile) ?? "").trimmingCharacters(in: .newlines)
 
+    /// The line added after the rule line when the query's words say which shapes a container accepts
+    /// (`TranslationContext.accepting(holder:)`), `{holder}` where the container's name goes: the file's one line,
+    /// without its line break, as the shipped translator takes it.
+    static let acceptsLine = (ShippedText.named(QueryTranslationPlugin.acceptsFile) ?? "").trimmingCharacters(in: .newlines)
+
     /// Every query the prompt writes that runs on the story file, each verbatim in `system`: the
     /// answers after "→", and the examples that name the story's shapes and real attributes, in the
     /// prompt's order. Each is answered there (a count of 0 is an answer: `[text*="retry"]` finds

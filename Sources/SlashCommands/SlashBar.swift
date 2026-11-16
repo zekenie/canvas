@@ -348,8 +348,17 @@ public final class SlashBar {
     /// The line was changed: what the bar waited for is stopped, and it says again what it acts on.
     private func edited() {
         stopWaiting()
+        relabel()
         guard let shown, shown.view.state != .acting else { return }
         shown.view.show(.acting)
+    }
+
+    /// With nothing selected, what the command typed says it acts on: the board it adds to by its name, else the bar's own
+    /// label ("All shapes").
+    private func relabel() {
+        guard let shown, case .everything(let ids) = shown.target, !ids.isEmpty else { return }
+        let name = shown.field.typing.typedCommand?.everythingName
+        shown.view.act(on: name ?? SlashBarStyle.everything, spoken: SlashBarStyle.accessibilityLabel(for: shown.target, naming: name))
     }
 
     private func stopWaiting() {
@@ -398,7 +407,7 @@ extension CanvasEditor {
 
 /// The bar's size and words.
 @MainActor
-enum SlashBarStyle {
+public enum SlashBarStyle {
     /// The list's 240 and room for what it acts on.
     static let width: CGFloat = 280
     static let height: CGFloat = 28
@@ -413,7 +422,10 @@ enum SlashBarStyle {
     static let topInset: CGFloat = 8
     /// The panel's text.
     static let font = NSFont.systemFont(ofSize: 13)
-    static let labelFont = NSFont.systemFont(ofSize: 12)
+    public static let labelFont = NSFont.systemFont(ofSize: 12)
+    /// The width a failure's words have in the bar before they are cut: `failureShare` of what the bar leaves between its insets
+    /// (the label's cell, its padding with it, measures against this).
+    public static var failureRoom: CGFloat { (width - inset * 3) * failureShare }
     /// The command `/` runs, as the Keyboard Shortcuts window lists it.
     static let commandTitle = "Run a Command"
     /// What VoiceOver calls the field.
@@ -435,8 +447,15 @@ enum SlashBarStyle {
     /// What VoiceOver calls the bar: "Command for Groceries", "Command for 5 shapes", "Command for all shapes";
     /// "Command" on an empty board.
     static func accessibilityLabel(for target: SlashTarget, label: String) -> String {
-        if case .everything(let ids) = target { return ids.isEmpty ? fieldLabel : "Command for \(everything.lowercased())" }
+        if case .everything = target { return accessibilityLabel(for: target, naming: nil) }
         return "Command for \(label)"
+    }
+
+    /// The same with nothing selected, the command typed naming the board it acts on, if it does ("Command for Plans").
+    static func accessibilityLabel(for target: SlashTarget, naming name: String?) -> String {
+        guard case .everything(let ids) = target else { return fieldLabel }
+        if ids.isEmpty { return fieldLabel }
+        return "Command for \(name ?? everything.lowercased())"
     }
 
     /// What VoiceOver hears once a command ran on fewer shapes than the bar was opened on.

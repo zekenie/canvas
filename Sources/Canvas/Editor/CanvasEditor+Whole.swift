@@ -13,18 +13,20 @@ extension CanvasEditor {
     @discardableResult
     public func transactWhole<T>(_ name: String? = nil, coalescing key: AnyHashable? = nil, shaking: Set<ShapeID>? = nil,
                                  _ body: (inout Transaction) throws -> T) -> T? {
-        var refused: Set<ShapeID> = []
+        var refused: Set<ShapeID> = [], notes: [String] = []
         do {
             return try transact(name, coalescing: key) { transaction in
-                defer { refused = transaction.refusedShapes }
+                defer { (refused, notes) = (transaction.refusedShapes, transaction.refusalNotes) }
                 let result = try body(&transaction)
+                _ = transaction.judgeCrossings()
                 guard transaction.refusedShapes.isEmpty else { throw Transaction.Refused() }
                 return result
             }
         } catch {
             let refusal = error as? Transaction.Refused
             let shaken = shaking ?? refusal.map { refused.union($0.shapes) } ?? []
-            if !shaken.isEmpty { refuseChanges(to: shaken) }
+            // What a place that refused said is heard with it, unless the caller said exactly what shakes.
+            refuseChanges(to: shaken, saying: shaking == nil && refusal != nil ? notes : [])
             return nil
         }
     }

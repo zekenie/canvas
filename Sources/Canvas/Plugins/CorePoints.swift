@@ -71,6 +71,20 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
+    /// What a place takes in (`registrar.admission`): shapes coming into a container, or onto a board's
+    /// top level, from somewhere else, refused when any judge refuses them.
+    enum Admissions: ExtensionPoint {
+        typealias Contribution = @MainActor (Admission) -> Admission.Verdict
+        static var owner: PluginID { .core }
+    }
+
+    /// What a placed shape is written as where it lands (`registrar.placementFit`): each in turn, in
+    /// plugin order, given the last one's record.
+    enum PlacementFits: ExtensionPoint {
+        typealias Contribution = @MainActor (PlacementFit) -> AnyShapeRecord?
+        static var owner: PluginID { .core }
+    }
+
     /// Each command once, and each standard action answered by one command at most; the menu bar their
     /// items make, as `Commands.swift`'s check holds it.
     enum Commands {}

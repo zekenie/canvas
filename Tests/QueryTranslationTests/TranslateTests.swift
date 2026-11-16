@@ -30,7 +30,7 @@ extension Label: ShapeProperty {
 }
 
 @MainActor func translateHarness(_ model: ScriptedLanguageModel?, picked: Picked = Picked(), queries: Bool = true,
-                                 adding more: [any CanvasPlugin] = [], shapes extra: [AnyShapeRecord] = []) throws -> EditorHarness {
+                                 adding more: [any CanvasPlugin] = [], accepts: String = "", shapes extra: [AnyShapeRecord] = []) throws -> EditorHarness {
     var plugins: [any CanvasPlugin] = [ChoresPlugin(), TopologyPlugin()] + more
     if queries {
         plugins.append(QueriesPlugin())
@@ -44,7 +44,7 @@ extension Label: ShapeProperty {
         })
     }
     if let model { plugins.append(LanguageModelsPlugin(model: model)) }
-    plugins.append(QueryTranslationPlugin(prompt: systemPrompt, referenceRule: referenceRule))
+    plugins.append(QueryTranslationPlugin(prompt: systemPrompt, referenceRule: referenceRule, accepts: accepts))
     let shapes = ["Pantry", "Cellar", "Attic"].map { name -> AnyShapeRecord in
         var record = AnyShapeRecord(ShapeRecord(id: ShapeID(), Chore(CGRect(x: 0, y: 0, width: 100, height: 60))))
         record[Label.self] = name
@@ -112,6 +112,26 @@ func message(_ request: ModelRequest) -> String { request.messages.first?.text ?
         expectEqual(query, #""Pantrie""#)
         expectEqual(refusal.reason, .unknownTitle)
         expectEqual(model.requests.count, 2)
+    },
+    test("a title no shape has says which, in the words every host says; asking again is what mends it") {
+        let model = ScriptedLanguageModel(answers: [#""Garage""#, #""Garage""#])
+        let h = try translateHarness(model)
+        guard case .failure(let error) = try translated("the garage", on: h) else { return expect(false, "refused") }
+        let status = try require(InterpretationStatus(error))
+        expectEqual(status, .unknownTitle("Garage"))
+        expectEqual(status.words, "No shape is called Garage")
+        expectEqual(status.action, .retry)
+        expectEqual(QueryError(.unknownTitle, "A title.").unknownTitle, nil, "the refusal's data names one, never its words")
+    },
+    test("a host says No shape is called <that title>, whatever the title: a full stop, quotes, the engine's words") {
+        for title in ["Garage", "Garage.", #"The "big" one"#, "No shape is titled Garage.", "Ünïcode ☃"] {
+            let error = QueryTranslationError.unusable("x", query: "q", refusal: QueryError(unknownTitle: title))
+            let status = try require(InterpretationStatus(error))
+            expectEqual(status, .unknownTitle(title), title)
+            expectEqual(status.words, "No shape is called \(title)", title)
+        }
+        let words = QueryTranslationError.unusable("x", query: "q", refusal: QueryError(.unknownTitle, QueryError.noShapeTitled("Garage")))
+        expectEqual(InterpretationStatus(words), .unusable, "words with no title as data are an unusable answer")
     },
 
     test("a query the check refuses is repaired too") {

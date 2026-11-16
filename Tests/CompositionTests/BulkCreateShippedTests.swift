@@ -77,7 +77,7 @@ private func column(_ count: Int, from point: CGPoint, inRow: Bool = false) -> [
         let rig = BulkRig()
         rig.window.type("/")
         expect(rig.bar?.isOpen == true, "an empty board offers bulk-create")
-        expectEqual(rig.rows, ["bulk-create (A, B, C)"])
+        expectEqual(rig.rows, ["bulk-create (A, B, C)", "constrain (words)"], "and /constrain, for the board itself")
         expectEqual(rig.bar?.label, "", "no shapes to act on")
         rig.window.type("bulk-create Auth, Billing , ,Payments")
         rig.window.pressReturn()
@@ -167,7 +167,7 @@ private func column(_ count: Int, from point: CGPoint, inRow: Bool = false) -> [
         let rig = BulkRig()
         let note = rig.editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 260, height: 200)))
         rig.window.type("/")
-        expectEqual(Array(rig.listed.suffix(2)), ["bulk-create", "query"], "after what the board's shapes offer, before /query")
+        expectEqual(Array(rig.listed.suffix(3)), ["bulk-create", "constrain", "query"], "after what the board's shapes offer, before /query")
         rig.window.pressEscape()
         rig.window.pressEscape()
         rig.editor.selection = note

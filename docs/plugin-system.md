@@ -60,6 +60,7 @@ maps one onto the other.
 - [Decision models](#decision-models)
 - [Embedding models](#embedding-models)
 - [Language rules](#language-rules)
+- [Constraints](#constraints)
 - [Prose maps](#prose-maps)
 - [Snapping](#snapping)
 - [Capabilities](#capabilities)
@@ -306,7 +307,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Draw the rest of the board quieter but for shapes you keep, each at a strength | `Outlines(dim: Dimming(focus: [ShapeID: CGFloat]))`: the core's opacities, plugins' dims joined at the strongest, hidden by a drag | [Outlines](#outlines) |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Keep two values a shape holds saying one thing, whoever writes either (a type's color and its schema's `$color`) | `x.keepsInStep { before, record in … }`, or `registrar.keepsInStep(Kind.self)` | [Added properties](#added-properties) |
-| Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
+| Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place.openingKind())` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
 | Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
 | Make a kind's shapes open onto the boards they own: Open in its menu, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
@@ -316,6 +317,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Say what a board is called over another plugin's list of it | `registrar.contentsHeading { editor in … }` (the table of contents'), `registrar.boardHeading { board, editor in … }` (the panel's lists grouped by board: Find's) | [Boards](#boards) |
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
 | Hold shapes in a region of the board that moves them with it, locks them with it and keeps what's put down from sitting across its edge | `ShapeContaining` on a box kind's definition, nothing to implement; `FramesPlugin`, whose Frame tool (F) draws one | [Frames](#frames), [Containers](#containers) |
+| Refuse shapes moved into a container, or onto a board, that don't belong there, as a locked frame refuses a drop | `registrar.admission { admission in … }`, the core's (`ShapePlace`, `Admission`), and `editor.admits(_:into:)` to ask without a change | [What a place takes in](#what-a-place-takes-in) |
+| Write a shape a person places to suit where it lands (a task, in a container of tasks) | `registrar.placementFit { fit in … }`, the core's (`PlacementFit`), and `placement.openingKind()` for a placement that may make another kind | [A placed shape fitted to where it lands](#a-placed-shape-fitted-to-where-it-lands) |
 | Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
 | Let a kind's shapes be turned into another kind's (a frame into a subboard), from their menu and as a command, without either kind naming the other | `x.turnable(through: ContainerChannel.self)` on the kind that offers it; `registrar.turnable(into: P.self, through: C.self) { source, transaction in … }` on the kind that takes it, turning with `transaction.turn` and `transaction.move` | [Transform](#transform) |
 | Say what a shape hands over when it turns into another kind (what its target is given) | A `TransformChannel`: `name`, `admits(_:)` and `source(of:in:)`; `ContainerChannel` is the one that ships | [Offering and taking a channel](#offering-and-taking-a-channel), [The container channel](#the-container-channel) |
@@ -350,6 +353,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Turn texts into vectors (and test it without the network) | `registry.embeddings?.vectors(of:)` (asked of the model only what it hasn't given), `EmbeddingText.of(title:words:)`; `ScriptedEmbeddingModel` in tests | [Embedding models](#embedding-models) |
 | Hold a member of another plugin's in every type's schema, out of the sync's sight | `registrar.typeDirective("rules")` (Types); `registry.heldDirectives` | [Language rules](#language-rules) |
 | Check a kind's shapes against their types' rules in English | `x.checkedByRules()` (LanguageRules); `editor.ruleChecks?.check(of:)` | [Language rules](#language-rules) |
+| Let a container say what it accepts (only tasks, no bugs), refuse what's moved in that doesn't match, make what's placed there fit, and flag what's inside that doesn't | `x.constrainable()` on a kind that holds shapes or owns a board (Constraints); `editor.constraintWriter?.add(_:to:)`; `editor.constraintIndex?.breaches(of:)` | [Constraints](#constraints) |
+| Give a container constraints from elsewhere (a type's, to its frames) | `forShapes(holding: P.self) { $0.inheritedConstraints({ id, editor in [ConstraintSource] }, readers: …) }` (`readers`: of a holder, the containers that read through it, so a run that writes the holder reaches their members even while they have no list of their own), and `constraintIndex?.inheritedConstraintsDidChange(of:)` when they change with no commit | [Constraints](#constraints) |
 | Say which words of a text say which part of a lower-level text (a schema, code, a query), to highlight them | A `ProseTarget` (a name and a guide); `editor.proseMaps?.map(T.self, of:prose:target:askingIf:)` where the words are drawn | [Prose maps](#prose-maps) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Let a kind's shapes be mentioned in text, as pills | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` for another plugin's kind | [Mentions](#mentionable-kinds) |
@@ -844,7 +849,9 @@ in parts today ([Types](#types-shapes-that-hold-a-schema)).
   it's drawn. A placement can be made into another: `.mapping { record in … }` changes what it
   makes (a plugin that puts down a record it built, with values another plugin's data fills in; the
   kind stays), `.sized(size)` makes shapes of another size, and `.setting(Property.self, to:)` sets
-  an added value. Any tool or gesture can also insert a shape itself, with
+  an added value. Where it lands, a plugin may write what's placed to suit the place, and
+  `.openingKind()` lets that make it another kind ([A placed shape fitted to where it
+  lands](#a-placed-shape-fitted-to-where-it-lands)). Any tool or gesture can also insert a shape itself, with
   `editor.transact { $0.insert(record) }`, as a port's drag does its arrow.
 - **Shapes placed together, later**: `editor.placeLater(PendingPlacement(records, stepName:) { modifiers in … })`
   hands the core records to put down where the next press is, each where the closure puts it for the
@@ -2138,7 +2145,7 @@ that both binds and names.)
   `forEachNamedShape` (each id, repeats included) and `renamingShapes` (pure; nil keeps a name).
   Types' `TypeLink` is a shipped one: an entry of a shape's `is`, a wrapper of one `ShapeID` coded as the
   bare uuid string, which `canvas draw` writes by the type's title and queries read as it. It wraps the id because `ShapeID` itself must not be `ShapeNaming` (an arrow's
-  bindings are ids, and a binding is not a name).
+  bindings are ids, and a binding is not a name). Constraints' `ConstraintList` is another: the shapes the titles in a container's constraints named (`Constraint.names`), so a copy pasted with them names the copies.
 - **What the registry refuses.** A struct that holds names without adopting `ShapeNaming`, in a
   kind's props or an added property's value, since nothing could find its names and a copy would go
   on naming the originals:
@@ -2362,6 +2369,7 @@ of a selection: Selection works through the same generic hooks any plugin can us
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects what was just placed (several, placed together). |
 | `EditorService.boardDidChange`, `editor.showBoard` | Another board shown: what was selected on the board left is a step back, and nothing is selected on arrival. |
 | `EditorService.drawsSkeletonsDidChange` | The canvas started or stopped drawing [skeletons](#skeletons) under a pointer that may be still: in the select tool, with nothing under way, it looks again at what the pointer rests on, as a move there would, so a face's hovered target gives way to its shape. Buttons are looked for first, as on a move, so a button that comes or goes with the level (one that shows only in full, a lock chip) takes or gives up the hover without its plugin saying so. |
+| `EditorService.rehearsalDidBegin` | A rehearsal of an editor (`canvas apply`, `canvas rehearse`) tells its services whose it is: Constraints' index reads the source's answers, so a move into a place that refuses is refused on the rehearsal as on the editor. |
 | `EditorService.didRefuseChanges` | `RefusalShake` shakes the shapes tried ([Refusing a change](#refusing-a-change-the-shake)). |
 | `Session.draw(in:)` | The marquee draws itself. |
 | `TranslatingSession`, `editor.shape(at:where:)` | Dragging the selection moves it; presses and hover find the front-most selectable shape. |
@@ -2550,7 +2558,9 @@ shakes them).
 
 - `note.createOnDoubleClick(place)` fills `DoubleClickPlacement`: what a double-click on empty
   canvas places, at most one kind, and on a shape it would neither open nor edit (an empty frame,
-  hit anywhere inside), as tldraw's. StickyNotes does, so it can't be installed without Selection.
+  hit anywhere inside), as tldraw's. StickyNotes does, so it can't be installed without Selection, with its placement's
+  kind open (`createOnDoubleClick(place.openingKind())`, [Constraints](#constraints)): a double-click in a place that accepts
+  another kind makes that kind, while the Note tool still makes a note.
 - `HandleProviding` is Selection's capability: handles on the only selected shape. The select tool
   finds, draws and hit-tests them; the definition says what a press and a drag do.
 - `x.resizable(minimumSize:)` fills `ShapeResizing`: a box kind's shapes are resized with handles,
@@ -2698,7 +2708,8 @@ shape is a `ClickableAdornment`, and needs no call of its own:
 
 ```swift
 registrar.canvasButtons(at: { editor, viewPoint in editor.adornmentState?.button(atViewPoint: viewPoint) },   // any Hashable, or nil
-                        click: { button, editor in editor.adornmentState?.click(button) })
+                        click: { button, editor in editor.adornmentState?.click(button) },
+                        help: { button, editor in editor.adornmentState?.help(of: button) })       // optional: the tooltip
 registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPoint) },
                         drag: { dot, origin, editor in state.connect(from: dot, at: origin) })     // a Session, or nil
 ```
@@ -2729,6 +2740,13 @@ registrar.canvasButtons(at: { editor, viewPoint in state.dot(atViewPoint: viewPo
   each commit, and with the [skeleton](#skeletons) level as it changes (Selection's
   `drawsSkeletonsDidChange`). One that comes or goes some other way (a chip fading out) calls
   `editor.canvasButtonsDidChange()`, as `editor.adornmentsDidChange(for:)` does for an adornment.
+- **Help.** A button may say what it is, shown as the system tooltip while the pointer rests on
+  it: `help: { button, editor in … }` on either call (a `String?`, nil for none), asked of the
+  one button hovered, when the hover begins, after each commit while it lasts and after the button's own click, so it may read
+  the document and differ by shape. A clickable adornment gives it with
+  `ClickableAdornment.help(for:in:)` (given its `AdornmentClick`: shape, tag and rect), which
+  Adornments passes along; the shipped chips give none. The core carries it as `Tool.help(in:)`
+  and the host's `CanvasView` sets its `toolTip` from it; a button with no help shows none.
 - **Keep `at` cheap**: the select tool asks it as the pointer moves. Adornments' looks only where
   an adornment could be, through `editor.paintOrder(in:)`, and at nothing when no plugin places a
   clickable one; Ports' at the dots of the few shapes near the pointer, and at what covers them
@@ -2854,7 +2872,10 @@ shape. A try while a shape shakes doesn't start it over. A container shakes with
 any depth, as it moves with it. Only shapes on the board shown shake. A refusal also names the
 owner of a read-only board that something tried to put a shape on: a placement on the board shown
 names its own owner, which is on the board above, so nothing shakes, while a move onto a locked
-subboard's board from the board its card is on names the card, which does. Another board shown
+subboard's board from the board its card is on names the card, which does. A place that refuses
+what comes into it ([What a place takes in](#what-a-place-takes-in)) names what shakes, and what it
+says of it VoiceOver hears with the refusal (`editor.announce`), the core's, not Selection's "Locked".
+Another board shown
 stops what's under way, and a deleted shape stops shaking. `RefusalShake.offset(at:)`
 is the curve and `isShaking` says whether any shape is; Locking and Publishing's hold need nothing
 of their own for it.
@@ -3088,7 +3109,7 @@ registrar.shape(PatchDefinition()) { patch in
   Tab's order and ⌥Tab's parts ([Parts of a shape](#parts-of-a-shape)), so a chip a plugin draws is a
   pressable element with no accessibility code of its own.
 - **Who says what** on the shipped list: Titles the name, StickyNotes a note's words (its value),
-  Locking "locked", Validation "1 error" and "2 warnings", Frames and Subboards what they hold.
+  Locking "locked", Constraints "accepts only tasks", Validation "1 error" and "2 warnings", Frames and Subboards what they hold.
 - **The focus** is the selection, which the core reads as what commands act on
   (`registrar.commandShapes(_:select:)`, whose `select` is how a press on a shape's element selects
   it). The plugin that keeps the selection, or a focused part, calls `editor.accessibilityFocusDidChange()`
@@ -3726,7 +3747,7 @@ plugins ([What ships](#what-ships)).
 
 | Slot | A plugin says | The host reads | Shipped |
 |---|---|---|---|
-| Views over the canvas (`HostOverlays`, a list in plugin order, a later one over an earlier) | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }` | `registry.hostOverlays`, `registry.hostCoveredTop(on:)` | Boards' path (`.top`, covering its pill's height off the root), Jump To's palette |
+| Views over the canvas (`HostOverlays`, a list in plugin order, a later one over an earlier) | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }` | `registry.hostOverlays`, `registry.hostCoveredTop(on:)` | Boards' path (`.top`, covering its pill's height off the root), Jump To's palette, Constraints' board funnel; one that takes the whole canvas says so (`editor.presentModalOverlay(_:dismiss:)`, one at a time) |
 | The sidebar (`HostSidebars`, at most one) | `registrar.hostSidebar(keyboardEntry:) { editor, onExit in … }`: the view, and the view in it that takes the keyboard when the window gives the sidebar the keyboard | `registry.hostSidebar` | the table of contents' list, from `TableOfContentsPlugin`'s own `register` |
 | The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(shownWhile:isRequested:onDismiss:keyboardEntry:) { editor, onExit in … }`: when it has something to show (always, by default), when it's wanted (never), what hiding it meanwhile does (nothing) | `registry.hostInspector` | the detail panel: something to show while shapes are selected, wanted while a takeover is active |
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
@@ -4005,6 +4026,7 @@ appears, a kind's own contributions first, then the rest in plugin order. As shi
 | A kind's own (a subboard's Description, a reference's Reference) | `.first` | first, before the tab a feature's opt-in brings from the kind's own `register` |
 | Types' Types, Neighbors' Connections (`NeighborsTab`, on every shape and always) | none | in plugin order, after a kind's own |
 | Types' Schema (`TypeSchemaTab`, on every type) | `.after(NeighborsTab.self)` | right after Connections: a type's panel opens on what is connected to it |
+| Validation's Rules (`RulesTab`: the rules a shape is held to, filled by other plugins) | `.before(StyleTab.self)` | after a type's Schema, before Style |
 | `StyleTab`: appearance, shared by every kind | `.last` | last, as a shared tab trails in Keynote |
 | A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`) | `.after(StyleTab.self)` | after Style, so the others keep their places |
 
@@ -5548,8 +5570,11 @@ like any other, so a shape moves off a subboard's board, onto it, and across.
 
   ```swift
   registrar.contentsMoves(admits: { shapes, place, editor in Drop(shapes, to: place, in: editor) != nil },
-                          move: { shapes, place, editor in Drop(shapes, to: place, in: editor)?.commit() })
+                          move: { shapes, place, editor in Drop(shapes, to: place, in: editor)?.commit() ?? false })
   ```
+
+  `move` says whether it moved them, and `drop(on:)` answers the same: a drop the commit refuses (judged
+  again, with answers that landed since `admits` was asked) or that lands where the shapes are is no drop.
 - **Headless**, `dragged(from:)`, `beginDrag(from:)` and `dragShapes` are the drag;
   `target(onRow:at:)`, `admits(_:)`, `drop(on:)` (and `dragMoved(over:at:)`, `dragLeft(_:)`,
   `drop(onRow:at:)`, as the outline's drop calls them) the drop; `dropZone(for:)` what a row shows. In
@@ -8605,12 +8630,21 @@ registrar.selectionSlashCommand(.atOnce("bulk-create", argument: "A, B, C",
 
 It's offered with nothing selected on a board that can change, an empty one too, where the bar opens
 for it alone and says it acts on nothing (no "All shapes"). `run` runs it with the target it was found
-for, shapes or none.
+for, shapes or none. A command that acts on the board shown as a whole, not on each shape (Constraints'
+`/constrain`, adding to the board's list), names it with `.naming(everything: { editor in … })`: with nothing
+selected the bar's label, and VoiceOver's "Command for …", say the board ("Plans") while that command is the one typed,
+and "All shapes" otherwise, as for every command that doesn't.
 
 `/query` itself ([Queries](#queries)) translates the words as `--ask` does (on a selection, told only what
 it picks out of the selection is kept, since it narrows a selection), finds every match, and selects
 them with `goTo`: those on the board shown, else those on the first board that has some, shown as
 following a mention shows it. VoiceOver hears how many, and how many more are on other boards.
+
+A command about the target may take one choice from a list, as a shape's `SlashCommand(_:argument:choices:)`
+does: `SelectionSlashCommand.choosing(_:argument:when:choices:perform:)` (static). `choices` is asked with the
+target and the editor when the list opens, and a pick runs `perform` with the target, the row and the editor in
+one step named for the row (`SlashChoice.step`), else for the command, on an empty board too. Constraints'
+`/unconstrain` is the one that does: the target's own constraints, and all.
 
 ### Testing slash commands
 
@@ -9203,9 +9237,10 @@ let settled = await topology.settled(timeout: .seconds(5))   // false if it ran 
   provides registers a source (`keepsSettling(while:)`, a `SettleSource` token: a wait armed, a
   batch out, a stand-in asked and not answered), and says `settleSourceChanged()` when it goes idle
   with no provide or commit to say so; a source whose answers are no edges (Language rules' checks)
-  registers with `edges: false`. `isSettling` is whether any source is busy, `isSettlingEdges`
-  whether a source of edges is, and `settled(timeout:edgesOnly:)` waits until none is (with
-  `edgesOnly`, no source of edges): true then (at once if none is now), false when the
+  registers with `edges: false`, and one whose answers a check reads (Constraints' verdicts) with `feedsChecks: true`. `isSettling` is whether any source is busy, `isSettlingEdges`
+  whether a source of edges is, `isSettlingChecks` whether one that feeds checks is, and
+  `settled(timeout:edgesOnly:checksOnly:)` waits until none is (with `edgesOnly`, no source of
+  edges; with `checksOnly`, none that feeds checks): true then (at once if none is now), false when the
   timeout runs out (on `editor.scheduler`, so tests run it by hand) or the task is cancelled. Every
   delivery, provide and source change or cancel wakes the waits. A reader that must see the
   settled graph (a query after a draw) waits on it: `QueryState.run` does, given `settle:`
@@ -9454,6 +9489,27 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   selected or shown), and `readsEdges` (it has an edge word, so the edge view and a wait for answers
   still arriving matter to it). It says whether it needs a shape bound to it too, `usesScope`
   ([below](#many-at-once-edge-views-and-waiting)).
+- **A query says what a shape is, and Queries can write it.** `queries.fit(record, toMatch: text,
+  kindIsOpen:)` (synchronous, on the main actor, never waiting on the engine) writes onto a record
+  what a stored query says a shape *is*, so a shape a person makes in a place that accepts
+  `:is-a("Task")` comes out a Task. It reads the query's tree and writes only what it can be sure of:
+  of each complex selector the subject compound alone (the compounds before it say where the shape
+  sits), a kind head only as the record's kind (or, `kindIsOpen`, the record turned into a shape of
+  that kind by the kind's placement), a title or an id never, `[a=v]` and `[a.b.c=v]` set a property
+  by the property's schema (a value the schema refuses is left out), or a member of an object typed by the attribute's owner (Types types a note's field by the field) or, with none, by its quoting, `:is`
+  the first alternative that writes something, a list the first that can be written; `:not`, `:has`,
+  `:inside`, edges and every other operator are skipped. A word's owner says how its word is written
+  with `makes:` beside `matches:` (`registrar.queryPseudoClass(…, makes:)`, `registrar.queryRelation(…,
+  makes:)`, handed the word's text, or a relation's argument as `QueryAnchor`s, the record and the
+  editor); a word with none is skipped. Types writes `:is-a("Task")` by adding the type to the shape's
+  `is`. It returns nil when nothing is written.
+- **A stored query names its shapes by id, and Queries can say which.** A query written from words names shapes by
+  their titles (`:is-a("Task")`), and a title is only what a shape is called today. `queries.bindNames(in: text)`
+  says which shape each title head in the text names now (`["Task": id]`: a head at any depth, a relation's argument
+  too, never a word's text; none for a head that names none or several), and `queries.named(text, by: names, as:)`
+  writes the text by them: `.ids`, each bound head as `#id` while the shape is in the file (what is judged, so a
+  rename changes nothing), or `.titles`, each as the shape is called now (what a person reads). A plugin that keeps
+  a stored query keeps the names beside it, binds them when it writes the query, and stands the `.ids` form.
 
 ### What a query sees
 
@@ -9638,9 +9694,11 @@ own deadline and its own slices. Every query on an editor stops when the editor 
 file's editor alive).
 
 **Zero upkeep.** `QueryState` keeps nothing per shape or per board, implements no
-`documentDidChange`, and overrides `boardDidChange` with nothing: a commit, a drag event's included,
-and a switch of board cost queries nothing, ever, and nothing outlives a query but the vocabulary
-(`liveSnapshots`, debug builds, is 0 whenever none runs).
+`documentDidChange`, and overrides `boardDidChange` with nothing. While no standing query is held
+(below), a commit, a drag event's included, and a switch of board cost queries nothing, and nothing
+outlives a query but the vocabulary (`liveSnapshots`, debug builds, is 0 whenever none runs); with
+one held, the second round of a commit (`documentDidSettle`) and a file put in place
+(`boardDidSettle`) are heard, and each held keeps its matches.
 
 **What a held snapshot costs.** While a query runs, its snapshot shares the file's tables and
 Topology's, so a commit that lands meanwhile copies each table it changes, once: a drag event the
@@ -9791,6 +9849,28 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   counted, only when it waited for edges alone: `pending(_:ofEdges:)`; with a word that waits,
   "Answers are still arriving"). An agent that
   draws and then queries reads the settled graph, or is told it didn't.
+- **Standing.** A plugin that judges shapes by a stored query whenever it must (a drag's hint, a
+  rule) holds a `StandingQuery` (`queries.stand(text)`, checked once as `checkStored` checks it, with
+  nothing bound) and reads it on the main actor: `matches`, `isPending(id)`, `answer(for:)` (nil
+  while pending), `lastAnswer(for:)` (the last answer it had while it asks again, nil for a shape it
+  never answered), `isSettled`, and `onChange` (the shapes that flipped, and whether it's settled).
+  It asks the whole file once, then after each commit only the shapes the commit changed (nothing
+  for a drag; under `:has`, the containers a shape left and joined too), seeded from them so the
+  evaluation walks no other shape; it asks the whole file
+  again only when the commit changed what the plan reads beyond a shape: a fact a word took (a
+  `QueryFileFact` says how far it has come with `static func revision(in:) -> Int?`, which moves
+  when what it says of a shape may change without that shape's record changing; nil, the default,
+  counts as moved), edges of a type it reads (a stand-in's answer too), containment it reads, or
+  what an anchor (`:inside(S)`'s S, an edge word's) matched. It lasts while it's held; while none is,
+  the engine keeps nothing and follows nothing.
+
+  ```swift
+  let accepts = try editor.queries?.stand(#":is-a("Task")"#)   // reads only the file
+  accepts?.onChange = { change in recheck(change.flipped) }    // the main actor; never transacts
+  if accepts?.answer(for: shape) == false { refuse() }          // nil: pending, refuse nothing
+  ```
+
+  Constraints is the shipped holder: [Constraints](#constraints).
 
 ### What plugins add
 
@@ -11298,7 +11378,8 @@ registrar.forShapes(adopting: .box) { boxes in
   Move takes it all back. Where the in-or-out rule leaves them out of the place (no room in a frame
   clear of the frame they leave, which takes them back), nothing changes: a drop puts them where it
   says, or nowhere. `/move-to` is this rule, and so is Move To ▸ in the selection's menu: a locked
-  frame, one too small, the locked owner of a board, and what goes with them are refused alike.
+  frame, one too small, the locked owner of a board, a place a plugin's judge refuses them (a
+  constrained frame: `editor.admits(_:on:into:)`), and what goes with them are refused alike.
 
 MovingTests hold it over CanvasTesting's boxes, corrals, pockets, links, cards and freezing, run
 through `editor.slashCommands`, for a shape's text and for the shapes selected (three boxes into a
@@ -11823,7 +11904,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   or "Key rejected" with "Open Settings…" (`AnthropicSettingsView.showSettings()`, as a type's sync's),
   "Rate limited", "Can’t reach Anthropic", "Timed out" or any other of the model's own with "Retry", "No
   query for these words" (declined or unanswerable) with "Retry", "Unusable answer" (a repair that still
-  refused); a sign-in in Settings (`languageModelSignInDidChange`) asks again what failed for want of one.
+  refused) and "No shape is called Plan D" (refused for a title no shape has); a sign-in in Settings (`languageModelSignInDidChange`) asks again what failed for want of one.
 - **Ports.** A reference has ports on every channel on its left and right, but what a person drags
   from and what ends on it is what it stands for ([Ports at a stand-in](#ports-at-a-stand-in)): a drag
   from a note ends on a pill that stands for a note and not on one that stands for a frame, and
@@ -12127,8 +12208,9 @@ registrar.automationCommand("query", "Find the shapes of a file that a query mat
   neither its writing nor its freeing. One that's the wire's `JSON` already passes through as it is
   (what the core writes is one: its `JSONValue` is the wire's `JSON`; `query` builds its answer
   member by member, off the main actor).
-  `run:` is unchanged: it never suspends, and answers in the turn it's asked in, as `draw` and
-  `kinds` do. Write the `runAsync:` label out: a trailing closure that doesn't await picks `run:`.
+  `run:` is unchanged: it never suspends, and answers in the turn it's asked in, as `kinds`
+  and `show` do (`draw` and `apply` are `runAsync:`: they draw in one turn, then wait for the
+  file's answers, [draw](#draw)). Write the `runAsync:` label out: a trailing closure that doesn't await picks `run:`.
 - **It may be cancelled.** `canvas` hanging up (its timeout, ^C) cancels the request's task,
   answered `cancelled`, which nobody reads; closing its file answers it `board_closed` ("The board
   was closed before the command finished.") at once, and cancels it. What a cancelled command
@@ -12550,7 +12632,22 @@ landed out of view, a shape resized where it stays that now overlaps another, a 
 drawn holds (a mention in its text) of a shape that isn't in the file or is on a board the app
 can't show (by id, since the script wrote it: `"Plan": text names shapes that aren't in the file:
 …; they show as missing`), or a deleted subboard's boards and what was on them. A dry run's
-result says `dryRun: true`. The result's `board` is the server's: the board the run worked on,
+result says `dryRun: true`.
+
+A check's answer can come after a commit (a standing query's: Constraints' verdicts), so the check a
+run asks before it commits can't judge what it wrote. A real run is therefore drawn in one turn (the
+transaction, the step, the result) and then, in the command (`draw` and `apply` are `runAsync:`),
+`laterIssues(of:in:)`
+([DrawAnswers.swift](../Sources/Draw/DrawAnswers.swift)) waits for the file's answers
+(`editor.topology?.settled(timeout:checksOnly:)`, which waits only for the sources whose answers a check
+reads, bounded by `QueryBudget.settleWait` on the editor's scheduler) and asks the same `DrawCheck` again over the committed file, of what it kept on
+`DrawResult.aftermath` (the shapes its statements wrote with their lines, and those `touched` looked
+at, with the issues they had): each issue it didn't say already is a warning, on the statement's line
+for a shape the run wrote, and as `brought` says one for a shape it only touched. If the bound passes
+first, one warning with no line says the answers are still coming, with the check's `rest`; a request
+cancelled meanwhile answers nothing more (the run is committed). A dry run and `rehearse` say
+what they said before: nothing commits, so no answer comes. `canvas draw --drawing` and
+`canvas apply` (the drawing's own shapes' issues, by key) do the same. The result's `board` is the server's: the board the run worked on,
 read as it began.
 
 ### measure
@@ -13008,6 +13105,13 @@ byte), so the filtered vocabulary and the rule line keep the model off them and 
 catches the rest; a QueryPromptTests case holds that the rule line and the filtered vocabulary are
 there for `.stored()` and not for `.person`.
 
+`.accepting(holder:)` is a stored query too, unbound, whose words say which shapes a container accepts (a
+constraint's: "only tasks", "no bugs"): its request is `.stored()`'s and one line more, the product's
+`Shipped/ask-accepts.txt` (the plugin's `accepts`, `{holder}` filled in with the container's name), saying the
+query matches exactly the shapes the holder lets in, as a test of one shape (a refusing phrase is a `:not`, commands to the holder are its rule, no
+word says where the shape sits, and what it holds or is joined to may be tested); words that already check skip the model only if they pass `checkStored` as the
+translator would (`Interpretations.typed`), so a word that reads the editor is asked about, not drafted; `translate` checks it with `checkStored` and no binding, so `:scope` is refused.
+
 **Words a person types: one lifecycle in every host.** What a reference's pill does with its words (and
 `/query`'s bar says in the same words) is QueryTranslation's `Interpretations`, `editor.interpretations`,
 an `EditorService` `QueryTranslationPlugin` installs, so a later host takes a few lines. A host adopts
@@ -13031,7 +13135,8 @@ Interpret; a key saved retries what failed for want of one; `drop`, a file put i
 going cancel what's out. A person is told one set of words in every host (`InterpretationStatus(_:)` of
 a `QueryTranslationError`: `words`, `action`, `isBusy`): "Interpreting…", "Unavailable", "No API key"
 and "Key rejected" with Open Settings…, the model's own words ("Rate limited", "Can’t reach Anthropic",
-"Timed out") and "No query for these words" and "Unusable answer" with Retry. Its views are the panel's:
+"Timed out") and "No query for these words", "Unusable answer" and "No shape is called Task" (the refusal
+was a title no shape has: `QueryError.unknownTitle`, which Retry mends once the shape exists) with Retry. Its views are the panel's:
 `InterpretedQueryView` (the query, read-only, colored by `QueryColoring`), `FoundRows` (a row per
 `FoundRow` the host makes, then "and N more"; a click the host's, the pointer hovering a row's shape) and
 `InterpretationStatus.Action.button(retry:)`.
@@ -13055,9 +13160,9 @@ and "Key rejected" with Open Settings…, the model's own words ("Rate limited",
   The build puts every `Shipped/*.txt` in each executable that is the product (the app, its Quick
   Look extension, the tests of what ships), as a section of the binary, and the core reads one back
   by name (`ShippedText.named("ask-prompt")`): `QueryTranslationPlugin()`, made with no arguments,
-  reads the prompt and the rule line (`ask-rule.txt`, taken without its line break), and only an
-  executable that is the product can make one that way; anything else passes its own
-  (`init(prompt:referenceRule:style:)`). Its query-like examples are in two lists in
+  reads the prompt, the rule line (`ask-rule.txt`, taken without its line break), the bound words
+  and the accepts line (`ask-accepts.txt`, likewise), and only an executable that is the product can make one that way; anything else passes its own
+  (`init(prompt:referenceRule:bound:accepts:style:)`). Its query-like examples are in two lists in
   CompositionTests ([QueryPrompt.swift](../Tests/CompositionTests/QueryPrompt.swift)),
   `runnableExamples` (each answered on the story file) and `illustrativeExamples` (each refused
   there, with its listed reason), which QueryPromptTests hold to the language. The canvas skill
@@ -14180,7 +14285,7 @@ default: break
   buttons of its line (Ignore has the `.ignore` role). Each warning's `source` is its rule's key
   (`RuleKey.source`, and `RuleKey(source:)` back), so `flagged(by:)` can be asked by a warning.
 - **In the panel** (`RuleDetailsPlugin`, a plugin value of its own after the panel and the menus): a
-  type's Rules tab (`RulesTab`, after Schema) lists its sentences, each a box that writes on Return
+  type's Rules tab (`RulesTab`, declared in Validation, before Style, so after Schema; headed "Each sprint", the type's noun) lists its sentences, each a box that writes on Return
   (`editor.ruleWriter.setRules(_:of:)`, one step, "Change Rules"), with the count of shapes it
   flags (`RuleChecks.flagged(by:)`), which begins the rule's walk at its first stop (a click, or Return:
   [Walking issues](#walking-issues-validations-issue-walk)) and lights them while it's under the pointer
@@ -14220,6 +14325,114 @@ editor.ruleChecks?.flagged(by: RuleKey(type: car, says: rule.says))   // the sha
 let found = await editor.queries!.matches(votes.map { QueryMatchRequest("subboard:edge-from(:scope-start, arrow)", scope: $0) })
 editor.ruleWriter?.setQuery(query, ofChip: "the member's district", in: says, of: vote, step: "Interpret")
 ```
+
+## Constraints
+
+Constraints ([`Sources/Constraints`](../Sources/Constraints)) is a horizontal: a place says what it accepts. A frame
+(a shape of a kind that holds shapes), a subboard (for the board it owns) and the root board hold constraints, each
+a few words and the stored query they became, and every shape within a constraint's reach must match it. It is a
+system property as color is: a kind opts in, another plugin can give a shape lists from elsewhere (Types gives a
+frame of a type its types', and a type note keeps its own in its schema as `$constraints`), and it knows no kind.
+
+```swift
+registrar.shape(FrameDefinition()) { frame in
+    frame.constrainable()                        // a frame holds constraints: `constraints`, an added property
+}
+
+let only = Constraint(says: "only tasks", query: #":is-a("Task")"#)       // reach: .children, the default
+editor.constraintWriter?.add(only, to: .shape(backlog))                  // one step, "Add Constraint"
+editor.constraintIndex?.breakers(of: .shape(backlog))                    // what's inside that doesn't match
+```
+
+- **Reach**: `children` holds the shapes directly in the place (in the frame directly; on the board in no
+  container), `descendants` every shape under it in Topology's containment tree, boards included. Only shapes with
+  a box are judged; arrows never are.
+- **A constraint names its shapes by id.** A constraint remembers which shapes the titles in its query named
+  when it was written (`Constraint.names`, `{"Task": "<id>"}`, left out while empty), as the writer wrote the
+  query (`queries.bindNames(in:)`), and is judged by those shapes whatever they are called now: the index stands the
+  query with each bound title written as its shape's id (`queries.named(_:by:as: .ids)`), so renaming the type Task
+  writes nothing, makes no step and changes no verdict, and the panel shows the query with the title the shape has
+  now. The text changes only when a bound shape comes or goes (deleted: judged by its title as written; back: by id
+  again), and a commit that adds or removes a shape reads again only the constraints that name it. A list written
+  some other way (an agent's `$constraints` in a type's schema) has no names and is judged by its titles as written
+  until the writer writes it again. A list names shapes (`ShapeNaming`), so a copy of a container pasted with the
+  shapes it names holds the copies' ids, as `is` does.
+- **Where lists live**: a container's own (`ConstraintsProperty`, unlisted), the root's (a file value,
+  `RootConstraintsProperty`), lists given from elsewhere (`InheritedConstraints`, first, in the giver's order), and
+  shapes that keep a list their own way and are no place (`ConstraintHolders`: a type note). One writer changes any of
+  them, a constraint named by its value, never its place.
+- **The index** (`ConstraintIndex`) holds one standing query ([Many at once, edge views and waiting](#many-at-once-edge-views-and-waiting)) per distinct query and keeps, for
+  each place, the shapes within its reach that break each constraint, at the cost of what each commit wrote and what
+  that reaches: a shape that came into another place, its places and, under what reaches anywhere inside, what it
+  carries; a list changed, the members within its reach; a whole file answered, the members of the places that use
+  that query. A list holds what it gains before it lets go of what it loses, so a constraint's reach or words changed
+  keep its standing query and its answers. A place is judged by each constraint once, from the first list that has
+  it. A shape whose answer is still to come keeps its verdict (none, new to a place) until it lands, and Topology
+  settles while answers are out, so `:invalid` waits for them.
+- **Moved in, refused**: the answer to the core's `registrar.admission` refuses a shape moved into a constraint's
+  reach from outside it that its query answers no for ("Backlog accepts only tasks."), as a locked frame refuses a
+  drop: it glides back, no step, the frame shakes. Leaving is never refused, and a shape made inside always goes in; nor is
+  a shape that stays under the same frame or subboard coming in to it (a frame turned into a subboard keeps its holder and
+  moves what it held from its place onto its board, so what it held, flagged or not, is no arrival).
+  A shape the query is asking again (any edit does) is judged by the last answer it had, in a try and in a commit
+  alike (so a note typed in is never offered a frame that refuses it); one it never answered goes in.
+- **Made inside, fitted**: the answer to `registrar.placementFit` writes, onto a shape a person places in a
+  constrained place, what each constraint's query says a shape is (`queries.fit`), outermost place first, so a frame
+  that accepts only tasks makes what's made in it a task. An open kind (a double-click's) is spent by the first
+  constraint that names the kind the shape then is, turned into it or already of it.
+- **Already inside, flagged**: `ConstraintValidationPlugin`'s rule on every shape with a box gives an error for each
+  constraint it breaks, with Move Out and Show Constraint, and the issue walk walks one constraint's breakers,
+  following it through a change of its reach or its query.
+- **The faces** are `ConstraintFacesPlugin`'s, a plugin value after Constraints, Validation, the detail panel, the
+  adornments, the context menus, the slash commands and the query translation, listed after the plugin that gives a
+  container its types (their chips come first): the funnel chip on a container (`ConstraintFunnel`, a clickable
+  adornment: quiet while everything fits, red with a count when some shapes break one, its tooltip the words, its click
+  the container selected on its Rules tab); the Rules tab's sections (a container's: the lists it has from elsewhere under
+  their source's pill, its own rows, an add box, then Not accepted); `/constrain <words>` and `/unconstrain`; and the
+  menu items that do what the buttons do (Constraints ▸, Move Out of a place, Show Constraint); and the board's own
+  funnel, a pill over the canvas at its top leading corner (a host overlay, `registrar.hostOverlay`) once the board shown has
+  constraints, the root's or a subboard's seen from inside, "Accepts only tasks" and, red, how many shapes break one,
+  whose click (View ▸ Show Board Constraints for the keyboard) opens a popover of the Rules tab's own rows over the board's
+  place, `ConstraintTarget`, a frame, a subboard or the root (`ConstraintRows`, `ConstraintBox(place:)`: written the same as
+  the tab's, shared, and in the panel's way through DetailPanel's `DetailHosted`). VoiceOver hears the
+  funnel as a part (it lowers to a row under the path rather than reach it, and gives the canvas to Jump To's palette: one
+  overlay has the canvas at a time, `editor.presentModalOverlay`; and it leaves while the command bar is open with nothing selected, which hangs on its row, `editor.showsBoardCard`), "Constraints, only tasks" (", 2 not accepted" when two shapes break one, "only tasks and 2 more" for several lists),
+  and the container itself, after what it is, as a state: "accepts only tasks". A kind that keeps its
+  list its own way gets its section and its menu in the same call that registers it, shown only while the faces plugin is
+  listed:
+
+```swift
+registrar.forShapes(holding: TypeSchemaProperty.self) { types in
+    types.constraintHolder(read: { record, _ in … }, write: { list, id, transaction in … },
+                           name: { record, _ in "each sprint" },     // Constraints heads its section "Inside each sprint"
+                           reason: { record, _ in "Schema isn't JSON yet." })   // optional: why it can't take a list now
+}
+// what a type is given by the types it is built on is the point's, as a frame's is:
+registrar.forShapes(holding: IsAProperty.self) { typed in
+    typed.inheritedConstraints { id, editor in [ConstraintSource(holder: supertype, swatch: …, constraints: …)] }
+}
+```
+
+  A holder's section reads the lists it has from elsewhere through `index.sources(of:)`, observed by the holder's own key
+  alone: `inheritedConstraintsDidChange(of:)` tells it (a holder is told, not read, since no table keeps it), and no other
+  commit does, so a type's section is not redrawn by an unrelated retitle or a drag. A file put in place tells every holder
+  asked of that it still has, once the services have settled it.
+
+  The words typed in a row (a change, or the box that adds one) are turned into a query by the one lifecycle every host of
+  words shares (`editor.interpretations`, Constraints the host: `ConstraintBoxes`), in the accepts context for the place's
+  name, and land as the step ("Change Constraint", "Add Constraint"); words that already read as a stored query skip the
+  model; Escape in a box lets go of the words typed (`DetailTextArea`'s `draft:`), and a write to the row's reach or query
+  while its words are out leaves them where they are. A holder that won't take a list (a type whose schema isn't
+  JSON yet: its `write` returns false for a list that should have changed) shakes and says why (its `reason`, else Constraints' words), and a
+  list that turned read-only while the model was out (a frame locked) shakes, with nothing more said; the box keeps the words in both
+  with that line under it while it still refuses (the line goes once its `reason` has no words; the words wait) and writes them again when they are committed again, and `/constrain` says it in the bar. Words a list holds already are said, with the model not asked. `/constrain` does the same for several containers at once, a type or the board shown, and `/unconstrain` lists the
+  target's own constraints and "all", a command about the bar's target that takes a choice (`SelectionSlashCommand.choosing`).
+- **In the product**: Frames' frame and Subboards' subboard call `constrainable()` (an added property, so no kind
+  fixture changes), and `Package.swift` lists the four plugin values (`ConstraintsPlugin`, `ConstraintValidationPlugin`,
+  `ConstraintFacesPlugin`, then Types' `TypeConstraintsPlugin`) after the queries, Validation, the panel, the menus, the
+  bar and Types and LanguageRules, so the funnel follows a typed container's type chips and a type's Rules tab reads its
+  English rules, then "Inside each sprint". A double-click is the one placement whose kind is open: StickyNotes hands its
+  placement over with `openingKind()`.
 
 ## Prose maps
 
@@ -15486,7 +15699,8 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   neither in it nor across its edge (a frame's copy pasted on its original stays beside it). Read-only
   shapes stay as they are, in or out, and a read-only container takes nothing: if anything would go
   into one, nothing changes, services hear that container refused (`didRefuseChanges`: Locking
-  shakes it), and the answer names it (`Settlement.refused(by:)`), for the caller to send what was
+  shakes it), and the answer names it (`Settlement.refused(by:)`, a set: that container, or what a
+  place that [judges what it takes](#what-a-place-takes-in) names), for the caller to send what was
   dropped back, or to give up what it was doing: in an `editor.transactWhole`, as Clipboard's paste
   is, the refusal gives the whole up, no step is left, and the container shakes.
   Each container put down then takes in what it lands on, `settle(container:)`, which is also what's
@@ -15548,6 +15762,61 @@ drop commits nothing more and glides nothing: the transcript and renders Composi
 the proof of concept are as they were. A file is written as it always was until a shape is in a
 container ([format 5](#boards-on-disk)).
 
+### What a place takes in
+
+A place may refuse shapes coming into it, as a locked frame does, for a reason of a plugin's own (a
+container's constraints: "only tasks"). The core knows no such reason: a place is a `ShapePlace`
+(`.container(id)`, directly in it, or `.board(id)`, a board's top level), and a plugin judges what
+comes in ([Admission.swift](../Sources/Canvas/Model/Admission.swift)):
+
+```swift
+registrar.admission { admission in
+    for arrival in admission.arrivals where !arrival.isNew {               // new shapes go in
+        guard case .container(let id) = arrival.to, !accepts(id, arrival.record, admission.context) else { continue }
+        return .refuses(shaking: [id], saying: "Backlog accepts only tasks.")
+    }
+    return .admits
+}
+```
+
+Each `Arrival` is a shape as it would be put (its `container` the place's), `from`, where it was when
+the transaction began (nil for a shape new to the file), `isNew`, whether it's made here (a placement,
+a paste's copy, a draw) rather than moved (a drop, a move, a cut's shapes pasted back under their ids,
+which Clipboard says with `transaction.treatAsMoved(_:)`), `to`, and `carried`, what it holds, which comes into nothing new itself but does come into whatever its holder
+comes into, for a rule that reaches anywhere inside (what a board it owns holds is read through
+`admission.context.reading`, as the rest of the file is, as the transaction leaves it). `isChange` is
+false for a try (a drag's hint, `editor.admits(_:into:)`; `editor.admits(_:on:into:)` for shapes on any board into a place on any board, which Moving's drops ask), so a plugin says only real refusals. Any
+judge's refusal refuses them all, as a read-only container does: nothing changes, `.refuses`' shapes
+shake (none named: the arrivals themselves) and its words are announced to VoiceOver once the refusal
+is heard, a drop glides back with no step, the drag's hint outlines no container that would refuse
+what's dragged, a key's nudges go back, a placement is taken away, a container resized over a shape
+leaves it out (silently, as a locked one does), `setContainer` changes nothing, an insert that comes
+with a container is on the board directly, and an `editor.transactWhole` caller (a paste, a move)
+commits nothing. A shape is judged by where it ends up, from where it began: one that only passes
+through a place (Create Frame takes a shape out of its container and puts it back once the new frame
+takes that container in) is never asked about there, and `move(_:to:)` asks nothing itself, its shapes
+judged where they're put down on the other board (`settle(_:on:)`), or, put down nowhere, where they
+are as the transaction ends, a refusal then committing nothing. The core asks only about box shapes
+coming in from somewhere else (one back where it began never, a new one put on a board's top level
+always), never for what a deletion lets go of, an undo or a redo, and not at all with no judge
+installed.
+
+### A placed shape fitted to where it lands
+
+A shape a person places can be written to suit where it lands: in a container that holds tasks, a
+note placed there becomes a task. A plugin answers the record it should be
+(`registrar.placementFit { fit in … }`, `PlacementFit`: the record as settled, the `ShapePlace`
+settling put it in, `kindIsOpen`, the file as the placement's transaction leaves it), and the core
+writes it under the same id in the placement's own step, settling it again, since it may be laid out
+another size; a container placed takes in what it lands on only once it's fitted, so what it takes in
+comes into it as it will be. Every core placement asks (`place(_:at:)`, `place(_:in:)`, `placeAtKeyboard`, Insert,
+shapes placed later, a press's release, `place(_:around:)`'s new container before it holds anything);
+a paste, a duplicate and a draw never do: they make exactly what they say. Another kind is taken only
+from a placement whose kind is open (`Placement.kindIsOpen`, `placement.openingKind()`: a
+double-click's, which makes whatever suits the spot, `note.createOnDoubleClick(place.openingKind())`);
+a tool keeps its kind, and an answer of another kind is passed over. Each plugin's fit is handed the
+record as the last one answered it.
+
 ### Cards
 
 A card is a plugin's view shown under a rect of the board: white, like a menu, 4 points under the rect
@@ -15566,7 +15835,11 @@ editor.moveCard(to: newRowRect)                                             // i
 editor.closeCard()                                                          // .asked
 ```
 
-One card shows at a time; a second replaces the first. It sits above the editing view and everything
+A card whose name changes while it shows (the command bar's, with what is typed) has a view that conforms to
+`CardAccessibilityLabeling`: its `cardAccessibilityLabel` is asked as VoiceOver asks, in place of the
+`accessibilityLabel:` the card opened with.
+
+One card shows at a time; a second replaces the first (`editor.showsBoardCard`, observed, says one hanging from no shape shows, so a host overlay on its row can leave). It sits above the editing view and everything
 the canvas hosts but the hover popover, and never nearer than 8 points to the canvas's edge or under
 what the host covers of its top (`unobscuredViewport`): above its rect when there is no room below, and
 cut to the room, its view scrolling itself. The keyboard goes to its `firstResponder`; a key or a menu
@@ -16026,99 +16299,103 @@ and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:stickers in FileMenu.KitList
-keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
-topology             service TopologyIndex · edge type stands-for
-arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
-subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
-framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · command expandReference · command collapseReference · layout input reference-mirror · ShapeFaces · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference v2 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · ShapeResizing → reference · parts resize handles → reference · ShapeOpening → reference · /expand /collapse → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
-validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
-adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in ViewMenu.Panels · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in ViewMenu.Panels · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete
-context-menus        service ContextMenuState · secondary-click menu · selection menu · command showContextMenu · shortcut ⌃↩ → command showContextMenu · shortcut Menu → command showContextMenu · CanvasContextMenu in SelectionMenuGroup last
-slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
-slash-bar            service SlashBar · command runSlashCommand · shortcut / → command runSlashCommand · SelectionObservers
-table-of-contents    service ContentsState · host sidebar
-titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
-mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
-mention-slash-bar    slash bar field
-board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
-board-contents       contents heading
-board-headings       board heading
-find-in-boards       service FindState · overlay FindOverlay · command find in FindSection · shortcut ⌘F → command find · command findNext in FindSection · shortcut ⌘G → command findNext · command findPrevious in FindSection · shortcut ⇧⌘G → command findPrevious
-find-panel           key hint ↩ or ⇧↩ in Find Next or Previous Hit · key hint ↑ or ↓ in Find Previous or Next Result · key hint ⌘↩ in Find Select Hit and Close · detail takeover
-title-find           findable title → every shape with a title
-mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
-jump-to              service JumpToState · command jumpTo first in PathSection · shortcut ⌘K → command jumpTo · host overlay
-transform            service TransformState
-validation-details   DetailStatuses in Issues after Style → every shape
-issue-walk           service IssueWalk · command nextIssue in IssuesSection after NavigationSection · command previousIssue after nextIssue in IssuesSection after NavigationSection · shortcut ⌘' → command nextIssue · shortcut ⌘" → command previousIssue · command ignoreIssue after issueList in IssuesSection after NavigationSection · shortcut ⌥⌘' → command ignoreIssue · command endIssueWalk after ignoreIssue in IssuesSection after NavigationSection
-issue-walk-panel     detail band · detail takeover · command issueList after previousIssue in IssuesSection after NavigationSection · shortcut ⌃⌘' → command issueList · service IssueLights · outlines
-validation-contents  ContentsMarks → every shape
-mention-validation   ValidationRules → every shape naming shapes
-path-validation      service PathIndex · ValidationRules → every shape with a title
-grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
-clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
-locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock /unlock → every shape holding locked
-publishing           property private · property private → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PrivateChip last → every shape holding private · parts PrivateChip → every shape holding private · ContentsMarks → every shape holding private · /public /private → every shape holding private
-types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
-type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
-type-details         ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding autofill · ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding endRule
-issue-row-values     IssueRowValues → every shape holding fieldValues
-field-find           findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
-colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding color
-color-validation     service ColorWarnings · ValidationRules → every shape holding color
-color-details        ShapeDetails in Style last → every shape holding color
-type-colors          inherited color → every shape holding is
-snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
-ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
-connect-menu         CanvasContextMenu in ShapeMenuGroup first
-arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
-language-models      service LanguageModelState
-decision-models      service Decisions
-embedding-models     embeddings
-language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
-rule-validation      ValidationRules → every shape holding ignoredRules · IssueScopes · ValidationRules → every shape holding schema
-rule-details         service RuleLights · outlines · ShapeDetails in Rules after Schema → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
-prose-maps           service ProseMapService · overlay ProseMapFrames
-draw-engine          draw engine · insertion spot
-automation           command line draw · command line apply · command line rehearse · command line show · command line capture · command line kinds · command line measure · host commands
-title-names          draw names
-port-edges           draw edges
-validation-checks    draw checks
-mention-texts        draw labels · draw text text/x-canvas-mentions
-type-names           draw text text/x-canvas-type · draw edge identity is · draw value schema
-draw-field-values    draw value fieldValues · draw value endRule · draw lines · draw reports members is, endOf, fits, relates
-color-names          draw text text/x-canvas-color
-group-draw           draw groups
-drawings             file property drawings · draw records
-queries              service QueryState · query engine
-query-translation    service QueryTranslator · service Interpretations
-title-queries        query names
-board-queries        query board names
-mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
-validation-queries   query word :invalid · query word :warned · query word :incomplete
-type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · ask fact connections · query path fieldValues
-color-queries        query text text/x-canvas-color
-group-queries        query word :grouped-with
-selection-queries    query word :selected
-drawing-queries      query word :drawn-by("…") members key, in · query word :changed("…") members key, in, changed
-query-commands       command line query · command line query-vocabulary
-decision-commands    command line decide
-query-slash          /query → the command bar's target
-neighbors            service ReachState · outlines
-arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
-mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
-type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
-neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
-moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
-frame-slash          /create-frame → every shape with a box
-subboard-slash       /create-subboard → every shape with a box
-reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-stickers             kit stickers · shape emoji-sticker · label Sticker → emoji-sticker · tool emoji-sticker · command insert:emoji-sticker in KitShapes<StickersKit> · tool emoji-sticker-heart · command insert:emoji-sticker-heart in KitShapes<StickersKit> · tool emoji-sticker-star · command insert:emoji-sticker-star in KitShapes<StickersKit> · tool emoji-sticker-party · command insert:emoji-sticker-party in KitShapes<StickersKit> · ShapeResizing → emoji-sticker · parts resize handles → emoji-sticker · accessibility → emoji-sticker · /sticker → emoji-sticker · ShapeContextMenus in ShapeMenuGroup first → emoji-sticker · paste reader emoji
+core                   tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:stickers in FileMenu.KitList
+keyboard               service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
+selection              service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
+topology               service TopologyIndex · edge type stands-for
+arrows                 key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+sticky-notes           key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
+subboards              shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · property constraints → subboard · constrainable → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
+framing                key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · property constraints → frame · constrainable → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
+references             service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · command expandReference · command collapseReference · layout input reference-mirror · ShapeFaces · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference v2 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · ShapeResizing → reference · parts resize handles → reference · ShapeOpening → reference · /expand /collapse → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
+validation             service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
+adornments             service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
+detail-panel           service DetailPanelState · host inspector · command nextInspectorTab in ViewMenu.Panels · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in ViewMenu.Panels · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete
+context-menus          service ContextMenuState · secondary-click menu · selection menu · command showContextMenu · shortcut ⌃↩ → command showContextMenu · shortcut Menu → command showContextMenu · CanvasContextMenu in SelectionMenuGroup last
+slash-commands         service SlashCommandState · key hint / at a Line's Start Run a Command
+slash-bar              service SlashBar · command runSlashCommand · shortcut / → command runSlashCommand · SelectionObservers
+table-of-contents      service ContentsState · host sidebar
+titles                 property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
+mentions               service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
+mention-slash-bar      slash bar field
+board-navigation       service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
+board-contents         contents heading
+board-headings         board heading
+find-in-boards         service FindState · overlay FindOverlay · command find in FindSection · shortcut ⌘F → command find · command findNext in FindSection · shortcut ⌘G → command findNext · command findPrevious in FindSection · shortcut ⇧⌘G → command findPrevious
+find-panel             key hint ↩ or ⇧↩ in Find Next or Previous Hit · key hint ↑ or ↓ in Find Previous or Next Result · key hint ⌘↩ in Find Select Hit and Close · detail takeover
+title-find             findable title → every shape with a title
+mention-find           findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
+jump-to                service JumpToState · command jumpTo first in PathSection · shortcut ⌘K → command jumpTo · host overlay
+transform              service TransformState
+validation-details     DetailStatuses in Issues after Style → every shape
+issue-walk             service IssueWalk · command nextIssue in IssuesSection after NavigationSection · command previousIssue after nextIssue in IssuesSection after NavigationSection · shortcut ⌘' → command nextIssue · shortcut ⌘" → command previousIssue · command ignoreIssue after issueList in IssuesSection after NavigationSection · shortcut ⌥⌘' → command ignoreIssue · command endIssueWalk after ignoreIssue in IssuesSection after NavigationSection
+issue-walk-panel       detail band · detail takeover · command issueList after previousIssue in IssuesSection after NavigationSection · shortcut ⌃⌘' → command issueList · service IssueLights · outlines
+validation-contents    ContentsMarks → every shape
+mention-validation     ValidationRules → every shape naming shapes
+path-validation        service PathIndex · ValidationRules → every shape with a title
+grouping               property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
+clipboard              service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
+locking                property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock /unlock → every shape holding locked
+publishing             property private · property private → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PrivateChip last → every shape holding private · parts PrivateChip → every shape holding private · ContentsMarks → every shape holding private · /public /private → every shape holding private
+types                  property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
+type-validation        ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
+type-details           ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding autofill · ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding endRule
+issue-row-values       IssueRowValues → every shape holding fieldValues
+field-find             findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
+colors                 property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding color
+color-validation       service ColorWarnings · ValidationRules → every shape holding color
+color-details          ShapeDetails in Style last → every shape holding color
+type-colors            inherited color → every shape holding is
+snapping               service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
+ports                  property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
+connect-menu           CanvasContextMenu in ShapeMenuGroup first
+arrow-ports            service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
+language-models        service LanguageModelState
+decision-models        service Decisions
+embedding-models       embeddings
+language-rules         property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
+rule-validation        ValidationRules → every shape holding ignoredRules · IssueScopes · ValidationRules → every shape holding schema
+rule-details           service RuleLights · outlines · ShapeDetails in Rules before Style → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
+prose-maps             service ProseMapService · overlay ProseMapFrames
+draw-engine            draw engine · insertion spot
+automation             command line draw · command line apply · command line rehearse · command line show · command line capture · command line kinds · command line measure · host commands
+title-names            draw names
+port-edges             draw edges
+validation-checks      draw checks
+mention-texts          draw labels · draw text text/x-canvas-mentions
+type-names             draw text text/x-canvas-type · draw edge identity is · draw value schema
+draw-field-values      draw value fieldValues · draw value endRule · draw lines · draw reports members is, endOf, fits, relates
+color-names            draw text text/x-canvas-color
+group-draw             draw groups
+drawings               file property drawings · draw records
+queries                service QueryState · query engine
+query-translation      service QueryTranslator · service Interpretations
+title-queries          query names
+board-queries          query board names
+mention-queries        query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
+validation-queries     query word :invalid · query word :warned · query word :incomplete
+type-queries           query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · ask fact connections · query path fieldValues
+color-queries          query text text/x-canvas-color
+group-queries          query word :grouped-with
+selection-queries      query word :selected
+drawing-queries        service DrawingsRevision · query word :drawn-by("…") members key, in · query word :changed("…") members key, in, changed
+query-commands         command line query · command line query-vocabulary
+decision-commands      command line decide
+constraints            property constraints v1 · file property constraints v1 · service ConstraintIndex · service ConstraintWriter · admission · placement fit
+constraint-validation  ValidationRules → every shape with a box · IssueScopes
+constraint-faces       service ConstraintBoxes · service ConstraintBoard · host overlay · adornment ConstraintFunnel after TitlePill → every shape holding constraints · parts ConstraintFunnel → every shape holding constraints · accessibility → every shape holding constraints · ShapeDetails in Rules before Style → every shape holding constraints · /constrain → the command bar's target · /unconstrain → the command bar's target · command showConstraints · command removeAllConstraints · command showBoardConstraints in ViewMenu.Panels · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding constraints · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape with a box
+type-constraints       type directive $constraints · service TypeConstraints · constraint holder → every shape holding schema · ShapeDetails in Rules before Style → every shape holding schema · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · inherited constraints → every shape holding is
+query-slash            /query → the command bar's target
+neighbors              service ReachState · outlines
+arrow-lights           neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
+mention-lights         neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
+type-lights            neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
+neighbor-details       service NeighborList · ShapeDetails in Connections → every shape
+moving                 /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
+frame-slash            /create-frame → every shape with a box
+subboard-slash         /create-subboard → every shape with a box
+reordering             command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
+stickers               kit stickers · shape emoji-sticker · label Sticker → emoji-sticker · tool emoji-sticker · command insert:emoji-sticker in KitShapes<StickersKit> · tool emoji-sticker-heart · command insert:emoji-sticker-heart in KitShapes<StickersKit> · tool emoji-sticker-star · command insert:emoji-sticker-star in KitShapes<StickersKit> · tool emoji-sticker-party · command insert:emoji-sticker-party in KitShapes<StickersKit> · ShapeResizing → emoji-sticker · parts resize handles → emoji-sticker · accessibility → emoji-sticker · /sticker → emoji-sticker · ShapeContextMenus in ShapeMenuGroup first → emoji-sticker · paste reader emoji
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as
@@ -16171,7 +16448,7 @@ its menu's items, `CanvasContextMenu → every shape holding locked`, and `/lock
 (`command line draw`, `command line show`, `command line kinds`, `command line measure`), and the
 six after it are Titles', Connections', Validation's and Mentions' plugins and Types' two, which fill Draw's
 points (`draw text` is one a media type, `draw value` one a property). `queries` is the query engine's service
-(`QueryState`, which hears no commit) and its mark (`query engine`, which
+(`QueryState`, which hears a commit only while a standing query is held) and its mark (`query engine`, which
 `registry.answersQueries` reads); the six after the translator fill its points (names, boards' names, and
 words and a text format, each by what it adds), and `query-commands` is `canvas query` and
 `query-vocabulary`. `slash-commands` is the service that says what a shape offers

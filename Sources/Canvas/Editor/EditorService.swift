@@ -94,6 +94,11 @@ public protocol EditorService: AnyObject {
     /// `shapesDidChangeLayout` of its own. Heard by every service, in order, outside any delivery's bookkeeping, so read
     /// nothing of another service here.
     func shapesDidChangeLayout(_ ids: Set<ShapeID>, in editor: CanvasEditor)
+    /// This editor is a rehearsal (`rehearsal()`) of `source`, just made: its file is the source's as it is now, and no
+    /// service of it has answered anything yet. A service that keeps answers (a standing query's) reads the source's, so
+    /// what the rehearsal decides of the shapes it doesn't write is what the source would. Read the source, never keep
+    /// it past what it is read for; nothing is written. By default nothing.
+    func rehearsalDidBegin(from source: CanvasEditor, in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -110,4 +115,5 @@ extension EditorService {
     public func shapeTintsDidChange(in editor: CanvasEditor) {}
     public func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor) {}
     public func shapesDidChangeLayout(_ ids: Set<ShapeID>, in editor: CanvasEditor) {}
+    public func rehearsalDidBegin(from source: CanvasEditor, in editor: CanvasEditor) {}
 }

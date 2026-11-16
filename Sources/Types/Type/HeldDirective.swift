@@ -18,6 +18,15 @@ public struct HeldDirective: Sendable {
     /// The member, as the root says it (the last of the last `properties`, as JSON is read); nil for none.
     func member(in root: JSONNode) -> JSONNode? { root["properties"]?[key] }
 
+    /// The member's `const`, as written (the last of the last `properties`, as JSON is read): the JSON a plugin that holds the
+    /// directive reads its own value from; nil for a text that isn't a JSON object, a schema without the member, or a member
+    /// with no `const`.
+    public func constant(in text: String) -> String? {
+        guard text.contains(key), let root = try? JSONReader.read(text), root.isObject,
+              let value = member(in: root)?.members?.last(where: { $0.key == Self.keyword })?.value else { return nil }
+        return Self.slice(value.range, of: text)
+    }
+
     /// `text` with the member's `const` saying `literal` (JSON, as written), or without the member for nil, the rest of
     /// the text as typed: how a plugin writes the directive it holds. Nil when the text isn't a JSON object or its
     /// `properties` isn't one.

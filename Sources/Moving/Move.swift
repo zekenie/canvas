@@ -94,7 +94,9 @@ struct Block {
     /// from where it was. Moved onto another board, the shapes are gone from the board shown (the core
     /// ends their editing), and nothing glides. Then the editor goes where they went (`follow`), so
     /// the person is never left where they were.
-    func commit(_ landing: Landing, finish: (inout Transaction) throws -> Void = { _ in }) {
+    /// Whether it moved them: false for one that commits nothing (refused, or landing where they are).
+    @discardableResult
+    func commit(_ landing: Landing, finish: (inout Transaction) throws -> Void = { _ in }) -> Bool {
         let ids = ids, editor = editor, source = board, target = landing.board, shown = editor.board, kinds = editor.registry.containingKinds
         let delta = CGPoint(x: landing.rect.minX - box.minX, y: landing.rect.minY - box.minY)
         let order = shapes.map(\.id)
@@ -131,7 +133,7 @@ struct Block {
             }
         }
         // A move that lands where the shapes are commits nothing: nowhere to go, and editing goes on.
-        guard let nudges = committed, editor.revision != revision else { return }
+        guard let nudges = committed, editor.revision != revision else { return false }
         if target == shown, source == shown {
             var moved: [ShapeID: CGPoint] = [:]
             if delta != .zero { for each in ids.union(carried) { moved[each] = delta } }
@@ -140,6 +142,7 @@ struct Block {
             editor.glide(moved)
         }
         follow(onto: target, from: start, selected: selected)
+        return true
     }
 
     /// Goes where the shapes went, as one step back to where the person was (`start`: the board, the

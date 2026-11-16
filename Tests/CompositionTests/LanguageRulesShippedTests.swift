@@ -134,7 +134,7 @@ private func drawnSchema(_ rules: [String]) -> String {
         expectEqual(issues.statuses(in: .of(IssuesTab.self)).map(\.text), [rule])
         expectEqual(issues.statuses(in: .of(IssuesTab.self)).first?.actions.map(\.title), ["Ignore", "Show Rule", "1 of 1"], "and where the rule's walk begins")
         expectEqual(issues.sections(in: .of(IssuesTab.self)).map(\.section), ["rules"], "the rules read together, and Shown")
-        expectEqual(try panel.layout(for: require(editor.document[listing.id])).sections(in: .of(RulesTab.self)).map(\.section), ["rules"], "the type's Rules tab")
+        expectEqual(try panel.layout(for: require(editor.document[listing.id])).sections(in: .of(RulesTab.self)).map(\.section), ["rules", "holder-constraints"], "the type's Rules tab: its rules, then what each of it accepts")
     },
     test("a rule's warnings are a walk in the product: the scope is found by the warning's source, the stops are the shapes it flags, and Next Issue steps them") {
         let decisions = ScriptedDecisionModel()

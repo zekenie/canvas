@@ -1,3 +1,4 @@
+import Foundation
 import QueryLanguage
 import TestKit
 
@@ -352,6 +353,26 @@ private let bracketsTest = "can't be read here: a test of an attribute is in bra
         expectEqual(near.column, 11)
         let short = try require(QueryError(.syntax, "x", span: at(0, 4)).located(in: text, quoting: 100))
         expectEqual(short.statement, "card,", "a line no longer than it quotes, whole")
+    },
+    test("a refusal carries what it is about as data: the title an unknown title names, as written, whatever the words around it say") {
+        for title in ["Task", "Done.", "Done...", #"The "big" one"#, "No shape is titled ", "No shape is titled Task.", "Ünïcode ☃ ✓", "a\nb", " padded ", "."] {
+            let refusal = QueryError(unknownTitle: title, hint: "h", span: at(3, 2))
+            expectEqual(refusal.reason, .unknownTitle)
+            expectEqual(refusal.unknownTitle, title, title)
+            expectEqual(refusal.message, QueryError.noShapeTitled(title), "the words stay one owner's")
+            expectEqual(refusal.hint, "h")
+            expectEqual(refusal.span, at(3, 2))
+            expectEqual(QueryError(collecting: [QueryError(.unknownKind, "k"), refusal]).errors.last?.unknownTitle, title, "alone among several")
+        }
+        expectEqual(QueryError(unknownTitle: "").unknownTitle, nil, "an empty title names nothing")
+        expectEqual(QueryError(.unknownTitle, QueryError.noShapeTitled("Task")).unknownTitle, nil, "the words alone name no one: the data does")
+        expectEqual(QueryError(.unknownKind, "x", subject: .title("Task")).unknownTitle, nil, "only of an unknown title")
+        let id = UUID()
+        let contained = QueryError(.cannotContain, "x", subject: .shape(id))
+        expectEqual(contained.shapesNamed, [id])
+        expectEqual(QueryError(collecting: [contained, QueryError(.cannotContain, "y", subject: .shape(UUID())), QueryError(.syntax, "z")]).shapesNamed.count, 2)
+        expectEqual(QueryError(.syntax, "z").shapesNamed, [])
+        expectEqual(QueryError(unknownTitle: "Task").description, "unknown_title: No shape is titled Task.", "reported as ever")
     },
     test("several problems at once: the first leads, and errors holds them all, to the limit") {
         let a = QueryError(.unknownKind, "a", span: at(0, 1)), b = QueryError(.unknownTitle, "b", span: at(2, 1))

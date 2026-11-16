@@ -30,6 +30,9 @@ struct GroupedFile: QueryFileFact {
     let file: CanvasFile
 
     static func current(in editor: CanvasEditor) -> GroupedFile { GroupedFile(file: editor.withoutObservingDocument { editor.file }) }
+
+    /// Grouping's count of the commits that changed a group anywhere in the file (`GroupIndex.fileRevision`).
+    static func revision(in editor: CanvasEditor) -> Int? { editor.service(GroupIndex.self)?.fileRevision }
 }
 
 /// Each board's groups, read once, off the main actor, the first time a query asks: the shapes in a

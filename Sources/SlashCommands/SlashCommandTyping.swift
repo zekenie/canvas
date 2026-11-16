@@ -435,6 +435,14 @@ public final class SlashCommandTyping {
         return true
     }
 
+    /// The command the line at the caret names, if the target offers it now (`/constrain only tasks`); nil on any other line. What
+    /// the command bar reads to say what it acts on.
+    public var typedCommand: OfferedSlashCommand? {
+        guard let view, let commands, let storage = view.textStorage,
+              let line = SlashCommandLine(in: storage.string as NSString, caret: view.selectedRange().location) else { return nil }
+        return command(named: line.name, in: commands)
+    }
+
     // MARK: The shapes a command takes
 
     /// The rule for the shapes an `@` typed at `location` may pick, if the line it's on is a command

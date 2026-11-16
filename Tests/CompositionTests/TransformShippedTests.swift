@@ -3,6 +3,7 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Constraints
 import CoreGraphics
 import DetailPanel
 import Frames
@@ -240,6 +241,55 @@ import Validation
         h.editor.unlock([g.frame])
         expect(transforms.turn([g.frame], into: Subboard.kind), "unlocked, it turns")
         expectEqual(h.editor.document[g.frame]?.kind, Subboard.kind)
+    },
+
+    test("a frame that accepts only frames, holding a note already flagged, turns into a subboard in one step named as the command: the note was inside already, so it's on the subboard's board and still flagged there; Undo flags it in the frame again; with no constraint, or one the note fits, it turns as well") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
+        var frame = ShapeRecord(Frame(frame: CGRect(x: 100, y: 100, width: 600, height: 500)))
+        frame[TitleProperty.self] = "Groceries"
+        let note = ShapeRecord(StickyNote(frame: CGRect(x: 150, y: 150, width: 200, height: 200), text: "Milk"))
+        h.editor.transact { transaction in
+            transaction.insert(frame)
+            transaction.insert(note)
+        }
+        h.editor.put([note.id], in: frame.id)
+        let state = try require(h.editor.slashCommands)
+        h.editor.selectedShapeIDs = [frame.id]
+
+        // The control: no constraint.
+        expect(state.run("turn-into-subboard", on: frame.id, with: SlashArguments([])), "with no constraint it turns")
+        expectEqual(h.editor.document[frame.id]?.kind, Subboard.kind)
+        h.editor.undo()
+        // One the note fits.
+        h.editor.transact("Constrain") { $0.update(frame.id) { $0[ConstraintsProperty.self] = ConstraintList([Constraint(says: "only notes", query: "note")]) } }
+        let index = try require(h.editor.constraintIndex)
+        expect(spinRunLoop(until: { index.isSettled }, timeout: 5), "settles")
+        expectEqual(index.breakers(of: .shape(frame.id)), [], "the note fits")
+        expect(state.run("turn-into-subboard", on: frame.id, with: SlashArguments([])), "one the note fits: it turns")
+        h.editor.undo()
+
+        // Only frames: the note is flagged in the frame, and the turn is no arrival of it.
+        h.editor.transact("Constrain") { $0.update(frame.id) { $0[ConstraintsProperty.self] = ConstraintList([Constraint(says: "only frames", query: "frame")]) } }
+        expect(spinRunLoop(until: { index.isSettled }, timeout: 5), "settles")
+        expectEqual(index.breakers(of: .shape(frame.id)), [note.id], "the note is flagged in the frame")
+        let before = h.file
+        expect(state.run("turn-into-subboard", on: frame.id, with: SlashArguments([])), "it turns")
+        expectEqual(h.editor.announcements, [], "nothing is said")
+        expectEqual(h.editor.undoHistory.undoName, "Turn into Subboard")
+        expectEqual(h.editor.document[frame.id]?.kind, Subboard.kind, "a subboard now")
+        expectEqual(h.file.board(containing: note.id), BoardID(owner: frame.id), "the note is on its board")
+        expect(spinRunLoop(until: { index.isSettled }, timeout: 5), "settles")
+        expectEqual(index.breakers(of: .shape(frame.id)), [note.id], "and still flagged there")
+        h.editor.undo()
+        expectEqual(h.file, before, "Undo")
+        expect(spinRunLoop(until: { index.isSettled }, timeout: 5), "settles")
+        expectEqual(index.breakers(of: .shape(frame.id)), [note.id], "flagged in the frame again")
+
+        // Edited first, its answer still to come: it turns too.
+        h.editor.transact("Edit") { $0.update(note.id, as: StickyNote.self) { $0.props.text = "Milk, oat" } }
+        expect(state.run("turn-into-subboard", on: frame.id, with: SlashArguments([])), "it turns while the note is asked again")
     },
 
     test("a frame whose notes a locked arrow joins is left as it is, as for a locked note in it: nothing changes, no step is made, and the arrow shakes; unlocked, the arrow goes with the notes, and Undo and Redo are exact") {

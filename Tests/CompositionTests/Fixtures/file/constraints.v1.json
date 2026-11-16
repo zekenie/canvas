@@ -1,0 +1,19 @@
+[
+  {
+    "names" : {
+      "Task" : "7C1E2A04-3B5D-4F6A-8C9E-0A1B2C3D4E5F"
+    },
+    "query" : ":is-a(\"Task\")",
+    "reach" : "children",
+    "says" : "only tasks"
+  },
+  {
+    "query" : ":not(bug)",
+    "reach" : "descendants",
+    "says" : "no bugs anywhere inside"
+  },
+  {
+    "reach" : "children",
+    "says" : "only what the team agreed"
+  }
+]

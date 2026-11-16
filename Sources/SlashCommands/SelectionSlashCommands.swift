@@ -33,6 +33,10 @@ public enum SlashAnswer: Sendable, Equatable {
 /// One that runs at once (`SelectionSlashCommand.atOnce`) is run as a shape's command is, the bar closed
 /// first, in one undo step named for it (none if it commits nothing), on an empty board too.
 ///
+/// One that acts on the board shown as such, not on each shape of it (`/constrain` adds to the board's list), names its
+/// target for the bar with nothing selected (`naming(everything:)`: the board's name), so the bar doesn't say it acts on
+/// "All shapes"; every other command keeps that.
+///
 /// A name is lowercase letters and digits, words joined by hyphens, as a shape's command's, and no shape's
 /// command may have it (the registry refuses either).
 public struct SelectionSlashCommand {
@@ -42,11 +46,15 @@ public struct SelectionSlashCommand {
     let isOffered: @MainActor (SlashTarget, CanvasEditor) -> Bool
     let accepts: @MainActor (SlashArguments) -> Bool
     let action: Action
+    /// What it calls the target when nothing is selected, in the bar's label ("Plans"); nil: the bar's own, "All shapes".
+    private(set) var everythingName: (@MainActor (CanvasEditor) -> String)?
 
-    /// What it does with what was typed: start a task the bar waits for, or act at once.
+    /// What it does with what was typed: start a task the bar waits for, act at once, or act on a pick of a list.
     enum Action {
         case answer(@MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Task<SlashAnswer, Never>)
         case run(@MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Void)
+        case choose(choices: @MainActor (SlashTarget, CanvasEditor) -> [SlashChoice],
+                    perform: @MainActor (SlashTarget, SlashChoice, CanvasEditor) -> Void)
     }
 
     /// A command that answers later. `argument` is the hint beside the name in the list, and says it takes
@@ -79,6 +87,31 @@ public struct SelectionSlashCommand {
                               accepts: (@MainActor (SlashArguments) -> Bool)? = nil,
                               run: @escaping @MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Void) -> SelectionSlashCommand {
         SelectionSlashCommand(name, argument: argument, waiting: nil, when: isOffered, accepts: accepts, action: .run(run))
+    }
+
+    /// The same, with the name the bar's label gives the target while this command is the one typed, with nothing selected
+    /// (`.everything`), in place of "All shapes": VoiceOver hears "Command for <name>". Asked each time the line is edited.
+    public func naming(everything name: @escaping @MainActor (CanvasEditor) -> String) -> SelectionSlashCommand {
+        var named = self
+        named.everythingName = name
+        return named
+    }
+
+    /// A command that takes one choice from a list, as a shape's `SlashCommand` of the `choices:` form does, about the
+    /// target as a whole: the list opens when its name is done (Tab, or a space typed after it), narrows as text is typed, and
+    /// a pick runs `perform` at once, in one undo step named for the row (`SlashChoice.step`), else for the command. `choices`
+    /// is asked with the target and the editor once, when the list opens; its rows are about what the target is (nothing selected
+    /// is the board shown). It takes no arguments as such (`accepts` is never true: the names' list's Return completes it).
+    /// Static, so its closures never collide with the other forms' in a trailing closure.
+    ///
+    ///     SelectionSlashCommand.choosing("unconstrain", argument: "constraint", when: { target, editor in … },
+    ///                                    choices: { target, editor in … }) { target, choice, editor in … }
+    public static func choosing(_ name: String, argument: String,
+                                when isOffered: @escaping @MainActor (SlashTarget, CanvasEditor) -> Bool = { _, _ in true },
+                                choices: @escaping @MainActor (SlashTarget, CanvasEditor) -> [SlashChoice],
+                                perform: @escaping @MainActor (SlashTarget, SlashChoice, CanvasEditor) -> Void) -> SelectionSlashCommand {
+        SelectionSlashCommand(name, argument: argument, waiting: nil, when: isOffered, accepts: { _ in false },
+                              action: .choose(choices: choices, perform: perform))
     }
 }
 

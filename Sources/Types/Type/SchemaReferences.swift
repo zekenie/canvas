@@ -1,5 +1,6 @@
 import Canvas
 import CanvasRPC
+import Constraints
 import Foundation
 import Mentions
 
@@ -47,10 +48,22 @@ extension SchemaText: SchemaDescribed {
 extension SchemaText: ShapeNaming {
     public func forEachNamedShape(_ body: (ShapeID) -> Void) {
         for ref in SchemaReferences.refs(in: text) { body(ref.shape) }
+        // The shapes a type's `$constraints` name by id (`names`), mapped on a paste as its `$ref`s are.
+        for constraint in TypeConstraintBook.constraints(inSchema: text) {
+            for id in constraint.names.values { body(id) }
+        }
     }
 
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> SchemaText {
-        SchemaText(SchemaReferences.renaming(text, rename))
+        let renamed = SchemaReferences.renaming(text, rename)
+        let list = TypeConstraintBook.constraints(inSchema: renamed)
+        guard list.contains(where: { $0.names.values.contains { rename($0) != nil } }) else { return SchemaText(renamed) }
+        let mapped = list.map { constraint -> Constraint in
+            var each = constraint
+            each.names = constraint.names.mapValues { rename($0) ?? $0 }
+            return each
+        }
+        return SchemaText(TypeConstraintBook.text(renamed, setting: mapped) ?? renamed)
     }
 }
 

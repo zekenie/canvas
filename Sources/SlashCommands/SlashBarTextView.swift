@@ -1,4 +1,5 @@
 import AppKit
+import Canvas
 import TextEditing
 
 /// The command bar's field: one line of the app's text view, typing slash commands for the shapes
@@ -90,12 +91,14 @@ public final class SlashBarTextView: EditingTextView {
 /// "5 shapes", "All shapes"); while it waits for a command that answers later a spinner in the label's place,
 /// and when one fails, why ("No matches").
 @MainActor
-final class SlashBarView: NSView {
+final class SlashBarView: NSView, CardAccessibilityLabeling {
     let field: NSView
     let acting: NSTextField
     private let spinner = NSProgressIndicator()
     /// What it acts on, as it says when it says nothing else.
-    private let actingText: String
+    private var actingText: String
+    /// What VoiceOver calls the bar now, once what it acts on has changed since it opened.
+    private(set) var cardAccessibilityLabel: String?
     private(set) var state: State = .acting
 
     /// What the label's place shows.
@@ -133,6 +136,14 @@ final class SlashBarView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isFlipped: Bool { true }
+
+    /// Says what the bar acts on now (a command typed that names the board it acts on), and what VoiceOver calls the bar.
+    func act(on label: String, spoken: String) {
+        guard label != actingText || spoken != cardAccessibilityLabel else { return }
+        actingText = label
+        cardAccessibilityLabel = spoken
+        if state == .acting { show(.acting) }
+    }
 
     /// Shows what the label's place says now.
     func show(_ state: State) {

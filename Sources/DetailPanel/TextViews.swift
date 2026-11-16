@@ -339,6 +339,7 @@ struct DetailTextHost<Content: DetailTextContent>: NSViewRepresentable {
         view.tabBehavior = .movesKeyView
         update?(view)
         view.showEnabled(isEnabled)
+        view.placeholderIsEnabled = isEnabled
         view.commitsOnReturn = commitsOnReturn
         view.onCommit = onCommit
         let exit = context.environment.detailExit

@@ -53,6 +53,11 @@ public final class EditorHarness {
         scheduler.advance(by: .milliseconds(ms))
     }
 
+    /// Zooms the camera to `zoom` (1 is 100%), its origin where it is.
+    public func zoom(to zoom: CGFloat) {
+        editor.camera.zoom = zoom
+    }
+
     private func event(clickCount: Int = 1, activatesWindow: Bool = false) -> PointerEvent {
         PointerEvent(location: location, timestamp: time, modifiers: held, clickCount: clickCount, activatesWindow: activatesWindow)
     }

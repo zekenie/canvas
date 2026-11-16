@@ -7,6 +7,7 @@ import Foundation
 import Frames
 import Geometry
 import LanguageModels
+import Locking
 import Mentions
 import Queries
 import QueryCommands
@@ -125,6 +126,14 @@ extension Budget {
     /// shape, is the main time over the count's (0.8 and 0.7 ms), held to 2.
     static let queryProblemsMain = queryInvalidHidden
     static let queryProblemsOverCount = 2.0
+    /// What a commit of three notes' words costs the main actor more with three standing queries held (`queries.stand`:
+    /// `:is-a("Record 9")`, a text searched, `:top-level`) than with none: each hears the commit once it settles, takes up the
+    /// file (O(1)) and asks the three notes, and takes their answers in as they land. Some 0.10 ms at 1,000 shapes and at
+    /// 10,000 (release, 2026-11-15, run alone; the commit itself some 0.07), held at three times that.
+    static let standingCommitMain = SizedBudget(thousand: 0.3, tenThousand: 0.3)
+    /// And their asks off the main actor, all three: the three notes each, walking no other shape, so the same at any size:
+    /// some 0.19 ms at both (the same run), held at five times that.
+    static let standingCommitOffMain = SizedBudget(thousand: 1, tenThousand: 1)
     /// And off it: 20 queries' evaluation over the one snapshot, names read once.
     static let referenceBatchOffMain = SizedBudget(thousand: 20, tenThousand: 100)
     /// `--ask`'s request without the model, on a board looked at: on the main actor (at least
@@ -191,6 +200,32 @@ func middle(_ values: [Double]) -> Double { values.sorted()[values.count / 2] }
 
 @MainActor private final class Answered<T> {
     var result: Result<T, any Error>?
+}
+
+/// Waits until none of the standing queries has an ask out, told by them as their answers land.
+@MainActor func settled(_ queries: [StandingQuery]) async {
+    guard !queries.allSatisfy(\.isSettled) else { return }
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        let waiting = Waiting(continuation)
+        for query in queries {
+            query.onChange = { _ in
+                guard queries.allSatisfy(\.isSettled) else { return }
+                for query in queries { query.onChange = nil }
+                waiting.resume()
+            }
+        }
+    }
+}
+
+/// A continuation resumed once.
+@MainActor private final class Waiting {
+    private var continuation: CheckedContinuation<Void, Never>?
+    init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 /// The shipped list on a pasteboard of its own (never the person's), and the model tests use.
@@ -748,6 +783,58 @@ let rowsListed = 10_000
                 expect(whileHeld - alone < Budget.queryHeldCommit.at(size),
                        "a commit on \(size) shapes while a query holds the file took \(whileHeld) ms, against \(alone)")
             }
+        }
+    },
+    test("standing queries cost a commit of a few shapes what it changed: three held, each asking the commit's notes and walking no other") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let registry = try Registry(plugins: shippedPlugins(pasteboard))
+        for size in sizes {
+            let document = generatedBoard(shapes: size)
+            let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+            let queries = try require(editor.queries)
+            _ = queries.vocabulary
+            let notes = document.shapes.filter { $0.kind == StickyNote.kind && $0[LockedProperty.self] != true && $0[TypeSchemaProperty.self] == nil }
+                .prefix(3).map(\.id)
+            expectEqual(notes.count, 3)
+            var step = 0
+            let edit = {
+                step += 1
+                editor.transact("Type") { transaction in
+                    for id in notes { transaction.update(id, as: StickyNote.self) { $0.props.text = MentionText(plain: "Edited \(step)") } }
+                }
+            }
+            var plain: [Double] = []
+            for _ in 0..<measuredRuns(21) { plain.append(try cpu { edit() }.main) }
+            let standing = try [#"sticky-note:is-a("Record 9")"#, #"sticky-note[text*="edited" i]"#, "sticky-note:top-level"].map { try queries.stand($0) }
+            spinRunLoop(until: { standing.allSatisfy(\.isSettled) }, timeout: 60)
+            #if DEBUG
+            let (whole, walks, asked) = (queries.standingWholeAsks, queries.universeWalks, queries.standingShapesAsked)
+            #endif
+            var main: [Double] = [], off: [Double] = []
+            let runs = measuredRuns(21)
+            for _ in 0..<runs {
+                let measured = try cpu { () async -> Void in
+                    edit()
+                    await settled(standing)
+                }
+                main.append(measured.main)
+                off.append(measured.offMain)
+            }
+            expectEqual(standing[1].matches, Set(notes), "the three notes' words searched")
+            #if DEBUG
+            expectEqual(queries.standingWholeAsks, whole, "no whole file asked")
+            expectEqual(queries.universeWalks, walks, "no walk of every shape")
+            expectEqual(queries.standingShapesAsked, asked + 9 * runs, "three notes, three queries, each commit")
+            #endif
+            let more = middle(main) - middle(plain), offMain = middle(off)
+            report(String(format: "%6d shapes, a commit of 3 notes' words with 3 standing queries held: main %6.3f ms more than with none, %6.3f in all (budget %.1f more), their asks off the main actor %6.3f (budget %.1f)",
+                          size, more, middle(main), Budget.standingCommitMain.at(size), offMain, Budget.standingCommitOffMain.at(size)))
+            if holdsToBudgets {
+                expect(more < Budget.standingCommitMain.at(size), "three standing queries cost a commit on \(size) shapes \(more) ms more")
+                expect(offMain < Budget.standingCommitOffMain.at(size), "three standing queries' asks of a commit on \(size) shapes took \(offMain) ms off the main actor")
+            }
+            for query in standing { query.stop() }
         }
     },
     test("queries cost a drag event nothing: the shipped list, a query run first, against it without queries") {

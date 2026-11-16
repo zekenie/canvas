@@ -42,10 +42,10 @@ import Titles
         let schema = try require(registry.schema(for: Subboard.kind)).json
         expectEqual(schema["x-canvas-board"], true)
         expectEqual(schema["title"]?.stringValue, "Subboard")
-        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "description", "title", "color", "is", "fieldValues", "autofill"])
+        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "description", "title", "color", "is", "fieldValues", "autofill", "constraints"])
         expectEqual(schema["required"], ["frame"])
         expectEqual(schema["properties"]?["title"]?["x-canvas-owner"]?.stringValue, "titles")
-        expectEqual(Set(registry.properties(for: Subboard.kind).map(\.rawValue)), ["title", "color", "is", "fieldValues", "autofill"])
+        expectEqual(Set(registry.properties(for: Subboard.kind).map(\.rawValue)), ["title", "color", "is", "fieldValues", "autofill", "constraints"])
     },
     // What a board writes of one at its version (CompositionTests hold the shipped kinds to their
     // fixtures, Fixtures/kinds/subboard.v1.json among them).

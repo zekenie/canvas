@@ -228,6 +228,31 @@ func story(_ letters: String) -> [ShapeID] {
         expectEqual(refused.span, QuerySpan(offset: 5, length: 7), "the title")
         expectEqual(try answer(#"chore"Alpha""#, on: h).query, #"chore"Alpha""#)
     },
+    test("a refusal of a title no shape has names it as data, as written: a full stop, quotes, unicode and the engine's own words in it") {
+        let h = try choresHarness()
+        for (written, title) in [(#"chore"Alpah.""#, "Alpah."), (#"chore"No shape is titled Alpha.""#, "No shape is titled Alpha."),
+                                 (#"chore"Ünïcode ☃""#, "Ünïcode ☃"), (#"chore"say \"hi\"""#, #"say "hi""#)] {
+            let refused = try require(refusedAnswer(written, on: h), written)
+            expectEqual(refused.reason, .unknownTitle, written)
+            expectEqual(refused.unknownTitle, title, written)
+            expectEqual(refused.message, QueryError.noShapeTitled(title), written)
+        }
+        // The warning for a name tested for that no shape has says it in the same words.
+        let warned = try answer(#"[caption="Qwxzv."]"#, on: h).warnings.map(\.message)
+        expectEqual(warned, [QueryError.noShapeTitled("Qwxzv.")])
+        // A container named by the id of a shape that holds none: the shape is data.
+        let chore = id(1)
+        let held = try require(refusedAnswer("#\(chore.rawValue.uuidString) > chore", on: h))
+        expectEqual(held.reason, .cannotContain)
+        expectEqual(held.shapesNamed, [chore.rawValue])
+        let checked = try require(h.editor.queries)
+        do throws(QueryError) {
+            _ = try checked.checkStored("#\(chore.rawValue.uuidString) > chore")
+            expect(false, "refused when it is checked")
+        } catch {
+            expectEqual(error.shapesNamed, [chore.rawValue], "by check too, which a stored query is held to")
+        }
+    },
     test("choices: exact, any case with i, text for the other operators") {
         let h = try choresHarness()
         expectMatches([

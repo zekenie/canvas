@@ -34,7 +34,12 @@ public final class MentionState {
     public var registry: Registry { editor.registry }
 
     /// How each shape that's mentioned (anywhere in the file) or observed shows now.
-    @ObservationIgnored var resolutions: [ShapeID: MentionResolution] = [:]
+    @ObservationIgnored var resolutions: [ShapeID: MentionResolution] = [:] {
+        didSet { labelsRevision &+= 1 }
+    }
+    /// Moves with every write of how mentioned shapes show (a name changed, a shape mentioned or no longer): what the
+    /// names mention text reads with (`labels`, a query's `MentionedNames`) says how far it has come by.
+    @ObservationIgnored public private(set) var labelsRevision = 0
     /// The kinds that lay out by the names their mentions show (`registrar.mentionLayout`), and the
     /// shapes of them given names other than the ones their text holds (`MentionLayout.names`).
     @ObservationIgnored lazy var layoutKinds: Set<ShapeKind> = Set(registry.kinds.filter {

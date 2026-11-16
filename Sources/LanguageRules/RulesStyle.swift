@@ -1,5 +1,8 @@
 import AppKit
+import SwiftUI
+import Canvas
 import Palette
+import Types
 import Validation
 
 /// What LanguageRules says and draws with: the Rules tab, the Issues tab's section, the menus and the light.
@@ -8,7 +11,14 @@ public enum RulesStyle {
     // MARK: The Rules tab
 
     /// The tab's title.
-    public nonisolated static let tab = "Rules"
+    public nonisolated static let tab = RulesTab.title
+    /// The heading over a type's English rules, the type's noun: "Each sprint". The look of any section's title.
+    public static func each(_ noun: String) -> String { "Each \(noun)" }
+    /// The Rules section's heading for a type: its own noun, "Each sprint"; none for an unnamed type.
+    public static func heading(of type: ShapeID, in index: TypeIndex) -> String? {
+        guard let name = index.name(of: type), !name.isEmpty else { return nil }
+        return each(RuleBook.noun(of: name))
+    }
     /// The empty box last in the tab, where a rule is added.
     public static let addRule = "add rule"
     /// The one step a rule's edit is.

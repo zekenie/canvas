@@ -162,7 +162,7 @@ private func eased(_ t: CGFloat) -> CGFloat {
         h.editor.put([hanging], in: other)
         h.editor.freeze([held])
         let before = h.editor.document
-        expectEqual(h.settle([into, hanging]), .refused(by: held))
+        expectEqual(h.settle([into, hanging]), .refused(by: [held]))
         expectEqual(h.editor.document, before)
         expectEqual(log.refusals, [[held]])
         let reaching = square(h, at: CGPoint(x: 490, y: 300))

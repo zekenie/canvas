@@ -47,6 +47,10 @@ public enum QueryBudget {
     /// A compound with a one-step edge word whose anchors are fewer than this starts from their
     /// edges' far ends, never a walk of every shape.
     public static let seedFromAnchors = 1_024
+    /// A file relation (`:is-a(S)`) asked of fewer candidates than this, before it has been read
+    /// backward from its anchors, follows each candidate forward instead, reading no other shape's
+    /// relatives (a standing query's ask of a commit's shapes).
+    public static let relatedForward = 64
     /// Text in a listed attribute is cut past this many characters, unless the request names it.
     public static let cut = 500
     /// Rows listed when the request doesn't say. No request is held to a most: a board of any size

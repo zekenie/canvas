@@ -42,12 +42,13 @@ public struct DetailShapeRow: View {
     let name: String
     let detail: String?
     let detailTruncation: Text.TruncationMode
+    let detailCount: String?
     let lines: [String]
     let dimmed: Bool
     let place: [PlaceStep]
     @State private var width: CGFloat?
 
-    public init(symbol: String, tint: NSColor? = nil, name: String, detail: String? = nil, detailTruncation: Text.TruncationMode = .head,
+    public init(symbol: String, tint: NSColor? = nil, name: String, detail: String? = nil, detailTruncation: Text.TruncationMode = .head, detailCount: String? = nil,
                 place: [PlaceStep] = [], lines: [String] = [], dimmed: Bool = false) {
         self.place = place
         self.symbol = symbol
@@ -55,6 +56,7 @@ public struct DetailShapeRow: View {
         self.name = name
         self.detail = detail
         self.detailTruncation = detailTruncation
+        self.detailCount = detailCount
         self.lines = Array(lines.prefix(DetailStyle.shapeRowLines))
         self.dimmed = dimmed
     }
@@ -74,6 +76,10 @@ public struct DetailShapeRow: View {
                         Spacer(minLength: 0)
                         // A path is told by the container its shape is in, which is last: cut at the start.
                         Text(detail).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(detailTruncation)
+                        // A count after the detail is its own text: the detail is cut before it, never the count.
+                        if let detailCount {
+                            Text(detailCount).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize().layoutPriority(1)
+                        }
                     }
                 }
                 ForEach(lines.indices, id: \.self) { i in

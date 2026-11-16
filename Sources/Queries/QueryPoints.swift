@@ -139,16 +139,23 @@ public struct QueryFilePreparation {
     public let registry: Registry
     /// Lent to facts alone: never to the word.
     private let editor: CanvasEditor
+    /// Where the facts taken are noted, with their revisions, for a standing query (`StandingQuery`):
+    /// what it compares after each commit. Nil for every other query.
+    private let read: FactsRead?
 
-    init(snapshot: TopologySnapshot, registry: Registry, editor: CanvasEditor) {
+    init(snapshot: TopologySnapshot, registry: Registry, editor: CanvasEditor, read: FactsRead? = nil) {
         self.snapshot = snapshot
         self.registry = registry
         self.editor = editor
+        self.read = read
     }
 
     /// A fact of the file as the query takes it up (`QueryFileFact.current(in:)`): what a plugin
     /// keeps that is a function of the records alone, taken in this turn.
-    public func fact<Fact: QueryFileFact>(_: Fact.Type) -> Fact { Fact.current(in: editor) }
+    public func fact<Fact: QueryFileFact>(_: Fact.Type) -> Fact {
+        read?.note(Fact.self, in: editor)
+        return Fact.current(in: editor)
+    }
 }
 
 /// A value an editor keeps of the file that is a function of its records alone (never the person,
@@ -158,8 +165,47 @@ public struct QueryFilePreparation {
 /// file: the claim is the fact type's, made once where it's declared, and a word's own `prepare`
 /// still can't reach the editor. `current(in:)` runs on the main actor in the turn the query takes
 /// up the file: O(1), a value the plugin keeps, shared, never one it makes then.
+///
+/// `revision(in:)` says how far the fact has come: a number its owner moves whenever what the fact
+/// says of some shape may have changed in a way that shape's own record doesn't show (a type renamed
+/// is read by every note that lists it; a group joined gives the shapes already in it a mate), and
+/// leaves as it is otherwise, O(1). A standing query (`QueryState.stand`) compares it after each
+/// commit and asks the whole file again when it moved. Nil, the default, is a fact that can't say:
+/// it counts as moved at every commit.
 public protocol QueryFileFact: Sendable {
     @MainActor static func current(in editor: CanvasEditor) -> Self
+    @MainActor static func revision(in editor: CanvasEditor) -> Int?
+}
+
+extension QueryFileFact {
+    /// Can't say: a standing query that reads it asks the whole file again after every commit.
+    @MainActor public static func revision(in editor: CanvasEditor) -> Int? { nil }
+}
+
+/// The facts a standing query's words took as it took up the file, each once, with its revision
+/// then and how to read it again (`QueryFileFact.revision(in:)`).
+@MainActor
+final class FactsRead {
+    struct Taken {
+        let revision: Int?
+        let read: @MainActor (CanvasEditor) -> Int?
+    }
+
+    private(set) var taken: [ObjectIdentifier: Taken] = [:]
+
+    func note<Fact: QueryFileFact>(_: Fact.Type, in editor: CanvasEditor) {
+        let key = ObjectIdentifier(Fact.self)
+        guard taken[key] == nil else { return }
+        taken[key] = Taken(revision: Fact.revision(in: editor), read: { Fact.revision(in: $0) })
+    }
+
+    /// Whether any fact taken has moved since (or can't say).
+    func moved(in editor: CanvasEditor) -> Bool {
+        taken.values.contains { taken in
+            guard let then = taken.revision, let now = taken.read(editor) else { return true }
+            return now != then
+        }
+    }
 }
 
 /// A thing a word's argument names that the file no longer holds (a shape a drawing made and
@@ -265,6 +311,8 @@ struct ContributedPseudoClass: Sendable {
     var memberNames: [String] = []
     /// What its argument names that the file no longer holds, off the main actor.
     var absent: (@Sendable (any Sendable) -> [QueryAbsent])?
+    /// How a shape is made to match it (`QueryState.fit`): given its text, if it takes one, the record and the editor.
+    var makes: (@MainActor (String?, AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)?
     /// Whether a query that holds it waits for answers still arriving (`TopologyIndex.isSettling`), as one that
     /// reads edges does: a word whose verdicts a plugin works out later (Validation's, which a rule's model
     /// answers feed).
@@ -285,6 +333,9 @@ struct ContributedFileRelation: Sendable {
     let prepare: @MainActor (QueryFilePreparation) -> any Sendable
     let seeds: @Sendable (any Sendable) -> Set<ShapeID>
     let related: @Sendable (ShapeID, any Sendable) -> [ShapeID]
+    /// How a shape is made to be related to a shape its anchors name (`QueryState.fit`): given the anchors as written, the
+    /// record and the editor.
+    var makes: (@MainActor ([QueryAnchor], AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)?
 }
 
 /// A word a plugin adds to queries: a pseudo-class (`:selected`), a relation over edges of exactly
@@ -429,6 +480,21 @@ public struct QueryPathUnknown: Sendable {
 public struct QueryPathChecking: Sendable {
     let attribute: String
     let check: @MainActor ([String], CanvasEditor) -> QueryPathUnknown?
+    let makes: (@MainActor ([String], QueryMemberLiteral, AnyShapeRecord, CanvasEditor) -> JSONValue?)?
+}
+
+/// A value a query writes at a member (`[facts.a.b=v]`), as written: its text, whether it was quoted, and whether the test
+/// ignores case (`i`). Handed to an attribute's member writer (`registrar.queryPathCheck(attribute:makes:)`) to type.
+public struct QueryMemberLiteral: Sendable, Equatable {
+    public let text: String
+    public let isQuoted: Bool
+    public let ignoresCase: Bool
+
+    public init(text: String, isQuoted: Bool, ignoresCase: Bool) {
+        self.text = text
+        self.isQuoted = isQuoted
+        self.ignoresCase = ignoresCase
+    }
 }
 
 /// What says which members an attribute can hold: at most one plugin an attribute.
@@ -562,9 +628,14 @@ extension PluginRegistrar {
 
     /// What an object attribute's members can be, for a query's `[attribute.a.b]`: `check` is given the
     /// path's members and the editor on the main actor, and says the first member no shape of the file can
-    /// hold (nil: nothing to say), so the answer warns `unknown_field`. At most one plugin an attribute.
-    public mutating func queryPathCheck(attribute: String, _ check: @escaping @MainActor ([String], CanvasEditor) -> QueryPathUnknown?) {
-        contribute(QueryPathChecking(attribute: attribute, check: check), to: QueryPathChecks.self)
+    /// hold (nil: nothing to say), so the answer warns `unknown_field`. At most one plugin an attribute. `makes` is how a
+    /// member is written when a shape is made to match (`QueryState.fit`): given the path's members, the value as written,
+    /// the record (its other words already written) and the editor on the main actor, the JSON to put there as the owner
+    /// types it, or nil when nothing can be written (the default). An attribute with an owner that gives none has no members
+    /// written; one with no owner has them typed by quoting alone.
+    public mutating func queryPathCheck(attribute: String, _ check: @escaping @MainActor ([String], CanvasEditor) -> QueryPathUnknown?,
+                                        makes: (@MainActor ([String], QueryMemberLiteral, AnyShapeRecord, CanvasEditor) -> JSONValue?)? = nil) {
+        contribute(QueryPathChecking(attribute: attribute, check: check, makes: makes), to: QueryPathChecks.self)
     }
 
     /// A block `--ask` sends about the file under `tag` (`<tag>`, the text, `</tag>`), after the titles: `text` is
@@ -584,7 +655,10 @@ extension PluginRegistrar {
     /// each: a field and why), asked on the main actor in slices of only the rows a query returns,
     /// and listed on those rows as `problems`. `settles`: a query that holds it waits, before it takes up
     /// the file, while answers are still arriving (`TopologyIndex.isSettling`, `QueryRequest.settle`), as one
-    /// that reads edges does, for a word whose verdicts a plugin works out later.
+    /// that reads edges does, for a word whose verdicts a plugin works out later. `makes` says how a shape is made
+    /// to match the word (`QueryState.fit`, which writes what a query says a shape is): given the record and the
+    /// editor on the main actor, the record as it is written to match, or nil when nothing can be (the default: the
+    /// word is skipped).
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String,
         prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
@@ -592,15 +666,18 @@ extension PluginRegistrar {
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)? = nil,
         problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])? = nil,
-        settles: Bool = false
+        settles: Bool = false,
+        makes: (@MainActor (AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? = nil
     ) {
         contributePseudoClass(word, summary, example: example, argument: nil, reads: .editor, prepare: { preparation, _ in prepare(preparation) },
-                              seeds: seeds, matches: matches, onMain: onMain, problems: problems, settles: settles)
+                              seeds: seeds, matches: matches, onMain: onMain, problems: problems, settles: settles,
+                              makes: Self.ignoringText(makes))
     }
 
     /// As above, for a word that takes one quoted text, `:word("…")` (`argument` is its name, "name", as the
     /// vocabulary says it): `prepare` is given the text too, and `seeds` and `matches` see what it made (keep the
-    /// text in it if they need it). A query may use the word with several texts, each prepared on its own.
+    /// text in it if they need it). A query may use the word with several texts, each prepared on its own. `makes`
+    /// is given the text too.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String, argument: String,
         prepare: @escaping @MainActor (QueryPreparation, String) -> Prepared,
@@ -608,11 +685,13 @@ extension PluginRegistrar {
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)? = nil,
         problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])? = nil,
-        settles: Bool = false
+        settles: Bool = false,
+        makes: (@MainActor (String, AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? = nil
     ) {
         contributePseudoClass(word, summary, example: example, argument: argument, reads: .editor,
                               prepare: { preparation, text in prepare(preparation, text ?? "") },
-                              seeds: seeds, matches: matches, onMain: onMain, problems: problems, settles: settles)
+                              seeds: seeds, matches: matches, onMain: onMain, problems: problems, settles: settles,
+                              makes: Self.givingText(makes))
     }
 
     /// As above, for a word whose verdict reads only the file (`reads: .file`): `prepare` is given
@@ -624,7 +703,7 @@ extension PluginRegistrar {
     /// error), to each row the word matched, worked out off the main actor as the rows are built, flat
     /// beside the row's own and kept by `--brief` and `--fields`; where several words give one, the first
     /// (in the order of the words' names) keeps it. `absent` lists what its argument names that the file no
-    /// longer holds, for an answer to say (`QueryResult.absent`), whatever the rows.
+    /// longer holds, for an answer to say (`QueryResult.absent`), whatever the rows. `makes` is the editor form's.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String, reads _: QueryFileReads,
         prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
@@ -632,11 +711,13 @@ extension PluginRegistrar {
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         members: [String] = [],
         rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
-        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil,
+        makes: (@MainActor (AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? = nil
     ) {
         contributePseudoClass(word, summary, example: example, argument: nil, reads: .file, prepare: { preparation, _ in prepare(preparation.file) },
                               seeds: seeds, matches: matches, onMain: nil, problems: nil, settles: false,
-                              members: members, rowMembers: rowMembers, absent: absent)
+                              members: members, rowMembers: rowMembers, absent: absent,
+                              makes: Self.ignoringText(makes))
     }
 
     /// As the file form above, for a word that takes one quoted text, `:word("…")`: `argument` is its name,
@@ -650,12 +731,28 @@ extension PluginRegistrar {
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         members: [String] = [],
         rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
-        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil,
+        makes: (@MainActor (String, AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? = nil
     ) {
         contributePseudoClass(word, summary, example: example, argument: argument, reads: .file,
                               prepare: { preparation, text in prepare(preparation.file, text ?? "") },
                               seeds: seeds, matches: matches, onMain: nil, problems: nil, settles: false,
-                              members: members, rowMembers: rowMembers, absent: absent)
+                              members: members, rowMembers: rowMembers, absent: absent,
+                              makes: Self.givingText(makes))
+    }
+
+    /// A writer of a word that takes no text, as `contributePseudoClass` keeps it.
+    private static func ignoringText(_ makes: (@MainActor (AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)?)
+        -> (@MainActor (String?, AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? {
+        guard let makes else { return nil }
+        return { _, record, editor in makes(record, editor) }
+    }
+
+    /// A writer of a word that takes a text, as `contributePseudoClass` keeps it.
+    private static func givingText(_ makes: (@MainActor (String, AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)?)
+        -> (@MainActor (String?, AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? {
+        guard let makes else { return nil }
+        return { text, record, editor in makes(text ?? "", record, editor) }
     }
 
     private mutating func contributePseudoClass<Prepared: Sendable>(
@@ -668,7 +765,8 @@ extension PluginRegistrar {
         settles: Bool,
         members: [String] = [],
         rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
-        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil,
+        makes: (@MainActor (String?, AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? = nil
     ) {
         let erasedPrepare: @MainActor (QueryPreparation, String?) -> any Sendable = { prepare($0, $1) }
         let erasedMatches: @Sendable (QueryShape, any Sendable) -> QueryVerdict = { shape, prepared in matches(shape, prepared as! Prepared) }
@@ -687,6 +785,7 @@ extension PluginRegistrar {
         if let rowMembers { pseudoClass.rowMembers = { shape, prepared in rowMembers(shape, prepared as! Prepared) } }
         pseudoClass.memberNames = members
         if let absent { pseudoClass.absent = { prepared in absent(prepared as! Prepared) } }
+        pseudoClass.makes = makes
         var declaration = QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass))
         declaration.argument = argument
         contribute(declaration, to: QueryWords.self)
@@ -729,21 +828,27 @@ extension PluginRegistrar {
     /// query. `seeds` is every shape that has anything `related`: the only shapes that can match.
     /// It reads only the file (`reads: .file`), so a plan that holds it is `readsOnlyTheFile`. A
     /// relation with `namesTypes` is the word `.Name` is refused toward (`unsupported`, hinted
-    /// `:word("Name")`); at most one word is.
+    /// `:word("Name")`); at most one word is. `makes` says how a shape is made to be related to a shape its
+    /// argument names (`QueryState.fit`, which writes what a query says a shape is): given the argument's
+    /// alternatives as written (`QueryAnchor`), the record and the editor on the main actor, the record as it is
+    /// written to be related to the shape the first alternative it can write names, or nil when nothing can be (the
+    /// default: the word is skipped).
     public mutating func queryRelation<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String, reads _: QueryFileReads,
         transitive: Bool, namesTypes: Bool = false, argumentShapes: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
         prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
         seeds: @escaping @Sendable (Prepared) -> Set<ShapeID>,
-        related: @escaping @Sendable (ShapeID, Prepared) -> [ShapeID]
+        related: @escaping @Sendable (ShapeID, Prepared) -> [ShapeID],
+        makes: (@MainActor ([QueryAnchor], AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?)? = nil
     ) {
         let erased: (@Sendable (any Sendable) -> Set<ShapeID>)?
         if let argumentShapes { erased = { (prepared: any Sendable) -> Set<ShapeID> in argumentShapes(prepared as! Prepared) } } else { erased = nil }
-        let relation = ContributedFileRelation(
+        var relation = ContributedFileRelation(
             transitive: transitive, namesTypes: namesTypes, argumentShapes: erased,
             prepare: { prepare($0) },
             seeds: { seeds($0 as! Prepared) },
             related: { shape, prepared in related(shape, prepared as! Prepared) })
+        relation.makes = makes
         contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .fileRelation(relation)), to: QueryWords.self)
     }
 

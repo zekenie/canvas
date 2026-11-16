@@ -6,6 +6,10 @@
 @MainActor
 public protocol Tool: AnyObject {
     func cursor(in editor: CanvasEditor) -> CanvasCursor
+    /// The help the host shows as the system tooltip while the pointer rests where it is: what a canvas
+    /// button under it says it is (the select tool's). Nil, by default, for none. Asked, with the cursor,
+    /// only when the pointer's state changes (`refreshCursor`), never while a press runs.
+    func help(in editor: CanvasEditor) -> String?
     /// May start a session (`editor.session = ...`).
     func pointerDown(_ pointer: Pointer, in editor: CanvasEditor)
     /// Asked first of every press: true lets it pass as though it never came. The camera goes on
@@ -26,6 +30,7 @@ public protocol Tool: AnyObject {
 
 extension Tool {
     public func cursor(in editor: CanvasEditor) -> CanvasCursor { .crosshair }
+    public func help(in editor: CanvasEditor) -> String? { nil }
     public func ignoresPress(_ pointer: Pointer, in editor: CanvasEditor) -> Bool { false }
     public func pointerMoved(_ pointer: Pointer, in editor: CanvasEditor) {}
     public func pointerExited(in editor: CanvasEditor) {}

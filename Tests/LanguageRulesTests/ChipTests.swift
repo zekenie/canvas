@@ -179,6 +179,21 @@ import Validation
         spinRunLoop(until: { RuleBook.rules(of: board.listing, in: scene.editor).first?.find.first?.query != nil })
         expectEqual(scene.editor.undoHistory.undoName, "Interpret")
     },
+    test("a title no shape has is said by name in a chip's line, Retry kept") {
+        let board = ChippedListings()
+        let language = ScriptedLanguageModel()
+        language.queue(#""Ghost""#)
+        language.queue(#""Ghost""#)
+        let scene = try RuleScene(board.shapes(), language: language)
+        let chips = try require(scene.editor.ruleChips)
+        let box = RuleBox(type: board.listing, index: 0)
+        chips.chip(words: "the rest", in: box, text: "Priced unlike the rest.", stored: RuleBook.rules(of: board.listing, in: scene.editor).first)
+        chips.commit(box)
+        let chip = RuleChip(phrase: "the rest", query: nil)
+        spinRunLoop(until: { chips.preview(of: chip, type: board.listing).status == .unknownTitle("Ghost") })
+        expectEqual(chips.preview(of: chip, type: board.listing).status?.words, "No shape is called Ghost")
+        expectEqual(chips.preview(of: chip, type: board.listing).status?.action, .retry)
+    },
     test("the line under a chip: its query, the sample, what it found for it by name; ‹ › steps the samples") {
         let board = ChippedListings()
         let scene = try RuleScene(board.shapes())

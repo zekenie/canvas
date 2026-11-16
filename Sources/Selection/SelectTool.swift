@@ -27,6 +27,9 @@ extension SelectTool: Tool {
         return (handle.base as? ResizeHandle)?.cursor ?? .openHand
     }
 
+    /// A canvas button's help, over one that has it (`canvasButtons(at:click:help:)`).
+    func help(in editor: CanvasEditor) -> String? { editor.hoveredButtonHelp }
+
     /// The rest of a double-click (a press whose click count is 2 or more) whose first click, on a
     /// face, went somewhere: to another selection or another view (a link's `goTo`). It's that
     /// click's, not a press of whatever the moving camera has brought under the pointer, so the

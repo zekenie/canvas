@@ -139,6 +139,37 @@ private let area = CGRect(x: 100, y: 100, width: 100, height: 60)
         expectEqual(rig.bar?.label, "All shapes")
     },
 
+    test("a command about the target that takes a choice lists its rows after its name, on an empty board too; a pick closes the bar and runs with the target and the row, one step named for the row, else the command") {
+        let log = TakeLog()
+        let rig = try BarRig(targets: false, more: [TakePlugin(log: log)])
+        rig.slash()
+        expect(rig.isOpen, "an empty board offers take")
+        rig.window.type("take")
+        rig.window.press(.tab)
+        expectEqual(rig.field?.string, "/take ", "completed, with its space: it takes a choice")
+        expectEqual(rig.choices, ["First", "Second"], "its rows")
+        expect(!log.rowsAskedFor.isEmpty && log.rowsAskedFor.allSatisfy { $0 == .everything([]) }, "asked with the target")
+        rig.window.pressReturn()
+        expect(!rig.isOpen)
+        expect(rig.canvasHasKeyboard)
+        expectEqual(log.picked.map(\.choice.id), ["first"])
+        expectEqual(log.picked.first?.target, .everything([]))
+        expectEqual(rig.editor.undoHistory.undoName, "Take First", "the row's step")
+        let card = rig.card()
+        rig.editor.selection = card
+        rig.slash()
+        rig.window.type("take")
+        rig.window.press(.tab)
+        rig.window.press(.down)
+        rig.window.pressReturn()
+        expectEqual(log.picked.last?.choice.id, "second")
+        expectEqual(log.picked.last?.target, .selection([card]))
+        expectEqual(rig.editor.undoHistory.undoName, "Take", "else the command's")
+        let command = try require(rig.editor.slashCommands?.command(named: "take", for: .selection([card])))
+        expect(command.takesChoice && !command.answersLater)
+        expect(!command.accepts(SlashArguments("first")), "it runs with a pick, never with words")
+    },
+
     test("an offscreen selection is brought into view first, and the bar opens under it") {
         let rig = try BarRig(targets: false)
         let card = rig.card(CGRect(x: 4000, y: 3000, width: 100, height: 60))
@@ -177,6 +208,37 @@ private let area = CGRect(x: 100, y: 100, width: 100, height: 60)
         expectEqual(rig.editor.selectedShapeIDs, [], "still nothing selected")
         rig.h.scheduler.advance(by: .zero)
         expectEqual(rig.editor.announcements.last, "Grow, on 2 of 3 shapes")
+    },
+
+    test("with nothing selected a command that acts on the board shown names it in the label, and VoiceOver, while it is the one typed; any other, and a selection, keep the bar's words") {
+        let rig = try BarRig(targets: false, more: [BoardNamingPlugin()])
+        let a = rig.card(), b = rig.card(area.offsetBy(dx: 200, dy: 100))
+        /// What VoiceOver calls the card now: the host's own, which asks the bar's view.
+        @MainActor func spoken() -> String? { rig.canvas.cardView?.superview?.superview?.accessibilityLabel() }
+        rig.slash()
+        expectEqual(rig.bar?.label, "All shapes")
+        expectEqual(spoken(), "Command for all shapes")
+        rig.window.type("tidy")
+        expectEqual(rig.bar?.label, "Plans", "the command typed names the board")
+        expectEqual(spoken(), "Command for Plans")
+        rig.window.type(" now")
+        expectEqual(rig.bar?.label, "Plans", "and keeps on while its words are typed")
+        rig.window.pressEscape()
+        rig.window.pressEscape()
+        rig.editor.selectedShapeIDs = [a, b]
+        rig.slash()
+        rig.window.type("tidy")
+        expectEqual(rig.bar?.label, "2 shapes", "a selection is what the command is about")
+        expectEqual(spoken(), "Command for 2 shapes")
+        rig.window.pressEscape()
+        rig.window.pressEscape()
+        rig.editor.selectedShapeIDs = []
+        rig.slash()
+        rig.window.type("tidy")
+        expectEqual(rig.bar?.label, "Plans")
+        for _ in 0..<4 { rig.window.pressDelete() }
+        expectEqual(rig.bar?.label, "All shapes", "the name went with the line: the bar's own words")
+        expectEqual(spoken(), "Command for all shapes")
     },
 
     test("a command that answers later keeps the bar open while it waits, its line in the field and a spinner in the label's place, VoiceOver told it waits; done, it closes") {

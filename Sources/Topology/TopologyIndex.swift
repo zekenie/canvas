@@ -71,7 +71,7 @@ public final class TopologyIndex {
     /// Whether a change is being told: a follower never provides.
     @ObservationIgnored private var delivering = false
     /// Those that provide answers, each saying whether it still has work (`keepsSettling`).
-    @ObservationIgnored private var settleSources: [Int: (edges: Bool, busy: @MainActor () -> Bool)] = [:]
+    @ObservationIgnored private var settleSources: [Int: (edges: Bool, checks: Bool, busy: @MainActor () -> Bool)] = [:]
     @ObservationIgnored private var nextSettleSource = 0
     /// Those waiting for the edges to settle (`settled(timeout:)`).
     @ObservationIgnored private let waiters = SettleWaiters()
@@ -420,11 +420,14 @@ public final class TopologyIndex {
     /// asked whenever the index looks; when it goes idle with no provide or commit to say so, say
     /// `settleSourceChanged()`. A source whose answers are no edges (`edges: false`: a rule's
     /// verdicts, which Validation's words read) keeps only the waits for everything settling, never
-    /// one for edges alone (`settled(timeout:edgesOnly:)`), so a query of edges never waits for it.
-    public func keepsSettling(edges: Bool = true, while busy: @escaping @MainActor () -> Bool) -> SettleSource {
+    /// one for edges alone (`settled(timeout:edgesOnly:)`), so a query of edges never waits for it. A source whose answers a
+    /// check reads (`feedsChecks: true`: the constraints' verdicts) is the only kind a wait for checks (`checksOnly`) waits for:
+    /// what a run says of its commit's issues never waits for one whose answers no check of it reads (a rule's English
+    /// verdicts, a reference's search).
+    public func keepsSettling(edges: Bool = true, feedsChecks: Bool = false, while busy: @escaping @MainActor () -> Bool) -> SettleSource {
         let key = nextSettleSource
         nextSettleSource += 1
-        settleSources[key] = (edges, busy)
+        settleSources[key] = (edges, feedsChecks, busy)
         return SettleSource(index: self, key: key)
     }
 
@@ -442,17 +445,21 @@ public final class TopologyIndex {
     /// Whether answers about edges are still on their way: whether a source of edges says it has work.
     public var isSettlingEdges: Bool { settleSources.values.contains { $0.edges && $0.busy() } }
 
-    /// Waits until every source has settled (`edgesOnly`: every source of edges): true then, false
+    /// Whether answers a check reads are still on their way: whether a source that feeds checks says it has work.
+    public var isSettlingChecks: Bool { settleSources.values.contains { $0.checks && $0.busy() } }
+
+    /// Waits until every source has settled (`edgesOnly`: every source of edges; `checksOnly`: every source that feeds checks): true then, false
     /// if `timeout` (on the editor's scheduler) runs out first, or the task is cancelled. At once if
     /// settled now. Woken by every change told and every provide, and by `settleSourceChanged()`.
-    public func settled(timeout: Duration, edgesOnly: Bool = false) async -> Bool {
-        guard edgesOnly ? isSettlingEdges : isSettling else { return true }
+    public func settled(timeout: Duration, edgesOnly: Bool = false, checksOnly: Bool = false) async -> Bool {
+        let scope: SettleScope = checksOnly ? .checks : edgesOnly ? .edges : .everything
+        guard isSettling(scope) else { return true }
         let waiters = waiters, scheduler = editor.scheduler, key = waiters.reserve()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 guard !Task.isCancelled else { return continuation.resume(returning: false) }
                 let timeout = scheduler.schedule(after: timeout) { waiters.finish(key, settled: false) }
-                waiters.wait(key, continuation, timeout: timeout, edgesOnly: edgesOnly)
+                waiters.wait(key, continuation, timeout: timeout, scope: scope)
             }
         } onCancel: {
             Task { @MainActor in waiters.finish(key, settled: false) }
@@ -463,9 +470,15 @@ public final class TopologyIndex {
     /// the rest once no source has.
     private func wakeWaiters() {
         guard !waiters.isEmpty else { return }
-        let edges = isSettlingEdges, any = isSettling
-        guard !edges || !any else { return }
-        waiters.finishAll { edgesOnly in edgesOnly ? !edges : !any }
+        waiters.finishAll { !isSettling($0) }
+    }
+
+    private func isSettling(_ scope: SettleScope) -> Bool {
+        switch scope {
+        case .everything: isSettling
+        case .edges: isSettlingEdges
+        case .checks: isSettlingChecks
+        }
     }
 
     // MARK: Containment

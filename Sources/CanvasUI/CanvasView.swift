@@ -183,6 +183,15 @@ public final class CanvasView: NSView {
         if pointerPlace == .canvas { editor.pointerExited() }
         if place == .covered || place == .card, pointerPlace != place { NSCursor.arrow.set() }
         pointerPlace = place
+        showHelp(nil)
+    }
+
+    /// The system tooltip over the canvas: the tool's help for what's under the pointer
+    /// (`editor.pointerHelp`: a canvas button's), set as it changes and gone with it, whenever the cursor is
+    /// set. AppKit shows it once the pointer rests, and not over a view the canvas hosts.
+    private func showHelp(_ help: String?) {
+        guard toolTip != help else { return }
+        toolTip = help
     }
 
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -746,7 +755,11 @@ extension CanvasView: NSMenuItemValidation {
 
     /// Over a view the canvas hosts, that view's cursor stands.
     public func editorCursorDidChange(_ editor: CanvasEditor) {
-        guard pointerPlace == .canvas else { return }
+        guard pointerPlace == .canvas else {
+            showHelp(nil)
+            return
+        }
+        showHelp(editor.pointerHelp)
         cursor(editor.cursor).set()
     }
 

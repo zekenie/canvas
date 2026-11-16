@@ -30,6 +30,8 @@ public final class Rehearsal {
     /// the copy as it was.
     public func run(_ script: String) throws(DrawError) -> DrawResult {
         var result = try draw(script: script, dryRun: false, reveal: false, program: program, in: copy)
+        // The copy runs on a stopped scheduler, so what a check answers after a commit never comes: nothing to look at again.
+        result.aftermath = nil
         for row in result.changes where row.did == .created {
             if let id = row.id { made.insert(id) }
         }

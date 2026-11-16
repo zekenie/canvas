@@ -24,12 +24,13 @@ import Topology
     var landed: [String] = []
     var told = 0
     var askedAgain = 0
+    var context: TranslationContext = .stored()
 
     init(_ editor: CanvasEditor) {
         self.editor = editor
     }
 
-    func context(of _: InterpretationKey) -> TranslationContext { .stored() }
+    func context(of _: InterpretationKey) -> TranslationContext { context }
 
     func holdsWords(_ words: String, at key: InterpretationKey) -> Bool { self.words[key.shape] == words }
 
@@ -94,6 +95,17 @@ import Topology
 }
 
 @MainActor let interpretationsTests = Suite("Interpretations", [
+    test("words for a stored query that read the editor are not a draft at once, they go to the model as other words do; a query that doesn't are") {
+        let model = ScriptedLanguageModel(answers: [#"chore"Pantry""#])
+        let rig = try WordsRig(model)
+        rig.host.context = .accepting(holder: "Backlog")
+        try rig.type("chore:selected")
+        expectEqual(try rig.said, "interpreting", ":selected is refused for a stored query, so it rests for the model")
+        try rig.type(#"chore"Pantry""#)
+        expectEqual(try rig.said, #"chore"Pantry", finding"#, "a plain query is a draft at once")
+        rig.h.wait(700)
+        expectEqual(model.requests.count, 0, "with no model asked")
+    },
     test("words rest 600 ms before the model is asked, and a keystroke starts the rest again and lets go of what was asked") {
         let model = ScriptedLanguageModel(answers: [#"chore"Pantry""#])
         let rig = try WordsRig(model)
@@ -214,6 +226,9 @@ import Topology
             (.declined, "No query for these words", .retry),
             (.unanswerable("where shapes sit"), "No query for these words", .retry),
             (.unusable("no query", query: "chore[", refusal: nil), "Unusable answer", .retry),
+            (.unusable("No shape is titled Task.", query: #":is-a("Task")"#, refusal: QueryError(unknownTitle: "Task")),
+             "No shape is called Task", .retry),
+            (.unusable("x", query: "chore[nope=1]", refusal: QueryError(.unknownAttribute, "no such attribute")), "Unusable answer", .retry),
             (.tooSlow, "Timed out", .retry),
         ]
         for (error, words, action) in cases {

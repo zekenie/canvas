@@ -50,6 +50,22 @@ let pens = Contributor(id: "pens") { registrar in
     try drawEditor([pens, FreezingPlugin(log: log), PocketsPlugin(), namedPockets])
 }
 
+/// A place that refuses what's moved into one pen (`registrar.admission`), as a container's constraints
+/// will, saying so, and naming the pen as what shakes unless told not to.
+@MainActor private final class PenJudge {
+    var pen: ShapeID?
+    var names = true
+
+    var contributor: Contributor {
+        Contributor(id: "pen-judge") { [self] registrar in
+            registrar.admission { admission in
+                guard let pen = self.pen, admission.arrivals.contains(where: { !$0.isNew && $0.to == .container(pen) }) else { return .admits }
+                return .refuses(shaking: self.names ? [pen] : [], saying: "Pen takes nothing moved in.")
+            }
+        }
+    }
+}
+
 /// Puts a pen on the board, labeled, and what it holds in it.
 @MainActor @discardableResult private func pen(_ label: String, _ frame: CGRect, holding held: [ShapeID] = [], in editor: CanvasEditor) -> ShapeID {
     let record = AnyShapeRecord(ShapeRecord(Pen(frame, label: label)))
@@ -170,6 +186,26 @@ private func at(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat)
         expectEqual(editor.document, before, "nothing committed")
         expectEqual(editor.undoHistory.undoName, step, "and no step")
         expectEqual(log.refusals, [], "an agent's refused run shakes nothing")
+    },
+    test("a pen whose place refuses what's moved in, not locked, refuses a run that moves a shape into it, in the place's own words; a shape made there goes in") {
+        let judge = PenJudge()
+        let editor = try drawEditor([pens, FreezingPlugin(), PocketsPlugin(), namedPockets, judge.contributor])
+        let board = PenBoard(editor)
+        judge.pen = board.pen
+        tile("T", CGRect(x: 500, y: 100, width: 120, height: 80), in: editor)
+        let before = editor.document, step = editor.undoHistory.undoName
+        let named = try refused(#"tile "T" inside "Pen" bottom-right"#, on: editor)
+        expectEqual(named.reason, "cannot_contain")
+        expectEqual(named.message, #""T" isn't taken where it would go, in "Pen": Pen takes nothing moved in."#)
+        expectEqual(named.hint, #"place it clear of "Pen""#)
+        judge.names = false
+        let unnamed = try refused(#"tile "T" inside "Pen" bottom-right"#, on: editor)
+        expectEqual(unnamed.message, #""T" isn't taken where it would go: Pen takes nothing moved in."#, "the verdict names no shape: not the shape itself")
+        expectEqual(unnamed.hint, "place it elsewhere")
+        expectEqual(editor.document, before, "nothing committed")
+        expectEqual(editor.undoHistory.undoName, step)
+        _ = try drawn(#"tile "N" in "Pen" overlap: allow"#, on: editor)
+        expectEqual(editor.holder(of: try require(shape("N", in: editor)).id), board.pen, "made there, it goes in")
     },
     test("deleting a pen leaves what it holds where it is, in what held the pen; one holding a locked shape is deleted all the same") {
         let editor = try penEditor()

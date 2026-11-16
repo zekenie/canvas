@@ -60,6 +60,25 @@ private struct CopiersPlugin: CanvasPlugin {
         expectEqual(h.editor.document, before)
         expectEqual(h.editor.selectedShapeIDs, [box])
     },
+    test("a ⌥-drag dropped into a read-only container is refused: the copy goes, the original is selected, the container shakes, and no step is left") {
+        let log = RefusalLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CorralsPlugin(), FreezingPlugin(log: log), CopiersPlugin(copies: true)])
+        let corral = h.add(Corral(CGRect(x: 300, y: 0, width: 300, height: 300)))
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        h.editor.freeze([corral])
+        h.editor.selection = box
+        let before = h.editor.document, step = h.editor.undoHistory.undoName
+        h.hold(.option)
+        h.press(at: CGPoint(x: 50, y: 50))
+        h.drag(to: CGPoint(x: 250, y: 120), speed: 4)
+        h.drag(to: CGPoint(x: 400, y: 150), speed: 4)
+        h.release()
+        h.hold([])
+        expectEqual(h.editor.document, before, "no copy is left, on the original or anywhere")
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        expectEqual(h.editor.undoHistory.undoName, step, "the press came to nothing")
+        expectEqual(log.refusals.last, [corral])
+    },
     test("a plugin that makes none, or no plugin, leaves the drag moving the shapes; so does a drag without ⌥") {
         for copies in [false, nil] {
             let h = try copyDragHarness(copies)

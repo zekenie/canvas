@@ -234,6 +234,23 @@ struct DetailCheckboxStyle: ToggleStyle {
     }
 }
 
+/// A section's title in the look every section's has (bold, the panel's body size), for a view that heads itself where
+/// the section's own title is fixed (a section whose heading follows the shape: Rules', Constraints'), and for a count
+/// beside one (`isHeader` false). A heading to VoiceOver.
+public struct DetailSectionTitle: View {
+    let text: String
+    let isHeader: Bool
+
+    public init(_ text: String, isHeader: Bool = true) {
+        self.text = text
+        self.isHeader = isHeader
+    }
+
+    public var body: some View {
+        Text(text).font(DetailStyle.sectionTitle).accessibilityAddTraits(isHeader ? .isHeader : [])
+    }
+}
+
 /// Fields side by side, each captioned underneath (Width and Height, X and Y).
 public struct DetailFields<Content: View>: View {
     let content: Content
@@ -542,9 +559,14 @@ public struct DetailTextArea: View {
     let asTyped: Bool
     let label: String?
     let onCommit: (@MainActor () -> Void)?
+    let draft: DetailDraft?
+    @State private var owner = UUID()
+    @Environment(\.detailDrafts) private var drafts
 
+    /// `draft`: words typed that haven't landed, which Escape lets go of before it leaves the panel, as it clears a search field.
     public init(_ text: Binding<String>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
-                asTyped: Bool = false, label: String? = nil, onCommit: (@MainActor () -> Void)? = nil) {
+                asTyped: Bool = false, label: String? = nil, onCommit: (@MainActor () -> Void)? = nil, draft: DetailDraft? = nil) {
+        self.draft = draft
         _text = text
         self.height = height
         self.placeholder = placeholder
@@ -559,6 +581,22 @@ public struct DetailTextArea: View {
     public var body: some View {
         DetailTextBox($text, height: height, placeholder: placeholder, label: label, onCommit: onCommit,
                       make: asTyped ? PlainTextView.keyed : PlainTextView.prose)
+            .onChange(of: draft?.isHeld ?? false, initial: true) { _, held in
+                guard let drafts else { return }
+                if held, let draft { drafts.hold(owner, shown: "") { draft.discard() } } else { drafts.release(owner) }
+            }
+            .onDisappear { drafts?.release(owner) }
+    }
+}
+
+/// What a text area has typed in it that isn't written yet, and what letting go of it does (`DetailTextArea.draft`).
+public struct DetailDraft {
+    public let isHeld: Bool
+    public let discard: @MainActor () -> Void
+
+    public init(isHeld: Bool, discard: @escaping @MainActor () -> Void) {
+        self.isHeld = isHeld
+        self.discard = discard
     }
 }
 

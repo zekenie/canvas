@@ -86,8 +86,10 @@ enum Budget {
     static let validationAfterMovingAll10k = 16.0
     /// Undoing or redoing every shape's deletion, with the frame after it: 10,000 shapes back or gone.
     /// Also undoing or redoing the deletion of a shape whose boards hold 10,000, with the frame after
-    /// it.
-    static let undoEveryShape = 100.0
+    /// it. 120, from 100 when Constraints landed (a few ms a benchmark don't matter: the owner's rule): undoing the deletion of a
+    /// subboard holding 10,001 shapes took 98 ms before it and 108 with it, the deletion of 10,000 shapes 106 and 115 (a
+    /// quiet machine, interleaved runs of the two).
+    static let undoEveryShape = 120.0
     /// Topology's index of the file's edges (who mentions whom among them, and what arrows join) and
     /// Mentions' catalog (what the `@` picker searches, the whole file's), built as a file opens:
     /// part of opening it. The budget Mentions' own index of who mentions whom had.

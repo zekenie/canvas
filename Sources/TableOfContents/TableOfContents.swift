@@ -183,10 +183,10 @@ extension ContentsHeadings: KeyedExtensionPoint {
 @MainActor
 public struct ContentsMoveContribution {
     let admits: @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool
-    let move: @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Void
+    let move: @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool
 
     public init(admits: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool,
-                move: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Void) {
+                move: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool) {
         self.admits = admits
         self.move = move
     }
@@ -423,12 +423,13 @@ extension PluginRegistrar {
 
     /// What moves shapes dropped in the list somewhere they aren't (`ContentsMoves`): `admits`, asked
     /// as a drag moves over the rows, says whether they can go to a place; `move` takes them there,
-    /// in one undo step, and restacks them where the drop says:
+    /// in one undo step, and restacks them where the drop says, and says whether it moved them (a drop is
+    /// taken only if it did):
     ///
     ///     registrar.contentsMoves(admits: { shapes, place, editor in Relocation(shapes, to: place, in: editor) != nil },
-    ///                             move: { shapes, place, editor in Relocation(shapes, to: place, in: editor)?.commit() })
+    ///                             move: { shapes, place, editor in Relocation(shapes, to: place, in: editor)?.commit() ?? false })
     public mutating func contentsMoves(admits: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool,
-                                       move: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Void) {
+                                       move: @escaping @MainActor ([ShapeID], ContentsPlace, CanvasEditor) -> Bool) {
         contribute(ContentsMoveContribution(admits: admits, move: move), to: ContentsMoves.self)
     }
 

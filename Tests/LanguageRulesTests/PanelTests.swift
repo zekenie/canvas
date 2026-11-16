@@ -99,6 +99,10 @@ private func cut(_ says: String) -> String { says.count <= 60 ? says : String(sa
         let panel = try require(scene.editor.detailPanel)
         let type = try panel.layout(for: require(scene.editor.document[board.listing]))
         expectEqual(type.tabs.map(\.title).filter { ["Schema", "Rules"].contains($0) }, ["Schema", "Rules"])
+        let titles = type.tabs.map(\.title)
+        expectEqual(RulesTab.title, "Rules", "Validation's tab, which this plugin puts its section in")
+        expectEqual(RulesStyle.each(RuleBook.noun(of: "Sprint")), "Each sprint", "the section's heading is the type's noun")
+        expectEqual(RulesStyle.each(RuleBook.noun(of: "PR")), "Each PR")
         expectEqual(type.sections(in: .of(RulesTab.self)).map(\.section), ["rules"])
         expect(try !panel.layout(for: require(scene.editor.document[board.corolla])).tabs.contains(.of(RulesTab.self)))
     },
@@ -387,6 +391,22 @@ final class RulesPanelWindow {
 }
 
 @MainActor let ruleWindowTests = Suite("Rules in the panel, in a window", [
+    test("a type's Rules section is headed with its noun (the SwiftUI tree isn't built without an assistive app, so the heading is held as the text the view draws)") {
+        let board = Listings()
+        let scene = try RuleScene(board.shapes)
+        let index = try require(scene.editor.service(TypeIndex.self))
+        expectEqual(RulesStyle.heading(of: board.listing, in: index), "Each listing", "the type's own noun")
+        expectEqual(RulesStyle.heading(of: board.car, in: index), "Each car")
+        scene.editor.transact("Rename") { $0.update(board.listing) { $0[TitleProperty.self] = "Sprint" } }
+        expectEqual(RulesStyle.heading(of: board.listing, in: index), "Each sprint", "it follows the type's name")
+        scene.editor.transact("Unname") { $0.update(board.listing) { $0[TitleProperty.self] = nil } }
+        expectEqual(RulesStyle.heading(of: board.listing, in: index), nil, "an unnamed type has no heading")
+        let panel = RulesPanelWindow(scene)
+        defer { panel.window.close() }
+        try panel.show(board.listing, on: .of(RulesTab.self))
+        panel.window.spin { panel.boxes.count == 3 }
+        expectEqual(panel.boxes.count, 3, "the rules still show, headed or not")
+    },
     test("a type's Rules tab: a box a rule, then add rule; a rule typed and Return adds it in one step, one edited changes it, one emptied goes") {
         let board = Listings()
         let scene = try RuleScene(board.shapes)

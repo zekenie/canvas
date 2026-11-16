@@ -15,6 +15,7 @@ public struct DrawingQueriesPlugin: ListedPlugin {
     public var id: PluginID { "drawing-queries" }
 
     public func register(into registrar: inout PluginRegistrar) {
+        registrar.service { _ in DrawingsRevision() }
         registrar.queryPseudoClass(Word.drawnBy.rawValue, "a drawing of that name made it (canvas apply, or canvas draw --drawing)",
                                    example: #":drawn-by("Sign-up plan")"#, argument: "name", reads: .file,
                                    prepare: { preparation, name in Drawn(facts: preparation.fact(DrawingsFact.self).facts, name: name) },
@@ -56,6 +57,26 @@ struct DrawingsFact: QueryFileFact {
     let facts: DrawingFacts
 
     static func current(in editor: CanvasEditor) -> DrawingsFact { DrawingsFact(facts: DrawingFacts(editor: editor)) }
+
+    /// How often the file's drawings have changed (`DrawingsRevision`).
+    static func revision(in editor: CanvasEditor) -> Int? { editor.service(DrawingsRevision.self)?.revision }
+}
+
+/// Counts the commits that changed the file's drawings (the file value, `DrawingsProperty`) and the files put in place: what
+/// `DrawingsFact` says how far it has come by. A shape a drawing made is read with its own record, which a commit names.
+@MainActor
+final class DrawingsRevision {
+    private(set) var revision = 0
+}
+
+extension DrawingsRevision: EditorService {
+    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        if changes.fileValues.contains(DrawingsProperty.key) { revision &+= 1 }
+    }
+
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        if change.isFileReplaced { revision &+= 1 }
+    }
 }
 
 /// One drawing, as its words read it, off the main actor: what it made, what is gone, a row's key and holder, and how a shape

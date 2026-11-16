@@ -186,18 +186,29 @@ extension CopyDraggingSession: Session {
     var scrollsAtEdges: Bool { move.scrollsAtEdges }
     func drag(_ pointer: Pointer, in editor: CanvasEditor) { move.drag(pointer, in: editor) }
     func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) { move.modifiersChanged(modifiers, in: editor) }
-    func end(_ pointer: Pointer, in editor: CanvasEditor) { move.end(pointer, in: editor) }
     func draw(in context: OverlayContext) { move.draw(in: context) }
+
+    /// A drop that is refused (a locked frame, a place that takes no such shape) sends the copies back where they were put down,
+    /// on the originals: they go, as Escape takes them, and the press comes to nothing.
+    func end(_ pointer: Pointer, in editor: CanvasEditor) {
+        move.end(pointer, in: editor)
+        if move.endWasRefused { takeAway(in: editor) }
+    }
 
     func cancel(in editor: CanvasEditor) -> Bool {
         _ = move.cancel(in: editor)
+        takeAway(in: editor)
+        return true
+    }
+
+    /// The copies deleted, the selection the originals again.
+    private func takeAway(in editor: CanvasEditor) {
         // A container deleted lets go of what it holds, so the copies of what a copied container holds go with it.
         let kinds = editor.registry.containingKinds, document = editor.document
         var gone = Set(copies)
         if !kinds.isEmpty { for id in copies { gone.formUnion(document.descendants(of: id, containingKinds: kinds)) } }
         editor.transact { $0.delete(gone) }
         editor.selectedShapeIDs = originals.filter { editor.document[$0] != nil }
-        return true
     }
 }
 
