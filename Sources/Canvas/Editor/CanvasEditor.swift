@@ -141,6 +141,7 @@ public final class CanvasEditor {
     /// zoom across `skeletonZoom` tells services (`drawsSkeletonsDidChange`).
     public var camera = Camera() {
         didSet {
+            if camera != oldValue { cameraDidMove() }
             shapeIndex.cameraDidChange()
             stopCameraMotion()
             dismissPopover()
@@ -354,6 +355,12 @@ public final class CanvasEditor {
     /// frame's worth at a time while `draw(in:)` asks for the next frame (`nextPreviewFrame`).
     @_spi(Host) @ObservationIgnored public let boardPreviews: BoardPreviews
     @ObservationIgnored var nextPreviewFrame: ScheduledTask?
+    /// When the camera last really changed, on `scheduler`'s clock: it moves until `Style.dimCameraRest` after (CanvasEditor+Camera.swift). Nil before it ever has.
+    @ObservationIgnored var cameraLastMoved: Duration?
+    /// The timer that asks for the frame at rest, set only by a frame that left the dim out while the camera moved: nil otherwise, and once it has fired.
+    @ObservationIgnored var cameraRestTimer: ScheduledTask?
+    /// Whether the last frame left a dim out while the camera moved: the frame at rest is asked for only then.
+    @ObservationIgnored var dimLeftOut = false
     /// Shapes drawn away from where they are, in view points (`setDrawingOffset`).
     @ObservationIgnored var drawingOffsets: [ShapeID: CGPoint] = [:]
     /// The shapes gliding to where they are (Glide.swift), and the glides' next frame.

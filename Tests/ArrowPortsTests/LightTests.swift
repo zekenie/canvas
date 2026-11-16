@@ -9,19 +9,19 @@ import TestKit
 
 @MainActor let arrowLightTests = Suite("Arrows' lights for Neighbors", [
     test("two lights, in order: what the hovered shape points to, then what points to it, each titled for its list, an arrow's own end among them") {
-        let lights = try Registry(plugins: [NeighborsPlugin(), ArrowLightsPlugin()]).neighborLights
+        let lights = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), ArrowLightsPlugin()]).neighborLights
         expectEqual(lights.map(\.title), ["Points To", "Pointed To By"])
         expectEqual(lights.map { $0.query("#x") }, [":edge-from(#x, arrow|stands-for), :end-of(#x, arrow)",
                                                     ":edge-to(#x, arrow|stands-for), :start-of(#x, arrow)"])
         expect(lights.count == 2 && lights[0].color != lights[1].color, "a color each")
     },
     test("a plain hover shows what the shape points to, and ⌥ what points to it, which the Keyboard Shortcuts window says") {
-        let registry = try Registry(plugins: [NeighborsPlugin(), ArrowLightsPlugin()])
+        let registry = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), ArrowLightsPlugin()])
         expectEqual(registry.neighborLights.map(\.keys), [[], .option])
         expectEqual(registry.keyboardHelp, [KeyboardHelpRow(keys: ["⌥ Hover"], title: "Show What Points to It", place: .pointer)])
     },
     test("each light's arrows run between, lit with its shapes and never listed: the arrows an arrow starts or ends") {
-        let lights = try Registry(plugins: [NeighborsPlugin(), ArrowLightsPlugin()]).neighborLights
+        let lights = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), ArrowLightsPlugin()]).neighborLights
         expectEqual(lights.map { $0.between?("#x") }, [":starts-at(#x, arrow)", ":ends-at(#x, arrow)"])
         expectEqual(lights.map { $0.lit("#x") }, [":edge-from(#x, arrow|stands-for), :end-of(#x, arrow), :starts-at(#x, arrow)",
                                                   ":edge-to(#x, arrow|stands-for), :start-of(#x, arrow), :ends-at(#x, arrow)"])

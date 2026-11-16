@@ -42,6 +42,8 @@ final class Evaluation {
         var universeWalks = 0
         /// Compounds that started from their anchors' edges.
         var seeded = 0
+        /// Steps a reach evaluated, one for each shape it stepped from.
+        var reachSteps = 0
     }
 
     /// What queries know of a kind, looked up once per kind.
@@ -289,6 +291,186 @@ final class Evaluation {
             }
         }
         return answers
+    }
+
+    /// What each request of a batch reaches (`QueryState.reaches(_:)`), in order, all over this one
+    /// snapshot, as `admitted` answers a batch: each request is its own (its `scope`, what its nodes
+    /// matched), what the requests read is shared, a request refused (an unknown id, a query that is
+    /// not one) is one answer, and a cancellation or the deadline is the batch's.
+    func reaches(_ batch: [BatchedReach]) async throws(QueryError) -> [Result<QueryReach, QueryError>] {
+        var answers: [Result<QueryReach, QueryError>] = []
+        answers.reserveCapacity(batch.count)
+        for query in batch {
+            try checkCancelled()
+            snapshot = snapshot.reading(query.request.edges)
+            do throws(QueryError) {
+                answers.append(.success(try await reach(query)))
+            } catch {
+                switch error.reason {
+                case .cancelled, .tooSlow, .boardClosed: throw error
+                default: answers.append(.failure(error))
+                }
+            }
+        }
+        scope = nil
+        return answers
+    }
+
+    /// A connection a reach found from a shape it stepped from: the carrier, the shape and the end it
+    /// runs to, and the stand-in that end was as drawn, if it was one.
+    private struct Run {
+        let carrier: ShapeID
+        let from: ShapeID
+        let to: ShapeID
+        let standIn: ShapeID?
+    }
+
+    /// The layered walk of one request (`LayeredWalk`), from its start: each shape first met in the
+    /// last layer is stepped from, the step's query evaluated bound to it (`scope`), and every shape
+    /// it matches is new (its hop this layer's), met again in this layer (one more way in) or met
+    /// before, in an earlier layer, this one or as the start, and left alone: so a cycle ends where it
+    /// began and the start is never in the answer. The connections the `between` query finds from a
+    /// shape stepped from are kept with the end they run to and sorted after the walk: from a layer
+    /// to the next is travelled (lit at its far end's hop and share), any other between two shapes of
+    /// the reach is spared. A travelled connection whose far end, as its carrier emitted it, was a
+    /// stand-in for the shape it leads to (an arrow bound to a pill; the resolved view forwards it,
+    /// and an edge remembers where) adds that stand-in to the answer, at the hop and share of what
+    /// it stands for: the pill the reach goes into lights, one that only stands for a shape reached
+    /// elsewhere does not.
+    ///
+    /// A step that is one transitive relation of `:scope` (`:is-a(:scope)`) is evaluated once, from
+    /// the start: its matches are all at hop 1, and expanding them finds nothing new.
+    private func reach(_ query: BatchedReach) async throws(QueryError) -> QueryReach {
+        let start = query.request.start
+        guard entry(start) != nil else { throw unknownID(start, span: nil) }
+        scope = start
+        emptyNameTests.removeAll()
+        sets.removeAll(keepingCapacity: true)
+        try await checkNames(in: query.step)
+        if let between = query.between { try await checkNames(in: between) }
+        let once = isTransitiveRelation(query.step)
+        var walk = LayeredWalk(starts: [start], tracksShares: true)
+        var runs: [Run] = []
+        // A walk that starts at a stand-in (a pill hovered) takes its first step in the literal view too, where the stand-in's own
+        // arrows are its own, so their far ends are hop 1 as a one-hop ask of both views finds them, and goes on in the resolved view.
+        let base = snapshot, literal = snapshot.reading(.literal)
+        let startsAtStandIn = base.topology.view == .resolved && base.topologies[.literal] != nil
+            && entry(start).map { base.topology.standInKinds.contains($0.record.kind) } == true
+        repeat {
+            for from in walk.frontier {
+                try checkCancelled()
+                scope = from
+                var found: [ShapeID] = [], seen: Set<ShapeID> = []
+                for view in startsAtStandIn && walk.layer == 1 ? [literal, base] : [base] {
+                    snapshot = view
+                    sets.removeAll(keepingCapacity: true)
+                    #if DEBUG
+                    stats.reachSteps += 1
+                    #endif
+                    for id in try await matches(query.step.root, among: .all) where seen.insert(id).inserted { found.append(id) }
+                    guard let between = query.between else { continue }
+                    // What each node matched is its plan's: the between query's nodes are numbered as the step's are.
+                    sets.removeAll(keepingCapacity: true)
+                    for carrier in try await matches(between.root, among: .all) {
+                        try tick()
+                        for edge in snapshot.topology.edges(carriedBy: carrier) where edge.isConnection {
+                            guard edge.source != edge.target else { continue }
+                            if edge.source == from {
+                                runs.append(Run(carrier: carrier, from: from, to: edge.target,
+                                                standIn: edge.literalTarget == edge.target ? nil : edge.literalTarget))
+                            } else if edge.target == from {
+                                runs.append(Run(carrier: carrier, from: from, to: edge.source,
+                                                standIn: edge.literalSource == edge.source ? nil : edge.literalSource))
+                            }
+                        }
+                    }
+                }
+                snapshot = base
+                walk.meet(found, from: from)
+            }
+        } while !once && walk.advance()
+        scope = nil
+        return sorted(walk, runs, start: start, strength: query.request.strength)
+    }
+
+    /// What the walk met and the connections it found, as a reach: travelled, spared, and the stand-ins
+    /// gone into added, nearest hop first.
+    private func sorted(_ walk: LayeredWalk, _ runs: [Run], start: ShapeID, strength: (@Sendable (Int, Double) -> Double)?) -> QueryReach {
+        var lit: [ShapeID: (hop: Int, share: Double)] = [:], carriers: [ShapeID] = []
+        var standIns: [ShapeID: (hop: Int, share: Double, ways: Int)] = [:], standInOrder: [ShapeID] = []
+        var spared: [QueryReach.Spared] = [], sparing: [ShapeID: Int] = [:]
+        func end(_ shape: ShapeID) -> QueryReach.End? { walk.hop[shape].map { QueryReach.End(hop: $0, share: walk.share[shape] ?? 1) } }
+        /// Whether a is stronger by the request's measure, else nearer, or as near and greater in share.
+        func stronger(_ a: (hop: Int, share: Double), than b: (hop: Int, share: Double)) -> Bool {
+            if let strength {
+                let x = strength(a.hop, a.share), y = strength(b.hop, b.share)
+                if x != y, !x.isNaN, !y.isNaN { return x > y }
+            }
+            return a.hop != b.hop ? a.hop < b.hop : a.share > b.share
+        }
+        /// The weaker of the two ends of a run.
+        func weaker(_ a: QueryReach.End, _ b: QueryReach.End) -> QueryReach.End { stronger((a.hop, a.share), than: (b.hop, b.share)) ? b : a }
+        for run in runs {
+            guard let near = end(run.from), let far = end(run.to) else { continue }
+            if far.hop == near.hop + 1 {
+                let here = (far.hop, far.share)
+                if let known = lit[run.carrier] {
+                    if stronger(here, than: known) { lit[run.carrier] = here }
+                } else {
+                    lit[run.carrier] = here
+                    carriers.append(run.carrier)
+                }
+                if let standIn = run.standIn, standIn != start, walk.hop[standIn] == nil, entry(standIn) != nil {
+                    let ways = walk.ways[run.to] ?? 1
+                    if let known = standIns[standIn] {
+                        if stronger(here, than: (known.hop, known.share)) { standIns[standIn] = (far.hop, far.share, ways) }
+                    } else {
+                        standIns[standIn] = (far.hop, far.share, ways)
+                        standInOrder.append(standIn)
+                    }
+                }
+            } else if let known = sparing[run.carrier] {
+                let old = weaker(spared[known].from, spared[known].to), new = weaker(near, far)
+                if stronger((new.hop, new.share), than: (old.hop, old.share)) { spared[known] = QueryReach.Spared(carrier: run.carrier, from: near, to: far) }
+            } else {
+                sparing[run.carrier] = spared.count
+                spared.append(QueryReach.Spared(carrier: run.carrier, from: near, to: far))
+            }
+        }
+        spared.removeAll { lit[$0.carrier] != nil }
+        var ids = walk.order, hops = ids.map { walk.hop[$0] ?? 0 }, ways = ids.map { walk.ways[$0] ?? 1 }, shares = ids.map { walk.share[$0] ?? 1 }
+        if !standInOrder.isEmpty {
+            for standIn in standInOrder {
+                guard let found = standIns[standIn] else { continue }
+                ids.append(standIn)
+                hops.append(found.hop)
+                ways.append(found.ways)
+                shares.append(found.share)
+            }
+            // Nearest hop first: the walk's are, so the stand-ins go in among them.
+            let order = ids.indices.sorted { hops[$0] != hops[$1] ? hops[$0] < hops[$1] : $0 < $1 }
+            ids = order.map { ids[$0] }
+            hops = order.map { hops[$0] }
+            ways = order.map { ways[$0] }
+            shares = order.map { shares[$0] }
+        }
+        return QueryReach(ids: ids, hops: hops, ways: ways, shares: shares, carriers: carriers,
+                          carrierHops: carriers.map { lit[$0]?.hop ?? 0 }, carrierShares: carriers.map { lit[$0]?.share ?? 1 },
+                          spared: spared, revision: snapshot.revision)
+    }
+
+    /// Whether a step is one transitive relation of `:scope` alone (`:is-a(:scope)`): what it finds
+    /// from the start is all it finds, so a reach evaluates it once.
+    private func isTransitiveRelation(_ plan: QueryPlan) -> Bool {
+        func unwrapped(_ node: PlanNode) -> PlanNode {
+            var node = node
+            while case .and(let nodes) = node.op, nodes.count == 1 { node = nodes[0] }
+            return node
+        }
+        guard plan.root.items.count == 1, case .fileRelation(let word, let anchor) = unwrapped(plan.root.items[0]).op,
+              anchor.items.count == 1, case .scope(.scope) = unwrapped(anchor.items[0]).op,
+              case .fileRelation(let relation)? = vocabulary.contributedWords[word]?.meaning else { return false }
+        return relation.transitive
     }
 
     /// Refuses the titles and ids in the plan as `answer` does, and answers nothing else.
@@ -1281,21 +1463,23 @@ final class Evaluation {
     }
 
     /// What a path of one edge or more, each followed as `direction` says, reaches from the
-    /// anchors: an anchor only if such a path leads back to it. Breadth first, each shape once.
+    /// anchors: an anchor only if such a path leads back to it. The layered walk every transitive
+    /// word goes by (`LayeredWalk`), each shape stepped from once; every end an edge leads to is
+    /// reached, the walk's own hops (an anchor's edge to another anchor is within a hop) unused.
     private func reached(_ direction: EdgeDirection, from anchors: Set<ShapeID>, types: PlanEdgeTypes) throws(QueryError) -> Set<ShapeID> {
         let topology = snapshot.topology, filter = types.filter
-        var reached: Set<ShapeID> = [], expanded = anchors, queue = Array(anchors), next = 0
-        while next < queue.count {
-            let shape = queue[next]
-            next += 1
-            try tick()
-            for edge in topology.edges(of: shape, direction, types: filter) {
-                let other = Self.far(edge, from: shape, direction)
-                guard entry(other) != nil else { continue }
-                reached.insert(other)
-                if expanded.insert(other).inserted { queue.append(other) }
+        var walk = LayeredWalk(starts: anchors), reached: Set<ShapeID> = []
+        repeat {
+            for shape in walk.frontier {
+                try tick()
+                for edge in topology.edges(of: shape, direction, types: filter) {
+                    let other = Self.far(edge, from: shape, direction)
+                    guard entry(other) != nil else { continue }
+                    reached.insert(other)
+                    walk.meet(other)
+                }
             }
-        }
+        } while walk.advance()
         return reached
     }
 

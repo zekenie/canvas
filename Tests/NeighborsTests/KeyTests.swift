@@ -136,7 +136,7 @@ import TestKit
     },
     test("a light's keys are the plugin's to say, kept in plugin order with the light") {
         let lights = keyedLights()
-        let registry = try Registry(plugins: [NeighborsPlugin(), lightsPlugin(lights)])
+        let registry = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), lightsPlugin(lights)])
         expectEqual(registry.neighborLights.map(\.keys), [[], .option, [.control, .option], [.control, .option]])
         expectEqual(NeighborLight("Plain", color: .black, query: { $0 }).keys, [], "none, a plain hover, unless said")
     },

@@ -30,13 +30,58 @@ public struct Outlines: Equatable {
     /// canvas hasn't the keyboard). Every plugin's are stroked in one pass, in the color they name when every
     /// plugin that outlines any names that one, else in the accent; the hint goes with them.
     public var color: NSColor?
+    /// The board drawn quieter but for some shapes, nil for as it is: what a plugin that lights some shapes and wants the rest
+    /// to recede asks for. Every plugin's are joined (`Dimming`), and a session that hides outlines hides it too.
+    public var dim: Dimming?
     public init(shapes: [ShapeID] = [], rects: [CGRect] = [], faintShapes: [ShapeID] = [], tinted: [TintedOutlines] = [],
-                color: NSColor? = nil) {
+                color: NSColor? = nil, dim: Dimming? = nil) {
         self.shapes = shapes
         self.rects = rects
         self.faintShapes = faintShapes
         self.tinted = tinted
         self.color = color
+        self.dim = dim
+    }
+}
+
+/// The shapes a dim keeps (`Outlines.dim`), each with how much of the way from dimmed to drawn as it is: 1 is as it is, 0 as
+/// quiet as a shape that isn't named. Every other shape in view is drawn at the core's opacity for a dimmed shape
+/// (`Style.dimmedOpacityDark`, `dimmedOpacityLight`: 30% on the dark canvas, 45% on the light, never a plugin's), and a shape
+/// with a strength between is drawn between them, in one of ten steps. The grid, the outlines and what overlays draw are never
+/// dimmed.
+///
+/// Drawn in four steps, each in paint order, over the shapes in view only (a frame with no dim costs nothing more): first the
+/// kept shapes that hold shapes on this board (a frame), at their strength, so what they hold is drawn over them; then every
+/// shape that isn't kept, in one layer at the dimmed opacity; then the kept shapes with a strength under 1, in ten bands of
+/// strength, faintest first, a layer each; then the kept shapes at 1. No shape is dimmed twice, and a kept frame stays behind
+/// what it holds, dimmed or not.
+///
+/// Several plugins' dims are one: the union of what they keep, each shape at the strongest strength any of them gives it.
+public struct Dimming: Equatable {
+    /// The shapes drawn as they are or nearly, each with its strength, 0 to 1. A strength that isn't a number or is infinite is 0
+    /// (set here, in `init` and `joined(with:)`, and read as 0 by the frame whatever a plugin writes to it later).
+    public var focus: [ShapeID: CGFloat]
+    public init(focus: [ShapeID: CGFloat]) {
+        self.focus = Self.sanitized(focus)
+    }
+
+    /// The union of two dims: each shape at the stronger of its strengths.
+    func joined(with other: Dimming) -> Dimming {
+        guard !other.focus.isEmpty else { return self }
+        guard !focus.isEmpty else { return other }
+        var joined = Self.sanitized(focus)
+        for (id, strength) in Self.sanitized(other.focus) where strength > joined[id] ?? -1 { joined[id] = strength }
+        return Dimming(finite: joined)
+    }
+
+    private init(finite focus: [ShapeID: CGFloat]) {
+        self.focus = focus
+    }
+
+    /// `focus` with every strength that isn't finite made 0: one pass over the strengths, and nothing copied when all are finite.
+    private static func sanitized(_ focus: [ShapeID: CGFloat]) -> [ShapeID: CGFloat] {
+        guard focus.values.contains(where: { !$0.isFinite }) else { return focus }
+        return focus.mapValues { $0.isFinite ? $0 : 0 }
     }
 }
 
@@ -54,10 +99,15 @@ public struct TintedOutlines: Equatable {
     public var color: NSColor
     public var shapes: [ShapeID]
     public var ring: Int
-    public init(color: NSColor, shapes: [ShapeID], ring: Int = 0) {
+    /// The line's width in view points; nil for the core's (`Style.tintedIndicatorWidth`, 2). A plugin that lights some shapes
+    /// more than others draws a thicker line for the stronger (Neighbors' reach). Where a ring stands is the ring's, whatever
+    /// the width: a line and a gap further out for each, so a wide line in ring 0 lies over the gap before ring 1.
+    public var width: CGFloat?
+    public init(color: NSColor, shapes: [ShapeID], ring: Int = 0, width: CGFloat? = nil) {
         self.color = color
         self.shapes = shapes
         self.ring = ring
+        self.width = width
     }
 }
 

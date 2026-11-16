@@ -190,7 +190,7 @@ func namesPlugin() -> Contributor {
 @MainActor func neighborHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true,
                                   more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
-                                NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(), lightsPlugin(lights)], file: file)
+                                NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(reach: ReachSettings()), lightsPlugin(lights)], file: file)
 }
 
 /// The same editor with the detail panel, the lists of what's connected to a shape in it
@@ -201,7 +201,7 @@ func namesPlugin() -> Contributor {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
                                 NamingPlugin(), graphPlugin(), DetailPanelPlugin(), TableOfContentsPlugin(), memoRowsPlugin()]
                           + (queries ? [QueriesPlugin(), namesPlugin()] : [])
-                          + [NeighborsPlugin(), lightsPlugin(lights), NeighborDetailsPlugin()] + more, file: file)
+                          + [NeighborsPlugin(reach: ReachSettings()), lightsPlugin(lights), NeighborDetailsPlugin()] + more, file: file)
 }
 
 

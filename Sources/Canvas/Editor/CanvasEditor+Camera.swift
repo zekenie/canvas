@@ -136,6 +136,29 @@ extension CanvasEditor {
                       height: shift(shown.minY, shown.maxY, into: view.minY, view.maxY))
     }
 
+    /// The camera really changed (`camera`'s didSet: a camera set to the value it has is no motion), by whatever: a scroll, a
+    /// pinch, a hand drag, a slide, an animation's frame, a board's arrival. It is moving until `Style.dimCameraRest` after the
+    /// last change, each change starting that wait again: a clock read, no timer, so a camera that moves with nothing dimmed
+    /// costs nothing and a test's scheduler has nothing more pending.
+    func cameraDidMove() { cameraLastMoved = scheduler.now }
+
+    /// Whether the camera is moving: it changed within `Style.dimCameraRest`. A frame leaves the dim out while it is.
+    var cameraIsMoving: Bool { cameraLastMoved.map { scheduler.now < $0 + Style.dimCameraRest } ?? false }
+
+    /// Asks for the frame at rest, once a frame has left the dim out while the camera moved: one timer, for what is left of the
+    /// wait, which asks again if the camera moved meanwhile, and draws once at the end (never when no frame left a dim out).
+    func drawDimWhenCameraRests() {
+        guard cameraRestTimer == nil, let moved = cameraLastMoved else { return }
+        cameraRestTimer = scheduler.schedule(after: max(moved + Style.dimCameraRest - scheduler.now, .zero)) { [weak self] in
+            guard let self else { return }
+            cameraRestTimer = nil
+            if cameraIsMoving { return drawDimWhenCameraRests() }
+            guard dimLeftOut else { return }
+            dimLeftOut = false
+            setNeedsDisplay()
+        }
+    }
+
     /// Any camera change (a scroll, a pinch, a zoom command, a hand drag, a test setting it) stops
     /// a slide or an animation, through `camera`'s didSet, as does the next press. An animation's own
     /// frame keeps its target: what `camera`'s didSet tells after this (a card following the camera)

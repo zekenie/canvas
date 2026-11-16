@@ -7,6 +7,7 @@ import Foundation
 import Geometry
 import LanguageModels
 import Mentions
+import Neighbors
 import ProseMaps
 import Selection
 import ShippedTesting
@@ -47,15 +48,18 @@ struct GalleryState {
     let size: CGSize
     /// Made as text (a menu's outline), once, not as a picture in both appearances.
     let isText: Bool
+    /// On a stage whose hover shows the whole reach (View › Show Whole Reach on, the pulse running).
+    let reach: Bool
     let make: @MainActor (GalleryStage) throws -> GalleryOutput
 
-    init(_ file: String, answers: String = "-", _ draws: String, size: CGSize = CGSize(width: 560, height: 360), isText: Bool = false,
+    init(_ file: String, answers: String = "-", _ draws: String, size: CGSize = CGSize(width: 560, height: 360), isText: Bool = false, reach: Bool = false,
          make: @escaping @MainActor (GalleryStage) throws -> GalleryOutput) {
         self.file = file
         self.answers = answers
         self.draws = draws
         self.size = size
         self.isText = isText
+        self.reach = reach
         self.make = make
     }
 
@@ -77,13 +81,13 @@ final class GalleryStage {
     let canvas: CanvasView
 
     /// Runs `body` on a stage, and lets go of its pasteboard.
-    static func with<T>(dark: Bool, size: CGSize, _ body: (GalleryStage) throws -> T) rethrows -> T {
-        let stage = GalleryStage(dark: dark, size: size)
+    static func with<T>(dark: Bool, size: CGSize, reach: ReachSettings? = nil, _ body: (GalleryStage) throws -> T) rethrows -> T {
+        let stage = GalleryStage(dark: dark, size: size, reach: reach)
         defer { stage.pasteboard.releaseGlobally() }
         return try body(stage)
     }
 
-    private init(dark: Bool, size: CGSize) {
+    private init(dark: Bool, size: CGSize, reach: ReachSettings? = nil) {
         self.dark = dark
         self.size = size
         ProseMapService.forgetEveryAnswer()
@@ -95,7 +99,15 @@ final class GalleryStage {
             for (words, map) in galleryHighlightMaps where message.contains(words) { return .success(ModelResponse(text: map)) }
             return .success(ModelResponse(text: "[]"))
         }
-        editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: model)
+
+        if let reach {
+            // The hover's own settings (Show Whole Reach), which makeEditor has no word for.
+            let registry = try! ShippedPlugins.registry(pasteboard: pasteboard, model: model, reach: reach)
+            editor = CanvasEditor(registry: registry, document: CanvasDocument(), scheduler: scheduler)
+        } else {
+            editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: model)
+        }
+
         (window, canvas) = windowed(editor)
         window.setContentSize(NSSize(width: size.width, height: size.height))
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -292,12 +304,13 @@ func isBlank(_ rep: NSBitmapImageRep, share: Double = 0.01) -> Bool {
 @MainActor
 func renderGalleryState(_ state: GalleryState, write: Bool) throws -> [(name: String, output: GalleryOutput)] {
     var made: [(name: String, output: GalleryOutput)] = []
-    let first = try GalleryStage.with(dark: false, size: state.size) { try state.make($0) }
+    func settings() -> ReachSettings? { state.reach ? ReachSettings(showsWholeReach: true, reducesMotion: { false }) : nil }
+    let first = try GalleryStage.with(dark: false, size: state.size, reach: settings()) { try state.make($0) }
     switch first {
     case .text(let text):
         made.append((state.file + ".txt", .text(text)))
     case .image(let light):
-        let dark = try GalleryStage.with(dark: true, size: state.size) { try state.make($0) }
+        let dark = try GalleryStage.with(dark: true, size: state.size, reach: settings()) { try state.make($0) }
         guard case .image(let darkRep) = dark else { throw GalleryFailure("\(state.file): the dark state is not a picture") }
         made.append((state.file + "-light.png", .image(light)))
         made.append((state.file + "-dark.png", .image(darkRep)))

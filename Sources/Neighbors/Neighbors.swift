@@ -99,21 +99,38 @@ extension Registry {
     public var neighborLights: [NeighborLight] { contributions(to: NeighborLights.self).map(\.value) }
 }
 
-/// The plugin: a service that follows what's hovered and asks the engine (`NeighborState`), and the
-/// outlines it hands the core. Needs `QueriesPlugin` and `TopologyPlugin` to light anything,
-/// `SelectionPlugin` for something to hover (the table of contents' rows set Selection's hover too),
-/// and a light from some plugin; without any of them it does nothing.
+/// The plugin: a service that follows what's hovered and asks the engine (`HoverLights`: one hop,
+/// `NeighborState`, or the whole reach, `ReachState`, as View › Show Whole Reach says), the outlines it
+/// hands the core, and the command that turns the whole reach on and off. Needs `QueriesPlugin` and
+/// `TopologyPlugin` to light anything, `SelectionPlugin` for something to hover (the table of
+/// contents' rows set Selection's hover too), and a light from some plugin; without any of them it does
+/// nothing.
 public struct NeighborsPlugin: ListedPlugin {
-    public init() {}
+    /// The settings its editors follow; nil for the app's (`ReachSettings.app`, in its user defaults).
+    private let settings: ReachSettings?
+
+    public init() { settings = nil }
+    /// With settings of the caller's own: a test's, kept nowhere or in a suite of its own.
+    public init(reach settings: ReachSettings) { self.settings = settings }
     public var id: PluginID { .neighbors }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.service { NeighborState(editor: $0, lights: $0.registry.neighborLights) }
-        registrar.outlines { $0.neighbors?.outlines ?? Outlines() }
+        let own = settings
+        registrar.service { HoverLights(editor: $0, lights: $0.registry.neighborLights, settings: own ?? .app) }
+        registrar.outlines { $0.hoverLights?.outlines ?? Outlines() }
+        registrar.command(.showWholeReach, title: ReachStyle.menuTitle, in: ViewMenu.Panels.self, placed: .last,
+                          isChecked: { _ in (own ?? .app).showsWholeReach }) { _ in
+            let settings = own ?? .app
+            settings.showsWholeReach.toggle()
+        }
     }
 }
 
 extension CanvasEditor {
-    /// What's lit for the shape hovered; nil without NeighborsPlugin.
-    public var neighbors: NeighborState? { service(NeighborState.self) }
+    /// How a hover lights, whichever way; nil without NeighborsPlugin.
+    public var hoverLights: HoverLights? { service(HoverLights.self) }
+    /// What's lit for the shape hovered, one hop; nil without NeighborsPlugin, and while the whole reach shows.
+    public var neighbors: NeighborState? { hoverLights?.oneHop }
+    /// What's lit for the shape hovered while the whole reach shows; nil without NeighborsPlugin, and while it's off.
+    public var reach: ReachState? { hoverLights?.reach }
 }

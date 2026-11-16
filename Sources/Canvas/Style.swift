@@ -40,6 +40,23 @@ public enum Style {
     /// Shapes waiting to be placed (`editor.placeLater`) are drawn at this opacity, the overlays'
     /// decorations of them too (`OverlayContext.drawingPending`): there, but not yet put down.
     static let pendingOpacity: CGFloat = 0.45
+    /// How much of a shape a dim (`Outlines.dim`) leaves of one it doesn't keep, on the dark canvas and on the light: the light
+    /// canvas shows more of what's dimmed, since a faint shape on it still reads, and on the dark one a shape is too bright
+    /// to be left at as much.
+    static let dimmedOpacityDark: CGFloat = 0.30
+    static let dimmedOpacityLight: CGFloat = 0.45
+    /// How many steps from the dimmed opacity to full a kept shape's strength is drawn in: a layer each.
+    static let dimBands = 10
+    /// A kept shape at or over this strength is drawn as it is (a layer for a hair's difference isn't worth its cost).
+    static let dimFullStrength: CGFloat = 0.995
+    /// How long the camera must be still before a frame draws the dim again: while it moves (a pan, a pinch, a slide, an
+    /// animation) the board is drawn as it is with no dim, the outlines as ever. The dim's transparency layers, a pass of
+    /// Core Animation's each, cost a frame half again what 60 Hz leaves it (measured on screen: panning with a reach's dim
+    /// held about 41 frames a second where the hover alone held 59), and a board in motion is not read for what it dims.
+    /// Long enough to span a gesture's frames (a trackpad's scroll and a flung slide's events come some 16 ms apart; a notched
+    /// wheel's come as the person turns it, so with the dim shown it blinks out and back between notches), short enough that the
+    /// dim is back before it's missed.
+    static let dimCameraRest: Duration = .milliseconds(150)
 
     // Skeletons: shapes as they show zoomed out (`CustomSkeleton`).
     /// Below this zoom a frame draws shapes as skeletons (`CanvasEditor.skeletonZoom`): a note's

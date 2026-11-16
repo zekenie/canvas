@@ -12,7 +12,7 @@ import TestKit
 
 @MainActor let mentionLightTests = Suite("Mentions' lights for Neighbors", [
     test("two lights, in order: what the hovered shape mentions, then what mentions it; titled for the panel, with no arrow between") {
-        let lights = try Registry(plugins: [NeighborsPlugin(), MentionLightsPlugin()]).neighborLights
+        let lights = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), MentionLightsPlugin()]).neighborLights
         expectEqual(lights.map { $0.query("#x") }, [":edge-from(#x, mention)", ":edge-to(#x, mention)"])
         expect(lights.count == 2 && lights[0].color != lights[1].color, "a color each")
         expectEqual(lights.map(\.title), ["Mentions", "Mentioned By"])
@@ -20,12 +20,12 @@ import TestKit
         expect(lights[0].caption == nil, "what it mentions gets no line under its name")
     },
     test("both are shown with ⌃⌥ held, which the Keyboard Shortcuts window says once") {
-        let registry = try Registry(plugins: [NeighborsPlugin(), MentionLightsPlugin()])
+        let registry = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), MentionLightsPlugin()])
         expectEqual(registry.neighborLights.map(\.keys), [[.control, .option], [.control, .option]])
         expectEqual(registry.keyboardHelp, [KeyboardHelpRow(keys: ["⌃⌥ Hover"], title: "Show Mentions", place: .pointer)])
     },
     test("what mentions a shape is listed under the mentioner's text around its mention, the names as they show now") {
-        let h = try mentionHarness([NeighborsPlugin(), MentionLightsPlugin()])
+        let h = try mentionHarness([NeighborsPlugin(reach: ReachSettings()), MentionLightsPlugin()])
         let target = h.editor.add(Plate(CGRect(x: 400, y: 0, width: 120, height: 80)), titled: "Groceries")
         let mentioner = h.add(Jot(CGRect(x: 0, y: 0, width: 200, height: 200),
                                   text: MentionText([.text("Buy "), .mention(target, label: "Groceries"), .text(" today")])))

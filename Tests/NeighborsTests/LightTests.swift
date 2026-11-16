@@ -213,14 +213,14 @@ struct Nest {
     },
     test("lights are plugins' contributions, in plugin order and each plugin's own; a list with a light and no Neighbors is refused") {
         let lights = testLights()
-        let registry = try Registry(plugins: [NeighborsPlugin(), lightsPlugin([lights[2]]), Contributor(id: "more-lights") { registrar in
+        let registry = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), lightsPlugin([lights[2]]), Contributor(id: "more-lights") { registrar in
             registrar.neighborLight(lights[0].title, color: lights[0].color, query: lights[0].query, between: lights[0].between)
             registrar.neighborLight(lights[1].title, color: lights[1].color, query: lights[1].query, between: lights[1].between)
         }])
         expectEqual(registry.neighborLights.map(\.color), [Light.quotes.color, Light.out.color, Light.into.color])
         expectEqual(registry.neighborLights.map { $0.lit("#x") }, [lights[2], lights[0], lights[1]].map { $0.lit("#x") })
         expectEqual(registry.neighborLights.map(\.title), ["Quotes", "Wired To", "Wired From"])
-        expectEqual(try Registry(plugins: [NeighborsPlugin()]).neighborLights.count, 0)
+        expectEqual(try Registry(plugins: [NeighborsPlugin(reach: ReachSettings())]).neighborLights.count, 0)
         expectThrows(RegistryError.ownerNotInstalled(point: "NeighborLights", owner: .neighbors, contributor: "lights")) {
             _ = try Registry(plugins: [lightsPlugin(lights)])
         }

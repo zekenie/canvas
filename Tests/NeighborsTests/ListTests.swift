@@ -465,7 +465,7 @@ extension EditorHarness {
         expectEqual(bare.list.shown(in: 0).rows.map(\.id), [town.k])
         // Without the panel, whose tab it is, it's refused.
         do {
-            _ = try Registry(plugins: [NeighborsPlugin(), NeighborDetailsPlugin()])
+            _ = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), NeighborDetailsPlugin()])
             expect(false, "a list with the lists and no panel should be refused")
         } catch let error as RegistryError {
             expect("\(error)".contains("detail-panel"), "\(error)")

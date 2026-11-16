@@ -302,7 +302,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Read every board the app can show | `editor.showableBoards` (every board the file has: `file.everyBoard`) | [Boards that aren't shown](#boards-that-arent-shown) |
 | Write to a shape on a board that isn't shown (an answer that lands late), as an undo step made there | `editor.transact(on: board, "Name") { … }`; services hear it in `ChangeSet.boardsChanged` and `elsewhere` | [Boards that aren't shown](#boards-that-arent-shown) |
 | Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Arrows/ArrowDefinition.swift)' binding hints |
-| Outline shapes in a color of your own (a highlight), a ring for each group a shape is in, filled in the minimap too | `registrar.outlines { … Outlines(tinted: [TintedOutlines(color:shapes:ring:)]) }`: stroked under every other outline | [Outlines](#outlines), [Neighbors](#neighbors) |
+| Outline shapes in a color of your own (a highlight), a ring for each group a shape is in, a line as wide as you say (`width`, view points), filled in the minimap too | `registrar.outlines { … Outlines(tinted: [TintedOutlines(color:shapes:ring:width:)]) }`: stroked under every other outline | [Outlines](#outlines), [Neighbors](#neighbors) |
+| Draw the rest of the board quieter but for shapes you keep, each at a strength | `Outlines(dim: Dimming(focus: [ShapeID: CGFloat]))`: the core's opacities, plugins' dims joined at the strongest, hidden by a drag | [Outlines](#outlines) |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Keep two values a shape holds saying one thing, whoever writes either (a type's color and its schema's `$color`) | `x.keepsInStep { before, record in … }`, or `registrar.keepsInStep(Kind.self)` | [Added properties](#added-properties) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
@@ -702,7 +703,10 @@ plugin after the ones whose points it fills.
   `plugins(pasteboard:model:decisionModel:embeddingModel:)`, `registry(…)` and
   `makeEditor(document:scheduler:pasteboard:model:decisionModel:embeddingModel:)`, the list with a clipboard on the test's
   pasteboard, the test's model, whose `model` has no default, a `ScriptedDecisionModel` unless the
-  test passes a decision model of its own and a hashing `ScriptedEmbeddingModel` unless it passes an embedding model. A test that passes no pasteboard
+  test passes a decision model of its own and a hashing `ScriptedEmbeddingModel` unless it passes an embedding model, and the
+  hover's Show Whole Reach setting of the test's own (`reach:` on `plugins` and `registry`, `ShippedPlugins.reach`: off, kept
+  nowhere, so the app's user defaults are never read; a test that makes `NeighborsPlugin` by hand passes
+  `NeighborsPlugin(reach: ReachSettings())`). A test that passes no pasteboard
   gets its own (`ShippedPlugins.pasteboard`: made when the test first asks, shared by its editors,
   released as it ends, through TestKit's `afterThisTest`), never the user's.
 
@@ -9592,7 +9596,8 @@ A query costs the main actor what it reads and one turn, and does everything els
    container it's in, from its record, `container(of:on:)`, else its board's, each container's and
    each board's worked out once), or, when nothing narrowed the candidates, down from the
    containers, asking only the shapes of `containerKinds` what's inside them; transitive words go
-   breadth first from their anchors.
+   breadth first from their anchors, a layer at a time, each shape once, by the one walk
+   (`LayeredWalk`) that `:downstream-of`, `:upstream-of` and a [reach](#many-at-once-edge-views-and-waiting) share.
    Titles and ids are checked here, against the snapshot (`unknown_title` with the titles like it,
    and, for a title standing for an edge word's or a relation's anchor where an edge of the types it
    follows points at a shape the query can't see from a carrier it can, the `:dangling` that finds
@@ -9718,6 +9723,40 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   let requests = shapes.flatMap { shape in phrases.map { QueryMatchRequest($0, scope: shape.id, edges: .recorded) } }
   let answers = await editor.queries?.matches(requests)           // in order; each answer is its request's ids or its refusal
   _ = try editor.queries?.checkStored(phrase, binding: .scope)    // keeping a phrase: says its shape will be bound
+  ```
+- **A reach.** `queries.reaches([QueryReachRequest])` follows a one-step query from a shape until
+  nothing new is found: what a hover's lights ([Neighbors](#neighbors), in reach mode) show for
+  everything downstream of a shape and, held with ⌥, everything upstream. A `QueryReachRequest(step:
+  between:, start:, edges:, strength:)` carries a light's own query and, if its connections are lit,
+  the query that finds them, both written with `:scope` (`light.query(":scope")`,
+  `light.between?(":scope")`), so the engine learns no light and no edge type, and a `strength(hop,
+  share)` of the caller's own, which chooses among candidates (nil: the nearest hop, then the greatest
+  share). It answers as `matches` does (one capture and one
+  evaluation, off the main actor, a refusal one request's) with a `QueryReach` for each. The walk is
+  breadth first, a layer at a time: each shape of the layer binds `:scope` and evaluates the step. A
+  shape's **hop** is its shortest distance from the start (never in the answer, however a cycle leads
+  back), its **ways** the distinct shapes of the hop before whose step leads to it, and its **share** 1
+  at hop 1 and, past it, the sum over its ways of their share divided by how many shapes of the next
+  hop each leads to, so what reaches a shape divides among what it reaches and adds up where paths
+  meet. `ids` (nearest hop first), `hops`, `ways` and `shares` are aligned. A connection `between`
+  finds that runs from a hop to the next is **travelled**: `carriers`, with `carrierHops` and
+  `carrierShares` of the shape each leads to. One between two shapes of the reach, or from one to the
+  start, that the reach didn't travel (within a hop, back to an earlier one, a cycle's) is **spared**:
+  `spared`, each with both ends' hop and share (a connection once, by the run whose weaker end is the
+  strongest). A travelled connection whose far end was a stand-in as its carrier emitted it (a pill)
+  puts that stand-in in `ids`, at the hop and share of what it stands for (the strongest, if it
+  stands for several); a pill that only stands for a shape the reach meets elsewhere is not in it. A
+  walk that starts at a stand-in takes its first step in the literal view too, so the pill's own
+  arrows' far ends are hop 1. A step that is one
+  transitive relation of `:scope` alone (`:is-a(:scope)`) is evaluated once, from the start, all it
+  finds at hop 1.
+
+  ```swift
+  // Everything downstream of a shape by one light, as its lights say the step and the connections it runs.
+  let request = QueryReachRequest(step: light.query(":scope"), between: light.between?(":scope"), start: shape.id)
+  if case .success(let reach)? = await editor.queries?.reaches([request]).first {
+      for (id, hop, share) in zip(reach.ids, reach.hops, reach.shares) { /* strength from the hop and the share */ }
+  }
   ```
 - **What a word reads** (`QueryReads`, `.file` or `.editor`) is said when it's added, and a plan
   reports it (above). `registrar.queryPseudoClass(…, reads: .file, prepare:, seeds:, matches:)`
@@ -11359,10 +11398,13 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
 - **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the titled,
   colored question, and `NeighborLight.color(light:dark:)`, a color given as one sRGB value for each
   appearance; its point `NeighborLights`, filled with `registrar.neighborLight` and read as
-  `registry.neighborLights`; and `NeighborState`, the service; the lists have their own, below)
-  registers the service (`editor.neighbors`), which takes the lights from the registry,
-  and `registrar.outlines { $0.neighbors?.outlines ?? Outlines() }`; the report's
-  line is `neighbors service NeighborState · outlines`, and each face's
+  `registry.neighborLights`; and `HoverLights`, the service, which holds the way a hover lights:
+  `NeighborState`, one hop, or, with View › Show Whole Reach on, `ReachState`, below; the lists have
+  their own, below) registers the service (`editor.hoverLights`; `editor.neighbors` is its
+  `NeighborState`, nil while the whole reach shows, `editor.reach` its `ReachState`, nil while it
+  doesn't), which takes the lights from the registry, `registrar.outlines { $0.hoverLights?.outlines
+  ?? Outlines() }`, and the command `.showWholeReach`; the report's line is `neighbors service
+  HoverLights · outlines · command show-whole-reach last in ViewMenu.Panels`, and each face's
   `neighbor light · neighbor light` and its key hint. It's after the query plugins in the shipped
   list, and the lights' plugins are after it, and the tab's after theirs. It lights nothing without `QueriesPlugin()` and
   `TopologyPlugin()` (a hover asks nothing then), has nothing to hover without `SelectionPlugin()`,
@@ -11473,6 +11515,37 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   some 0.35 ms), and the minimap fills them (some 4 ms for 10,000); what's lit grows these as it
   grows (99,999 lit: some 24 ms in view, 15 out of view, 60 in the minimap, reported and not held).
   `./build.sh bench` holds them at 10,000.
+- **The whole reach** (View › Show Whole Reach, `CanvasCommand.showWholeReach`, off until it's
+  turned on; its item last in View's panels, after Show Minimap, checked while on). A hover lights
+  everything a light's step leads to from the shape and on from there: downstream on a plain hover,
+  upstream with ⌥, and the same for mentions' and types' lights, Neighbors knowing no edge type. Each
+  shape fades with its distance and how the reach divides: hop 1 is at strength 1, and past it each
+  hop keeps 60%, a shape's share of the reach being what its ways in pass on, split among what each
+  reaches next (strength = 0.6^(hop−1) × min(1, share)). Its ring is 1 + 2.5 × strength points wide,
+  in its light's color mixed toward the canvas by its strength (opaque, so an arrow's line doesn't
+  show through its cover), left out under 4%; an arrow the reach travels is lit at what it reaches.
+  Once the pointer rests 150 ms the rest of the board dims (the core's `Outlines.dim`, [Outlines](#outlines)),
+  keeping the shape hovered, its card, each lit shape at 1, 0.65, 0.35 or 0.12 (hop 1 always 1) and each
+  arrow the reach spared (a cycle's, one within a hop) at its weaker end's, and the rest of the reach
+  comes in a hop every 80 ms (a hop arriving drawn as hop 1 is, the fourth on together, settled by
+  320 ms; at once with Reduce Motion). Before the rest a new shape shows its hop 1, at once; the dim
+  stays as the pointer goes from shape to shape; ⌥ shows the other pole's hop 1 at once and its pulse
+  after the rest; the dim and the lights go 150 ms after nothing is hovered, and a drag hides them. A
+  pill the reach goes into lights at what it stands for (the engine's answer has it), and a shape on
+  another board lights its card at the strongest of what it holds. The panel's lists are one hop as
+  ever. `ReachSettings` is the switch (`ReachSettings.app`, in the app's user defaults; a test's own
+  through `NeighborsPlugin(reach:)`) and Reduce Motion (`reducesMotion`, the system's unless a test
+  says), and every editor made with it follows a change at once: `HoverLights` makes the other way's
+  state in place of the one it had, so the one not shown asks nothing and hands the core nothing.
+  `ReachState` asks, for a new shape, the lights' one hop (`light.lit`, in each view that can differ,
+  as `NeighborState` does), which shows first, and each light's reach (`queries.reaches`, one request
+  a light, its step and between given `:scope`, [Queries](#queries)); each answer is landed off the
+  main actor from the file as it was (`ReachLanding`: where each match is drawn, its rings in groups
+  by tier, ring step and ring, made once, and the dim's focus for each step of the pulse), so a step of
+  the pulse only picks groups. A commit or a change to the edges that touches the reach asks again
+  once commits have stopped for 100 ms, keeping the pulse where it is, and so does any change to the
+  edges made while an answer was out. A reach that fails shows the one hop in its place; a pill
+  hovered has its own arrows' far ends at hop 1. Every number is `ReachStyle`'s.
 - **The lists.** `NeighborList` (`editor.neighborList`, a service `NeighborDetailsPlugin` registers)
   holds what's connected to the shape a panel shows, in lists: one for each light, in the lights'
   order, each its light's `query` (not `between`: the arrows aren't listed), then two it gives itself
@@ -11577,6 +11650,18 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   kind and its refusal without the panel; and, in a `DetailPanelView` in an unshown window, a list
   watched as it appears, a search field from twenty shapes, and 3,000 shapes all there with under 300
   rows drawn. DetailPanelTests' `listRowTests` hold `DetailGroupHeader` and `DetailSearchField`.
+  NeighborsTests' `reachTests` (`ReachTests.swift`, over `reachHarness`, the hover's harness with
+  `NeighborsPlugin(reach:)`, read as `rings`, each group's light, ring and strength from its color and
+  width, and `focus`, the dim's) hold the whole reach: off, one hop as ever; a chain's strengths and
+  widths, its colors in both appearances, a fan's split shares and a diamond's summed, a ring under 4%
+  left out, travelled, spared and other arrows, a card at the strongest of what it holds and the card
+  of a shape hovered elsewhere, a pill gone into and one that isn't, hop 1 at once and the rest after
+  the rest, a sweep keeping the dim, the release, the pulse's steps, Reduce Motion, ⌥ switching pole,
+  two lights' rings, commits coalesced, every landing off the main actor, a drag, a board switch, the
+  switch followed by every editor, the settings kept in defaults and the command. CompositionTests'
+  `reachShippedTests` hold the shipped lights reaching (arrows both ways, a pill, mentions and a
+  subboard's card, a type's instances) and View › Show Whole Reach in a window, and
+  `connectionsShippedTests` the Connections list's key walk lighting a row's reach.
 
 ## References
 
@@ -14741,17 +14826,20 @@ shape's outline off its edge rather than on it, whatever its kind.
   is. Resize handles are on the box itself, not the outline, drawn over it: the line runs under
   them, as it did when it lay on the edge they sit on. A title's pill (9 points above the top edge)
   and Locking's lock stay clear of the line; port dots are 12 points out.
-- **Tinted groups.** `Outlines.tinted` is a list of `TintedOutlines` (a `color`, its `shapes` and a
-  `ring`): a plugin's own colors, such as the lights [Neighbors](#neighbors) outlines a hovered
+- **Tinted groups.** `Outlines.tinted` is a list of `TintedOutlines` (a `color`, its `shapes`, a
+  `ring` and a `width`, nil for the core's): a plugin's own colors, such as the lights [Neighbors](#neighbors) outlines a hovered
   shape's neighbors with. The core strokes each group before the faint outlines and the full ones
   (the groups in the order the plugins gave them), so a selected or hovered shape's own line shows
-  over its tint; each is `Style.tintedIndicatorWidth` wide (2 view points, a little wider than the
+  over its tint; each is its `width` wide in view points, or, with none, `Style.tintedIndicatorWidth` (2, a little wider than the
   selection's 1.5, and opaque) and, in ring 0, where the selection's line stands: centered 4 off a
   closed shape's edge. A ring past the first stands a line and a gap further out
   (`Style.tintedRingGap`, 2): ring 1 is 4 view points more off the edge (8 in all), ring 2 four
   more, so the rings' centers are whole pixels at 1× and 2×, corners concentric, and a shape in two
   groups shows both, one ring round the other. Zoomed out the ring is on the shape's frame, grown by
-  the same. A shape that's outlined in full too (selected, or the hint) has its tint one ring
+  the same. A `width` changes the line and nothing else: the ring stands where its number says (a
+  line of the core's width and a gap further out for each), so a wider line in ring 0 lies over the
+  gap before ring 1, a plugin that draws some shapes stronger than others (Neighbors' reach) puts
+  them in groups of one width each, and an open shape's cover is never narrower than it. A shape that's outlined in full too (selected, or the hint) has its tint one ring
   further out, clear of the selection's line, which would otherwise lie over most of ring 0, at
   every zoom: looked up only for the shapes in view, a few outlined in full compared one by one
   and many through one set, and not at all while nothing is tinted or nothing outlined in full.
@@ -14760,8 +14848,13 @@ shape's outline off its edge rather than on it, whatever its kind.
   width × the zoom + 1)` view points wide, round, over its line and its heads, so it's the line in
   the tint's color and not a stripe along it; zoomed out, 2 wide. A hover's faint outline beside
   tinted ones is the shape they're about, and is stronger, 85% where it's 60% alone. A group costs
-  what any outline does: a look at each shape's kept extent, and only those in view stroked, in one
-  path of its own. `Outlines` and `TintedOutlines` are `Equatable`, so a plugin that keeps what it
+  what any outline does: a look at each shape's kept extent, and only those in view stroked: the
+  closed shapes' together in one path, and each open shape's line (and its cover) in a path of its
+  own, stroked one after another, since Core Graphics goes super-linear on thousands of round-capped
+  lines crossing in one path (a hover lighting 2,561 arrows at 10% added 1.9 s to a frame, 8,700
+  added 58 s) and linear on a path each (some 9 µs an arrow at 10%, `./build.sh bench`); a
+  translucent color stroked as several paths is painted in a layer, so where they overlap it isn't
+  doubled. `Outlines` and `TintedOutlines` are `Equatable`, so a plugin that keeps what it
   hands the core tells whether it changed and asks for a frame (`editor.setNeedsDisplay()`) only then.
   The core knows no meaning of a color or a group; the minimap fills the same shapes in the same
   colors under the faint ones and the selection's, a shape in two groups showing both (the second's
@@ -14771,9 +14864,43 @@ shape's outline off its edge rather than on it, whatever its kind.
   and place at 100% and 200%, a second ring further out (a gap of whole pixels), a selected
   shape's tint a ring out (the hint too, a hover not, a few selected and many, zoomed out),
   under the selection's and a hover's line, the faint line's strength beside tints, a skeleton's
-  ring, an open shape's path whatever the ring, a line covered at 50%, 100% and 200% (and
+  ring, an open shape's path whatever the ring (each open shape a path of its own, drawn as when they shared one), a line covered at 50%, 100% and 200% (and
   2 wide zoomed out, the selection's and a hover's thin), none while a session hides outlines, and
   groups merged from two plugins in order.
+- **The rest dimmed.** `Outlines.dim` is a `Dimming(focus: [ShapeID: CGFloat])`: the shapes kept, each
+  with a strength from 0 to 1 (1 is drawn as it is), and every other shape in view drawn quieter, at
+  `Style.dimmedOpacityLight` (45%) on the light canvas and `Style.dimmedOpacityDark` (30%) on the
+  dark: the opacities are the core's, so two plugins that dim look alike and a plugin knows no
+  number. A kept shape with a strength under 1 is drawn between (its strength's band of ten,
+  `dimmed + (1 − dimmed) × (band + ½) / 10`), so what a plugin lights fades into the dimmed board by
+  how strongly. Several plugins' dims are one: the union of the shapes they keep, each at the
+  strongest strength any gives it; a session that hides outlines (a drag) hides the dim too. A
+  frame with no dim draws exactly as it did, and with one it draws in paint order, over the shapes
+  in view only: (1) every shape that holds shapes on this board (a `ShapeContaining` kind: a
+  frame), each at its own opacity (a kept one at its strength, one that isn't kept at the dimmed
+  opacity), consecutive ones of the same opacity in one transparency layer, so a lit frame inside a
+  dimmed one stays over it and what a frame holds is drawn over it; (2) every other shape not kept,
+  as one layer at the dimmed opacity, so a shape and its shadow aren't dimmed twice; (3) the other
+  kept shapes under full strength, a layer for each band that has any, faintest first; (4) the kept
+  shapes at full strength. Each layer is clipped to where its shapes are. No shape is drawn twice.
+  The grid, outlines and what overlays draw are never dimmed. A strength that isn't a number is 0.
+  The dim waits for the camera to rest: while it moves (a pan, a pinch, a slide, an animation) the
+  core draws the board as it does with no dim, the rings and every other outline as ever, and draws
+  the dim again 150 ms after the camera last changed (`Style.dimCameraRest`, the core's, not a
+  plugin's); the canvas is asked to draw then only if a frame left a dim out. A plugin keeps
+  offering its dim throughout and knows nothing of the camera: the dim's layers cost a frame more
+  than a pan has, and a board in motion isn't read for what it dims.
+  The cost is a layer for each band in use: a layer over a view of 1,200 × 800 points is some 3.5 ms
+  of the thread's CPU however few shapes it holds, so a frame with 1,900 shapes in view at 100% gains
+  some 4 ms with none kept (the one layer), 10 ms with three bands, and 10,000 skeletons at 10% 7 and
+  14 ms; a plugin that draws many strengths quantizes them; many kept frames cost what each covers
+  (`./build.sh bench`, OutlineBenchmarks).
+  CanvasTests' DimTests hold it: dimmed pixels against undimmed on the light and the dark canvas, a
+  faded shape between by its band, a kept shape untouched, a lit frame behind what it holds (full
+  and faded) with the member dimmed over it, a lit frame inside a dimmed one, a kept shape in a
+  dimmed frame, the grid and a tint's line undimmed, none changed byte for byte without a dim, two
+  plugins' joined at the strongest, an empty dim dimming all, a strength that isn't a number, and
+  a session hiding it, and the camera's motion leaving it out until 150 ms after it rests.
 - **Beyond the rings.** An overlay that decorates a closed shape outside its outline stands outside
   the tint too: `OverlayContext.tintedOutset(of:)` is how far, in view points, the outermost tinted
   ring round the shape stands beyond ring 0 this frame (4 for each ring past the first, counting
@@ -15995,7 +16122,7 @@ drawing-queries      query word :drawn-by("…") members key, in · query word :
 query-commands       command line query · command line query-vocabulary
 decision-commands    command line decide
 query-slash          /query → the command bar's target
-neighbors            service NeighborState · outlines
+neighbors            service HoverLights · outlines · command show-whole-reach last in ViewMenu.Panels
 arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
 mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
 type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes

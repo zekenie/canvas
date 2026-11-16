@@ -12,6 +12,7 @@ import Grouping
 import JumpTo
 import LanguageModels
 import Mentions
+import Neighbors
 import Reordering
 import Selection
 import ShippedTesting
@@ -455,6 +456,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("View", "Focus Sidebar", "focusSidebar:", "s", [.command, .option])
         try check("View", "Show Inspector", "toggleDetails:", "i", [.command, .control])
         try check("View", "Show Minimap", "toggleMinimap:", "m", [.command, .control])
+        try command("View", "Show Whole Reach", .showWholeReach, "")
         try command("View", "Next Inspector Tab", .nextInspectorTab, "]", [.command, .option])
         try command("View", "Previous Inspector Tab", .previousInspectorTab, "[", [.command, .option])
         try command("View", "Zoom In", .zoomIn, "=")
@@ -463,7 +465,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("View", "Zoom to Fit", .zoomToFit, "1", .shift)
         try command("View", "Zoom to Selection", .zoomToSelection, "2", .shift)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
-        expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out", "Actual Size",
+        expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "Show Whole Reach", "", "Zoom In", "Zoom Out", "Actual Size",
                                               "Zoom to Fit", "Zoom to Selection", "", "Enter Full Screen"])
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Insert", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         expect(try require(menus.main.item(withTitle: "Shape")?.submenu).items.isEmpty, "Shape fills itself as it opens")

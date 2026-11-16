@@ -692,4 +692,34 @@ extension ConnectionGroup {
         expectEqual(DetailGroupHeader.spoken(count: 1, isCollapsed: false), "1, expanded")
         expectEqual(DetailGroupHeader.spoken(count: 3, isCollapsed: true), "3, collapsed")
     },
+    test("with Show Whole Reach on, the line the Connections list's keys are on lights its shape's whole reach, and leaving the list lets it go") {
+        ShippedPlugins.reach.showsWholeReach = true
+        let (a, b, c, d) = (ShapeID(), ShapeID(), ShapeID(), ShapeID())
+        let w = try InspectorWindow(file: CanvasFile(root: CanvasDocument(shapes: [
+            card(a, "Alpha", 1, 0), card(b, "Beta", 2, 0), card(c, "Gamma", 3, 0), card(d, "Delta", 4, 0),
+            link(from: a, to: b), link(from: b, to: c), link(from: c, to: d),
+        ])))
+        let list = try require(w.editor.neighborList)
+        let reach = try require(w.editor.reach)
+        w.editor.selection = a
+        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { w.connectionRows.count == 1 }
+        let table = try require(w.connectionTable)
+        let driver = KeyDriver(w.window)
+        w.window.makeFirstResponder(table)
+        w.window.spin { w.window.firstResponder === table }
+        w.window.settle()
+        driver.send(.down)
+        // The reach hears the hover on the scheduler's next turn, so wait for it too, not only for the hover.
+        w.window.spin { w.editor.hovered == b && reach.showing == b }
+        expectEqual(reach.showing, b, "Beta's line is the hover the reach follows")
+        w.window.spin { reach.dims && reach.hasReach && w.editor.outlines.tinted.contains { $0.shapes.contains(d) } }
+        let lit = Set(w.editor.outlines.tinted.flatMap(\.shapes))
+        expect(lit.isSuperset(of: [c, d]), "Gamma and, a hop on, Delta")
+        expectEqual(w.editor.outlines.dim?.focus[b], 1)
+        driver.send(.tab)
+        w.window.spin { w.editor.hovered == nil }
+        w.window.spin { w.editor.outlines.dim == nil }
+        expect(w.editor.outlines.tinted.isEmpty, "let go of, after the release")
+    },
 ])

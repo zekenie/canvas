@@ -227,6 +227,12 @@ public final class NeighborState {
         }
     }
 
+    /// Asks about the shape hovered now, if one is: for a state made while a shape is hovered (the whole reach turned off), which
+    /// otherwise lights nothing until the hover changes.
+    func askAboutSubject() {
+        if let subject { ask(about: subject) }
+    }
+
     /// What a light matched, from its views' answers: each shape once, the first view's first. A
     /// request the engine refused matched nothing.
     private func merged<Refusal: Error>(_ answers: ArraySlice<Result<QueryMatches, Refusal>>) -> [ShapeID] {

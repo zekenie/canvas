@@ -10,7 +10,7 @@ import Types
 
 @MainActor let typeLightTests = Suite("Types' light for Neighbors", [
     test("two lights, Instances and Subtypes: what is of the hovered type however far while it is a type, the shapes that are no type and the types built on it, in one pink, nothing between and no line under a row") {
-        let lights = try Registry(plugins: [NeighborsPlugin(), TypeLightsPlugin()]).neighborLights
+        let lights = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), TypeLightsPlugin()]).neighborLights
         expectEqual(lights.map(\.title), ["Instances", "Subtypes"])
         let (schema, isA) = (TypeSchemaProperty.key.rawValue, IsAEdge.id.rawValue)
         expectEqual(lights.map { $0.query("#x") }, [":\(isA)(#x[\(schema)]):not([\(schema)])", "[\(schema)]:\(isA)(#x[\(schema)])"])
@@ -20,7 +20,7 @@ import Types
         expectEqual(lights[0].color, lights[1].color, "a shape is one or the other: one pink")
     },
     test("both are shown with ⌥ held, as what points to a shape is (what is of a type has an is-a edge to it), which the Keyboard Shortcuts window says") {
-        let registry = try Registry(plugins: [NeighborsPlugin(), TypeLightsPlugin()])
+        let registry = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), TypeLightsPlugin()])
         expectEqual(registry.neighborLights.map(\.keys), [.option, .option])
         expectEqual(registry.keyboardHelp, [KeyboardHelpRow(keys: ["⌥ Hover a Type"], title: "Show Its Instances and Subtypes", place: .pointer)])
     },

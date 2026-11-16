@@ -4,6 +4,7 @@ import Clipboard
 import DecisionModels
 import EmbeddingModels
 import LanguageModels
+import Neighbors
 import StickyNotes
 import TestKit
 
@@ -11,8 +12,9 @@ import TestKit
 /// Package.swift's table, which the build puts in a test executable whose line ends `+ shipped`),
 /// each plugin made by its name, with a pasteboard and three models of the test's own in place of
 /// the four that reach outside the process (`OutwardPlugin`: the clipboard's, the language model's,
-/// the decision model's and the embedding model's). So a test checks exactly what ships, and reaches
-/// neither the network nor the user's pasteboard or files.
+/// the decision model's and the embedding model's), and Neighbors with settings of the test's own in
+/// place of the app's user defaults (`reach`). So a test checks exactly what ships, and reaches neither
+/// the network nor the user's pasteboard, files or preferences.
 ///
 /// `model` has no default, so no test asks the real model by leaving it out: every test passes a
 /// `ScriptedLanguageModel`, but the two live ones. The decision model is a `ScriptedDecisionModel`
@@ -41,15 +43,29 @@ public enum ShippedPlugins {
 
     private static var testPasteboard: NSPasteboard?
 
+    /// The test's own Show Whole Reach (off, with the pulse, kept nowhere), which `plugins`, `registry`
+    /// and `makeEditor` take when a test passes none: made when the test first asks, so its editors
+    /// follow one setting as the app's windows do, and let go of as the test ends.
+    public static var reach: ReachSettings {
+        if let testReach { return testReach }
+        let made = ReachSettings(reducesMotion: { false })
+        testReach = made
+        afterThisTest { if testReach === made { testReach = nil } }
+        return made
+    }
+
+    private static var testReach: ReachSettings?
+
     /// The shipped list, its clipboard on `pasteboard`, its language model `model`, its decision
-    /// model `decisionModel` and its embedding model `embeddingModel`.
+    /// model `decisionModel`, its embedding model `embeddingModel` and its hover's settings `reach`.
     public static func plugins(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel,
                                decisionModel: any DecisionModel = ScriptedDecisionModel(),
-                               embeddingModel: any EmbeddingModel = ScriptedEmbeddingModel.hashing()) -> [any CanvasPlugin] {
+                               embeddingModel: any EmbeddingModel = ScriptedEmbeddingModel.hashing(),
+                               reach: ReachSettings = ShippedPlugins.reach) -> [any CanvasPlugin] {
         do {
             return try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: pasteboard), LanguageModelsPlugin(model: model),
                                                        DecisionModelsPlugin(model: decisionModel),
-                                                       EmbeddingModelsPlugin(model: embeddingModel)])
+                                                       EmbeddingModelsPlugin(model: embeddingModel), NeighborsPlugin(reach: reach)])
         } catch {
             fatalError("The shipped plugins don't load: \(error)")   // ShippedTests' first test says why
         }
@@ -57,8 +73,9 @@ public enum ShippedPlugins {
 
     public static func registry(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel,
                                 decisionModel: any DecisionModel = ScriptedDecisionModel(),
-                                embeddingModel: any EmbeddingModel = ScriptedEmbeddingModel.hashing()) throws(RegistryError) -> Registry {
-        try Registry(plugins: plugins(pasteboard: pasteboard, model: model, decisionModel: decisionModel, embeddingModel: embeddingModel))
+                                embeddingModel: any EmbeddingModel = ScriptedEmbeddingModel.hashing(),
+                                reach: ReachSettings = ShippedPlugins.reach) throws(RegistryError) -> Registry {
+        try Registry(plugins: plugins(pasteboard: pasteboard, model: model, decisionModel: decisionModel, embeddingModel: embeddingModel, reach: reach))
     }
 
     /// An editor of the shipped plugins, on the sample board (`SampleBoard`) unless `document` says.

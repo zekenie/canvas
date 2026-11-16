@@ -2,6 +2,7 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import CanvasUI
 import Connections
 import CoreGraphics
 import DetailPanel
@@ -460,5 +461,135 @@ private struct Kinds {
         for x in [7.5, 8.5] { expectEqual(Array(color(x).prefix(3)), second, "ring 1, in the second light's lavender, \(x) out") }
         // Where the line isn't, the canvas is the canvas's: between the rings, and past the second.
         for x in [5.5, 6.5, 10] { expect(color(x)[0] > 230 && color(x)[1] > 230, "the canvas, \(x) out: \(color(x))") }
+    },
+])
+
+// MARK: The whole reach, as shipped
+
+/// The shipped editor with the whole reach on (settled at once once rested: Reduce Motion), its settings `settings`.
+@MainActor private func reaching(_ file: CanvasFile, _ pasteboard: NSPasteboard,
+                                 settings: ReachSettings = ReachSettings(showsWholeReach: true, reducesMotion: { true })) throws -> EditorHarness {
+    try EditorHarness { scheduler in
+        CanvasEditor(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel(), reach: settings), file: file,
+                     scheduler: scheduler)
+    }
+}
+
+private extension EditorHarness {
+    /// Lets the look at the hover happen and both answers land, then the pointer rest.
+    func rest(file: StaticString = #fileID, line: UInt = #line) {
+        wait(0)
+        guard let reach = editor.reach else { return }
+        spinRunLoop(until: { !reach.isAsking }, file: file, line: line)
+        wait(150)
+    }
+
+    /// Each shape ringed, with the light its color is mixed from (by the light's index in `colors`, the
+    /// first that matches) and its strength, from its ring's width.
+    func reached(_ colors: [NSColor]) -> [ShapeID: (light: Int, strength: Double)] {
+        var found: [ShapeID: (light: Int, strength: Double)] = [:]
+        for group in editor.outlines.tinted {
+            let strength = Double((((group.width ?? 2) - 1) / 2.5 * 40).rounded() / 40)
+            let drawn = srgb(group.color, in: .aqua)
+            let light = colors.firstIndex { color in
+                let own = srgb(color, in: .aqua)
+                return zip(own, drawn).allSatisfy { abs(Double($0) * strength + 0.965 * 255 * (1 - strength) - Double($1)) <= 2 }
+            } ?? -1
+            for shape in group.shapes where found[shape] == nil { found[shape] = (light, strength) }
+        }
+        return found
+    }
+}
+
+@MainActor let reachShippedTests = Suite("Neighbors' whole reach, as shipped", [
+    test("arrows reach downstream on a plain hover and upstream with ⌥, each hop fading, a pill gone into at its note's hop, and the rest dims") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let a = ShapeID(), b = ShapeID(), c = ShapeID(), d = ShapeID(), t = ShapeID(), r = ShapeID(), u = ShapeID()
+        let ab = ShapeID(), bc = ShapeID(), da = ShapeID(), cr = ShapeID()
+        var props = Reference(frame: CGRect(x: 1200, y: 800, width: Reference.defaultSize.width, height: Reference.defaultSize.height))
+        ReferenceEdits.pick(&props, ReferenceTarget(id: t, label: "Orders"))
+        let file = CanvasFile(root: CanvasDocument(shapes: [
+            note(a, 1, 1), note(b, 2, 1), note(c, 3, 1), note(d, 0, 1), note(t, 3, 3, "Orders"), note(u, 0, 3), AnyShapeRecord(ShapeRecord(id: r, props)),
+            arrow(a, b).copy(as: ab), arrow(b, c).copy(as: bc), arrow(d, a).copy(as: da), arrow(c, r).copy(as: cr),
+        ]))
+        let h = try reaching(file, pasteboard)
+        let lights = try Lights(h.editor.registry)
+        let colors = [lights.pointsTo, lights.pointedToBy]
+        h.editor.hovered = a
+        h.rest()
+        let down = h.reached(colors)
+        expectEqual(down[b]?.strength, 1)
+        expectEqual(down[ab]?.strength, 1, "the arrow travelled, at what it reaches")
+        expectEqual(down[c]?.strength, 0.6)
+        expectEqual(down[t]?.strength, 0.35, "the note the pill stands for, at hop 3")
+        expectEqual(down[r]?.strength, 0.35, "the pill gone into, at its note's")
+        expectEqual(down[cr]?.strength, 0.35)
+        expect([b, c, t, r].allSatisfy { down[$0]?.light == 0 }, "in Points To's green")
+        expect(down[d] == nil && down[u] == nil)
+        let focus = try require(h.editor.outlines.dim?.focus)
+        expectEqual(focus[a], 1)
+        expectEqual(focus[u], nil, "the rest dims")
+        h.hold(.option)
+        h.wait(150)
+        let up = h.reached(colors)
+        expectEqual(up[d]?.light, 1, "with ⌥ what points to it, in Pointed To By's purple")
+        expectEqual(up[da]?.strength, 1)
+        expect(up[b] == nil)
+    },
+    test("mentions reach with ⌃⌥ both ways, a mention on a subboard's board lighting its card, and a type's instances with ⌥, its relation asked once") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let a = ShapeID(), e = ShapeID(), f = ShapeID(), g = ShapeID(), s = ShapeID()
+        let sub = ShapeRecord(id: s, Subboard(frame: CGRect(x: 1600, y: 0, width: 240, height: 160)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [
+            note(a, 1, 1, MentionText([.text("See "), .mention(f, label: "F")])), note(f, 0, 0, MentionText([.text("and "), .mention(g, label: "G")])),
+            note(e, 1, 2, MentionText([.text("About "), .mention(a, label: "A")])), AnyShapeRecord(sub),
+        ]), children: [s: CanvasDocument(shapes: [note(g, 0, 0)])])
+        let h = try reaching(file, pasteboard)
+        let lights = try Lights(h.editor.registry)
+        h.hold([.control, .option])
+        h.editor.hovered = a
+        h.rest()
+        let found = h.reached([lights.mentions, lights.mentionedBy])
+        expectEqual(found[f]?.strength, 1)
+        expectEqual(found[s]?.strength, 0.6, "G, on S's board at hop 2, lights S")
+        expectEqual(found[e]?.light, 1, "what mentions it, in lavender")
+
+        let kinds = Kinds()
+        let k = try reaching(kinds.file, pasteboard)
+        k.hold(.option)
+        k.editor.hovered = kinds.t
+        k.rest()
+        let typed = k.reached([lights.instances])
+        expectEqual(Set(typed.keys), [kinds.a, kinds.v, kinds.s, kinds.u], "what is of it however far, the subboard holding one, and the type built on it")
+        expect(typed.values.allSatisfy { $0.strength == 1 }, "one relation, all of it at hop 1")
+    },
+    test("View › Show Whole Reach is checked while on, runs from the window, and is kept in the app's user defaults it's given") {
+        ShippedPlugins.reach.showsWholeReach = false
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let controller = try require(w.board.windowControllers.first as? BoardWindowController)
+        let item = commandItem(.showWholeReach, title: "Show Whole Reach")
+        expect(controller.validateMenuItem(item))
+        expectEqual(item.state, .off)
+        expect(w.editor.reach == nil)
+        controller.runCommand(item)
+        expect(ShippedPlugins.reach.showsWholeReach)
+        expect(w.editor.reach != nil, "the window's hover lights the reach")
+        expect(controller.validateMenuItem(item))
+        expectEqual(item.state, .on)
+        controller.runCommand(item)
+        expect(w.editor.reach == nil)
+
+        let suite = "CompositionTests-\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = try reaching(CanvasFile(), pasteboard, settings: ReachSettings(defaults: defaults))
+        expect(h.editor.reach == nil, "off until turned on")
+        expect(h.editor.perform(.showWholeReach))
+        expect(ReachSettings(defaults: defaults).showsWholeReach, "as the next launch reads it")
     },
 ])

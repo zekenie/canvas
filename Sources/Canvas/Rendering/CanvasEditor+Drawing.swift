@@ -1,5 +1,6 @@
 import AppKit
 import Geometry
+import Palette
 
 extension CanvasEditor {
     /// Draws the whole canvas into `context` (the view's, or an offscreen one). `bounds` is the
@@ -69,7 +70,20 @@ extension CanvasEditor {
                                        customSkeletons: customSkeletons)
             }
         }
-        for record in paintOrder(in: drawn) { drawShape(record, in: shapes) }
+        let (outlines, hint) = outlinesAndHint
+        // The dim waits for the camera to rest (`Style.dimCameraRest`): its layers cost more than a moving frame has, and the
+        // frame at rest draws it (asked for once, by the first frame that leaves it out). The rings and the rest of the outlines are as ever.
+        let moving = outlines.dim != nil && cameraIsMoving
+        dimLeftOut = moving
+        if moving { drawDimWhenCameraRests() }
+        let dim = moving ? nil : outlines.dim
+        if let dim {
+            var order: [(record: AnyShapeRecord, extent: CGRect)] = []
+            forEachShape(in: drawn) { order.append(($0, $1)) }
+            drawDimmed(order, by: dim, pad: pad, within: drawn, in: context) { drawShape($0, in: shapes) }
+        } else {
+            for record in paintOrder(in: drawn) { drawShape(record, in: shapes) }
+        }
         previews.endFrame()
         if previews.isPending, nextPreviewFrame == nil {
             nextPreviewFrame = scheduler.schedule(after: .zero) { [weak self] in
@@ -77,7 +91,7 @@ extension CanvasEditor {
                 self?.setNeedsDisplay()
             }
         }
-        let (outlines, hint) = outlinesAndHint
+        outlineMembers.keep(atLeast: outlines.tinted.count + 2)
         let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
         drawOutlines(outlines, hint: hint, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
         // The shapes waiting to be placed (`placeLater`), faint, over the board's and its outlines, under what
@@ -148,6 +162,8 @@ extension CanvasEditor {
 
     /// How many sets of the shapes in a list outlined have been made (debug builds): one for a list, kept while it is the same.
     @_spi(Host) public var outlineSetsMade: Int { outlineMembers.made }
+    /// How many maps of the tinted groups' outermost rings have been made (debug builds): one for the groups, kept while they are the same.
+    @_spi(Host) public var tintedRingMapsMade: Int { outlineMembers.ringMapsMade }
     #endif
 
     // MARK: Drawing a shape away from where it is
@@ -225,6 +241,8 @@ extension CanvasEditor {
                 if !more.faintShapes.isEmpty { outlines.faintShapes += more.faintShapes }
                 if !more.rects.isEmpty { outlines.rects += more.rects }
                 if !more.tinted.isEmpty { outlines.tinted += more.tinted }
+                // The first plugin's dim is taken as it is (a long one isn't copied); another's is joined to it.
+                if let dim = more.dim { outlines.dim = outlines.dim.map { $0.joined(with: dim) } ?? dim }
             }
             outlines.color = named ?? nil
         }
@@ -290,6 +308,68 @@ extension CanvasEditor {
         context.restoreGState()
     }
 
+    /// The shapes in view, in paint order, each with its kept extent, drawn with the board dimmed but for the dim's shapes (`Dimming`).
+    /// First every shape that holds shapes on this board (a frame), in paint order, each at its own opacity (a kept one at its
+    /// strength, one that isn't at the dimmed opacity, one kept in full as it is), so a lit frame inside a dimmed one stays over it
+    /// and what a frame holds is drawn over it; then the rest that isn't kept in one layer at the dimmed opacity, the kept shapes
+    /// under full in ten bands of strength (a layer each, faintest first), and the kept shapes at full last. Each shape is drawn
+    /// once, looked up in the dim once, and each layer is clipped to where its shapes are (`pad` more, for a shadow or a shape shaken
+    /// aside) within `area`, so a layer costs what it holds rather than the view.
+    private func drawDimmed(_ order: [(record: AnyShapeRecord, extent: CGRect)], by dim: Dimming, pad: CGFloat, within area: CGRect,
+                            in context: CGContext, draw: (AnyShapeRecord) -> Void) {
+        typealias Entry = (record: AnyShapeRecord, extent: CGRect)
+        let floor = NSAppearance.currentDrawing().isDark ? Style.dimmedOpacityDark : Style.dimmedOpacityLight
+        let steps = Style.dimBands
+        /// The opacity a kept shape's strength is drawn at, nil for one drawn as it is; a strength that isn't a number is 0.
+        func alpha(of strength: CGFloat) -> CGFloat? {
+            let kept = strength.isFinite ? min(max(strength, 0), 1) : 0
+            guard kept < Style.dimFullStrength else { return nil }
+            return floor + (1 - floor) * (CGFloat(min(steps - 1, Int(kept * CGFloat(steps)))) + 0.5) / CGFloat(steps)
+        }
+        var containers: [(entry: Entry, alpha: CGFloat?)] = [], unkept: [Entry] = [], full: [Entry] = []
+        var bands = [[Entry]](repeating: [], count: steps)
+        for entry in order {
+            let kept = dim.focus[entry.record.id]
+            if registry.isContainer(entry.record) {
+                containers.append((entry, kept.map { alpha(of: $0) } ?? floor))
+            } else if let kept {
+                let strength = kept.isFinite ? min(max(kept, 0), 1) : 0
+                if strength >= Style.dimFullStrength { full.append(entry) } else { bands[min(steps - 1, Int(strength * CGFloat(steps)))].append(entry) }
+            } else {
+                unkept.append(entry)
+            }
+        }
+        /// The shapes drawn as one layer at `alpha`, so what overlaps within it (a shape and its shadow) isn't dimmed twice, and
+        /// the layer is only as big as the shapes are.
+        func layer(_ alpha: CGFloat, _ shapes: ArraySlice<Entry>) {
+            var extent = CGRect.null
+            for entry in shapes { extent = extent.union(entry.extent) }
+            let clip = extent.isNull || extent.isInfinite || !extent.origin.x.isFinite || !extent.origin.y.isFinite || !extent.width.isFinite || !extent.height.isFinite ? area : extent.insetBy(dx: -pad, dy: -pad).intersection(area)
+            guard !clip.isNull, !clip.isEmpty else { return }
+            context.saveGState()
+            context.clip(to: clip)
+            context.setAlpha(alpha)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            for entry in shapes { draw(entry.record) }
+            context.endTransparencyLayer()
+            context.restoreGState()
+        }
+        // Frames, in paint order, consecutive ones of one opacity in one layer.
+        var start = 0
+        while start < containers.count {
+            let alpha = containers[start].alpha
+            var end = start + 1
+            while end < containers.count, containers[end].alpha == alpha { end += 1 }
+            if let alpha { layer(alpha, containers[start..<end].map(\.entry)[...]) } else { for index in start..<end { draw(containers[index].entry.record) } }
+            start = end
+        }
+        if !unkept.isEmpty { layer(floor, unkept[...]) }
+        for band in bands.indices where !bands[band].isEmpty {
+            layer(floor + (1 - floor) * (CGFloat(band) + 0.5) / CGFloat(steps), bands[band][...])
+        }
+        for entry in full { draw(entry.record) }
+    }
+
     /// A fresh graphics state and an empty path (the current path isn't part of the graphics
     /// state), so nothing one plugin leaves behind reaches the next.
     private func drawIsolated(_ context: CGContext, _ draw: () -> Void) {
@@ -316,7 +396,7 @@ extension CanvasEditor {
                               around area: CGRect, skeletonPixel: CGFloat?) {
         for group in outlines.tinted {
             let outset = CGFloat(max(group.ring, 0)) * Style.tintedRingPitch
-            strokeOutlines(of: group.shapes, rects: [], in: group.color, width: Style.tintedIndicatorWidth, outset: outset, around: area,
+            strokeOutlines(of: group.shapes, rects: [], in: group.color, width: group.width ?? Style.tintedIndicatorWidth, outset: outset, around: area,
                            skeletonPixel: skeletonPixel, context: context, shapes: shapes, tinted: tinted)
         }
         let faint = outlines.tinted.isEmpty ? Style.faintIndicatorOpacity : Style.tintedFaintIndicatorOpacity
@@ -384,9 +464,11 @@ extension CanvasEditor {
         let area = area.insetBy(dx: -reach, dy: -reach)
         let skeletonOutlines = registry.skeletonOutlines, editing = editingShapeID, standIn = editingStandIn
         let strokedShapes = tinted == nil ? [:] : registry.strokedShapes
+        // Closed shapes' outlines share one path (`strokes`) and one fill (`rings`); open shapes' lines, and what covers a line
+        // drawn as wide as its kind says (for each width), each have a path of their own (`LinePaths`).
         let strokes = CGMutablePath(), rings = CGMutablePath()
-        // What covers a line drawn as wide as its kind says, for each width.
-        var covers: [CGFloat: CGMutablePath] = [:]
+        let lines = LinePaths()
+        var covers: [CGFloat: LinePaths] = [:]
         /// Adds the outline of a shape whose extent meets the area.
         func outline(_ id: ShapeID, _ entry: ShapeIndex.Entry) {
             let offset = drawingOffsets[id].map { CGPoint(x: $0.x / zoom, y: $0.y / zoom) } ?? .zero
@@ -400,14 +482,15 @@ extension CanvasEditor {
                     if geometry.isClosed {
                         Self.addRing(around: bounds.insetBy(dx: -shapeAway, dy: -shapeAway), line: line, to: rings)
                     } else {
-                        strokes.move(to: geometry.outline[0], transform: shift)
-                        strokes.addLine(to: geometry.outline[geometry.outline.count - 1], transform: shift)
+                        let path = lines.next()
+                        path.move(to: geometry.outline[0], transform: shift)
+                        path.addLine(to: geometry.outline[geometry.outline.count - 1], transform: shift)
                     }
                     return
                 }
                 if !skeletonOutlines.isEmpty, let record = shapes.storedDocument[id],
                    let own = skeletonOutlines[record.kind]?.erasedSkeletonIndicatorPath(of: record, in: shapes) {
-                    strokes.addPath(own, transform: shift)
+                    (geometry?.isClosed == false ? lines.next() : strokes).addPath(own, transform: shift)
                     return
                 }
                 if let geometry, let bounds {
@@ -416,8 +499,9 @@ extension CanvasEditor {
                     if geometry.isClosed, shapeAway > 0 || Self.isRect(geometry.outline, bounds: geometry.bounds) {
                         Self.addRing(around: bounds.insetBy(dx: -shapeAway, dy: -shapeAway), line: line, to: rings)
                     } else {
-                        strokes.addLines(between: geometry.outline, transform: shift)
-                        if geometry.isClosed { strokes.closeSubpath() }
+                        let path = geometry.isClosed ? strokes : lines.next()
+                        path.addLines(between: geometry.outline, transform: shift)
+                        if geometry.isClosed { path.closeSubpath() }
                     }
                     return
                 }
@@ -427,11 +511,12 @@ extension CanvasEditor {
                 if !strokedShapes.isEmpty, entry.geometry?.isClosed == false,
                    let lineWidth = strokedShapes[record.kind]?.erasedLineWidth(of: record, in: shapes) {
                     let coverWidth = max(line, lineWidth + Style.tintedCoverPad / zoom)
-                    let cover = covers[coverWidth] ?? CGMutablePath()
-                    cover.addPath(indicator, transform: shift)
-                    covers[coverWidth] = cover
+                    let own = covers[coverWidth] ?? LinePaths()
+                    own.next().addPath(indicator, transform: shift)
+                    covers[coverWidth] = own
                 } else {
-                    addOutline(of: indicator, geometry: entry.geometry, standingOff: shapeGap, to: strokes, transform: shift)
+                    addOutline(of: indicator, geometry: entry.geometry, standingOff: shapeGap,
+                               to: entry.geometry?.isClosed == false ? lines.next() : strokes, transform: shift)
                 }
             }
         }
@@ -468,12 +553,13 @@ extension CanvasEditor {
                 strokes.addRect(rect)
             }
         }
-        guard !strokes.isEmpty || !rings.isEmpty || !covers.isEmpty else { return }
+        guard !strokes.isEmpty || !rings.isEmpty || !lines.isEmpty || !covers.isEmpty else { return }
         context.saveGState()
         // A translucent color painted twice where a ring, a stroke and a cover meet would be darker
         // there: painted opaque into a layer, which takes the color's alpha as a whole.
         var ink = color.cgColor
-        let layered = ink.alpha < 1 && (rings.isEmpty ? 0 : 1) + (strokes.isEmpty ? 0 : 1) + (covers.isEmpty ? 0 : 1) > 1
+        let pathCount = (rings.isEmpty ? 0 : 1) + (strokes.isEmpty ? 0 : 1) + lines.paths.count + covers.values.reduce(0) { $0 + $1.paths.count }
+        let layered = ink.alpha < 1 && pathCount > 1
         if layered {
             context.setAlpha(ink.alpha)
             context.beginTransparencyLayer(auxiliaryInfo: nil)
@@ -484,19 +570,25 @@ extension CanvasEditor {
             context.setFillColor(ink)
             context.fillPath()
         }
-        if !strokes.isEmpty || !covers.isEmpty {
+        if !strokes.isEmpty || !lines.isEmpty || !covers.isEmpty {
             context.setStrokeColor(ink)
             context.setLineCap(.round)
             context.setLineJoin(.round)
+            context.setLineWidth(line)
             if !strokes.isEmpty {
                 context.addPath(strokes)
-                context.setLineWidth(line)
                 context.strokePath()
             }
-            for (coverWidth, cover) in covers {
-                context.addPath(cover)
-                context.setLineWidth(coverWidth)
+            for path in lines.paths {
+                context.addPath(path)
                 context.strokePath()
+            }
+            for (coverWidth, own) in covers {
+                context.setLineWidth(coverWidth)
+                for path in own.paths {
+                    context.addPath(path)
+                    context.strokePath()
+                }
             }
         }
         if layered { context.endTransparencyLayer() }
@@ -523,6 +615,23 @@ extension CanvasEditor {
         path.addLine(to: CGPoint(x: inner.maxX, y: inner.maxY))
         path.addLine(to: CGPoint(x: inner.maxX, y: inner.minY))
         path.closeSubpath()
+    }
+}
+
+/// The paths of open shapes' outlines (an arrow's line, or the cover of one), a path for each, stroked one after another. Core
+/// Graphics strokes one path of many round-capped lines by merging the strokes where they overlap, which goes super-linear where
+/// thousands cross (a hover's lit arrows, all in one path: +1.9 s a frame at 2,561 at 10% zoom, +58 s at 8,700); a stroke each costs
+/// a few microseconds, however many cross, and paints the same where none do.
+private final class LinePaths {
+    private(set) var paths: [CGMutablePath] = []
+
+    var isEmpty: Bool { paths.isEmpty }
+
+    /// A new path, for the next shape.
+    func next() -> CGMutablePath {
+        let path = CGMutablePath()
+        paths.append(path)
+        return path
     }
 }
 

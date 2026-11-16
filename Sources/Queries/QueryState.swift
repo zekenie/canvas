@@ -64,6 +64,8 @@ public final class QueryState {
     public private(set) var universeWalks = 0
     /// How many compounds started from their anchors' edges.
     public private(set) var seededFromAnchors = 0
+    /// How many steps reaches evaluated: one for each shape a reach stepped from.
+    public private(set) var reachSteps = 0
     #endif
 
     // MARK: Checking
@@ -244,10 +246,70 @@ public final class QueryState {
                 formats.formUnion(query.plan.uses.textFormats)
                 if !views.contains(query.request.edges) { views.append(query.request.edges) }
             }
+            // A walk that starts at a stand-in takes its first step in the literal view too (`Evaluation.reach`).
+            if views.contains(.resolved), !views.contains(.literal) { views.append(.literal) }
             let batch = asked
             do throws(QueryError) {
                 let performed = try await perform(words: words, formats: formats, edges: views) { (evaluation: Evaluation) async throws(QueryError) -> [Result<QueryMatches, QueryError>] in
                     try await evaluation.admitted(batch)
+                }
+                for (query, answer) in zip(asked, performed.answer) { results[query.index] = answer }
+            } catch {
+                for query in asked { results[query.index] = .failure(error) }
+            }
+        }
+        return results.map { $0 ?? .failure(.boardClosed) }
+    }
+
+    /// What each request reaches: its step followed from its start until nothing new is found
+    /// (`QueryReachRequest`), each shape met with its hop, ways and share (`QueryReach`), and the
+    /// connections run on the way. As `matches` answers a batch: the file is taken up once, with one
+    /// snapshot of Topology in each view the requests ask for, and every request is walked in one
+    /// evaluation, off the main actor, that shares what it reads; a text is checked once however many
+    /// requests carry it. A request is refused alone as a query is (its texts, `unknown_id` for a
+    /// start no shape the query ranges over has, or for a shape its texts name); a cancellation, the
+    /// deadline or a closed file fails every request that wasn't refused.
+    public func reaches(_ requests: [QueryReachRequest]) async -> [Result<QueryReach, QueryError>] {
+        var results = [Result<QueryReach, QueryError>?](repeating: nil, count: requests.count)
+        var asked: [BatchedReach] = []
+        var plans: [String: Result<QueryPlan, QueryError>] = [:]
+        var present: Set<EdgeTypeID>?
+        func plan(_ text: String) -> Result<QueryPlan, QueryError> {
+            if let known = plans[text] { return known }
+            let made = checked(text, present: &present)
+            plans[text] = made
+            return made
+        }
+        for (index, request) in requests.enumerated() {
+            do throws(QueryError) {
+                let step = try plan(request.step).get()
+                if let refusal = step.unbound(by: .scope) { throw refusal }
+                var between: QueryPlan?
+                if let text = request.between {
+                    let made = try plan(text).get()
+                    if let refusal = made.unbound(by: .scope) { throw refusal }
+                    between = made
+                }
+                asked.append(BatchedReach(index: index, step: step, between: between, request: request))
+            } catch {
+                results[index] = .failure(error)
+            }
+        }
+        if !asked.isEmpty {
+            var words: Set<String> = [], formats: Set<String> = [], views: [EdgeView] = []
+            for query in asked {
+                for plan in [query.step, query.between].compactMap({ $0 }) {
+                    words.formUnion(plan.uses.pseudoClasses)
+                    formats.formUnion(plan.uses.textFormats)
+                }
+                if !views.contains(query.request.edges) { views.append(query.request.edges) }
+            }
+            // A walk that starts at a stand-in takes its first step in the literal view too (`Evaluation.reach`).
+            if views.contains(.resolved), !views.contains(.literal) { views.append(.literal) }
+            let batch = asked
+            do throws(QueryError) {
+                let performed = try await perform(words: words, formats: formats, edges: views) { (evaluation: Evaluation) async throws(QueryError) -> [Result<QueryReach, QueryError>] in
+                    try await evaluation.reaches(batch)
                 }
                 for (query, answer) in zip(asked, performed.answer) { results[query.index] = answer }
             } catch {
@@ -375,6 +437,7 @@ public final class QueryState {
         problemsAsked += facts.problemsAsked
         universeWalks += performed.stats.universeWalks
         seededFromAnchors += performed.stats.seeded
+        reachSteps += performed.stats.reachSteps
         #endif
         let timings = QueryTimings(main: .cpu(captured + facts.total), offMain: .cpu(performed.stats.offMain), slices: facts.slices,
                                    longestSlice: .cpu(facts.longest), costliestRecord: .cpu(facts.costliest))

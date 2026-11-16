@@ -14,6 +14,7 @@ import EmbeddingModels
 import Geometry
 import LanguageModels
 import Mentions
+import Neighbors
 import QueryTranslation
 import References
 import Selection
@@ -35,7 +36,7 @@ import Validation
         expectEqual(Set(names).count, names.count, "each once")
         let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: ScriptedLanguageModel()),
                                                           DecisionModelsPlugin(model: ScriptedDecisionModel()),
-                                                          EmbeddingModelsPlugin(model: ScriptedEmbeddingModel.hashing())])
+                                                          EmbeddingModelsPlugin(model: ScriptedEmbeddingModel.hashing()), NeighborsPlugin(reach: ReachSettings())])
         expectEqual(plugins.map { String(reflecting: type(of: $0)) }, names, "every line a plugin of that type, in the list's order")
         expectEqual(ShippedPlugins.plugins(model: ScriptedLanguageModel()).map(\.id), plugins.map(\.id), "which is what every test here is given")
         _ = try Registry(plugins: plugins)
@@ -56,7 +57,8 @@ import Validation
         let decisions = ScriptedDecisionModel()
         let embeddings = ScriptedEmbeddingModel.hashing()
         let plugins = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions),
-                                                          EmbeddingModelsPlugin(model: embeddings)])
+                                                          EmbeddingModelsPlugin(model: embeddings),
+                                                          NeighborsPlugin(reach: ReachSettings())])
         let editor = CanvasEditor(registry: try Registry(plugins: plugins), document: CanvasDocument(), scheduler: ManualScheduler())
         expect(editor.languageModel as? ScriptedLanguageModel === model)
         expect(editor.decisionModel as? ScriptedDecisionModel === decisions)
@@ -64,7 +66,7 @@ import Validation
         // Any other listed plugin can be handed over too, and takes its place; one the list hasn't is refused.
         let asked = QueryTranslationPlugin(prompt: "Ask.", referenceRule: "")
         let swapped = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions),
-                                                        EmbeddingModelsPlugin(model: embeddings), asked])
+                                                        EmbeddingModelsPlugin(model: embeddings), asked, NeighborsPlugin(reach: ReachSettings())])
         expectEqual(swapped.map(\.id), plugins.map(\.id))
         expectThrows(ShippedListError.notInList(["CanvasTesting.Contributor"])) {
             _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions),
@@ -268,7 +270,7 @@ import Validation
         query-commands       command line query · command line query-vocabulary
         decision-commands    command line decide
         query-slash          /query → the command bar's target
-        neighbors            service NeighborState · outlines
+        neighbors            service HoverLights · outlines · command show-whole-reach last in ViewMenu.Panels
         arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
         mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
         type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
