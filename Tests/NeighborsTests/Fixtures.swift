@@ -185,12 +185,18 @@ func namesPlugin() -> Contributor {
     }
 }
 
+/// Settings of the tests' own, so the machine's Reduce Motion never decides a test: the reach settles at once
+/// once the pointer rests, or, with `pulse`, comes in a hop at a time.
+@MainActor func reachSettings(pulse: Bool = false) -> ReachSettings {
+    ReachSettings(reducesMotion: { !pulse })
+}
+
 /// An editor of `file` with the keyboard and the selection (a hover), Topology, the fixtures and the
-/// engine, then Neighbors and a plugin that gives it `lights`.
+/// engine, then Neighbors (the reach, with `settings`) and a plugin that gives it `lights`.
 @MainActor func neighborHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true,
-                                  more: [any CanvasPlugin] = []) throws -> EditorHarness {
+                                  settings: ReachSettings = reachSettings(), more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
-                                NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(reach: ReachSettings()), lightsPlugin(lights)], file: file)
+                                NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(reach: settings), lightsPlugin(lights)], file: file)
 }
 
 /// The same editor with the detail panel, the lists of what's connected to a shape in it
@@ -201,7 +207,7 @@ func namesPlugin() -> Contributor {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
                                 NamingPlugin(), graphPlugin(), DetailPanelPlugin(), TableOfContentsPlugin(), memoRowsPlugin()]
                           + (queries ? [QueriesPlugin(), namesPlugin()] : [])
-                          + [NeighborsPlugin(reach: ReachSettings()), lightsPlugin(lights), NeighborDetailsPlugin()] + more, file: file)
+                          + [NeighborsPlugin(reach: reachSettings()), lightsPlugin(lights), NeighborDetailsPlugin()] + more, file: file)
 }
 
 
@@ -254,18 +260,27 @@ struct Lit: Equatable, CustomStringConvertible {
 }
 
 extension EditorHarness {
-    var neighbors: NeighborState { editor.neighbors! }
+    var reach: ReachState { editor.reach! }
 
-    /// Lets the look at the hover happen (a turn of the scheduler) and its answer land: the main run
-    /// loop turns until nothing is asked.
+    /// Lets the look at the hover happen (a turn of the scheduler) and both answers land: the main run
+    /// loop turns until nothing is asked. What shows then is the shape's hop 1, the pointer not yet at rest.
     func settle(file: StaticString = #fileID, line: UInt = #line) {
         wait(0)
-        spinRunLoop(until: { !neighbors.isAsking }, file: file, line: line)
+        spinRunLoop(until: { !reach.isAsking }, file: file, line: line)
     }
 
-    /// What the canvas outlines in the lights' colors now, in the order the core strokes the groups.
+    /// Lets the commits since stop for the reach's `settle` (100 ms), which asks again once they have, and the
+    /// answers land.
+    func settleCommits(file: StaticString = #fileID, line: UInt = #line) {
+        wait(100)
+        spinRunLoop(until: { !reach.isAsking }, file: file, line: line)
+    }
+
+    /// What the canvas outlines in the lights' own colors now, in the order the core strokes the groups: hop 1,
+    /// which is drawn at full strength, the light's color unmixed, however long the pointer has rested. What the
+    /// reach draws fainter, a hop further out, is `Ring`s (ReachTests').
     var lit: [Lit] {
-        editor.outlines.tinted.map { Lit(Light(color: $0.color)!, $0.ring, Set($0.shapes)) }
+        editor.outlines.tinted.compactMap { group in Light(color: group.color).map { Lit($0, group.ring, Set(group.shapes)) } }
     }
 
     /// What the canvas outlines faintly.

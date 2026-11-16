@@ -364,7 +364,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
 | Make text a kind draws findable with ⌘F, highlighted where it's drawn | `scope.findableTexts(_:…)` (Find) in a `forShapes` for the kinds a scope reaches, or `x.findableTexts(_:…)` for a kind's own: its texts and where each range is drawn | [Find](#find) |
 | Keep the shapes some queries match (what a plugin that stores answers asks, many at once, ids only), or check a query's titles before keeping it | `await editor.queries?.matches([QueryMatchRequest(text, edges: .recorded, limit: 50) { admit($0) }])`, `checkNames(plan)` | [Many at once](#many-at-once-edge-views-and-waiting) |
-| Outline what's connected to the hovered shape, at a glance, in a color for each way (a light: a title, a color and a query), on the canvas and in the minimap | `NeighborsPlugin()`, and a light from each plugin that owns a kind of edge, `registrar.neighborLight(_:color:query:between:caption:)`: Neighbors asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
+| Outline what the hovered shape leads to, a hop at a time and fading with each hop, in a color for each way (a light: a title, a color and a query), on the canvas and in the minimap | `NeighborsPlugin()`, and a light from each plugin that owns a kind of edge, `registrar.neighborLight(_:color:query:between:caption:)`: Neighbors asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
 | List what's connected to the selected shape, by the same ways, in its panel (each list folding and searchable, a light's caption under its rows), with what the shape is inside and what it holds | `NeighborDetailsPlugin()`: the Connections tab (`NeighborsTab`), on every shape, always; `NeighborList` (`editor.neighborList`) | [Neighbors](#neighbors) |
 | Know which shape the pointer is on where the canvas doesn't show it (a row of another board's shapes), outline the card that holds it, or say it from a view of your own | `editor.hoveredElsewhere`, observed and settable (Selection's; the table of contents' rows set it) | [Selection](#selection) |
 | Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A plugin value of its own in the module that owns the meaning, which imports Queries: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
@@ -703,10 +703,7 @@ plugin after the ones whose points it fills.
   `plugins(pasteboard:model:decisionModel:embeddingModel:)`, `registry(…)` and
   `makeEditor(document:scheduler:pasteboard:model:decisionModel:embeddingModel:)`, the list with a clipboard on the test's
   pasteboard, the test's model, whose `model` has no default, a `ScriptedDecisionModel` unless the
-  test passes a decision model of its own and a hashing `ScriptedEmbeddingModel` unless it passes an embedding model, and the
-  hover's Show Whole Reach setting of the test's own (`reach:` on `plugins` and `registry`, `ShippedPlugins.reach`: off, kept
-  nowhere, so the app's user defaults are never read; a test that makes `NeighborsPlugin` by hand passes
-  `NeighborsPlugin(reach: ReachSettings())`). A test that passes no pasteboard
+  test passes a decision model of its own and a hashing `ScriptedEmbeddingModel` unless it passes an embedding model, and the hover's reach settings of the test's own (`reach:` on `plugins` and `registry`, `ShippedPlugins.reach`: the pulse on whatever the system's Reduce Motion says, so no test reads it; a test that makes `NeighborsPlugin` by hand passes `NeighborsPlugin(reach: ReachSettings(reducesMotion: { false }))`). A test that passes no pasteboard
   gets its own (`ShippedPlugins.pasteboard`: made when the test first asks, shared by its editors,
   released as it ends, through TestKit's `afterThisTest`), never the user's.
 
@@ -11316,20 +11313,22 @@ drop notes' rows on a frame's, a subboard's and each other's.
 
 Neighbors ([`Sources/Neighbors`](../Sources/Neighbors)) shows what's connected to a shape at a glance,
 which in a dense graph is the point: hover a shape, on the canvas or by its row in the [table of
-contents](#the-table-of-contents), and what it points to is outlined; hold ⌥ and what points to it
-is, and hold ⌃⌥ and what it mentions and what mentions it are, each in a color that says how, and the
-arrows between are colored too. The minimap fills the same shapes in the same colors,
-so what's connected off screen shows there (the rest of it dims while anything is lit, and a shape
-in two lights shows both, one inside the other), and a connected shape on another board (inside a
-subboard) lights the card that holds it. Select a shape and its panel's Connections tab lists what's
-connected to it by the same ways, then what it's inside and what it holds. It's an engine: what an
-edge's owner shows its edges on. It builds on Queries (which finds the shapes), Selection (the hover,
-and the one a list sets for a shape the canvas doesn't show), Topology (when a shape's edges change),
-the file (where a shape on another board is drawn), the core's [tinted outlines](#outlines), and, for
-the tab, [the detail panel](#the-detail-panel), [FuzzyMatching](#fuzzymatching) (its search) and the
-[table of contents](#the-table-of-contents) (what a listed shape with no title is called), and
-it knows no kind, edge type or concern: what counts as connected is a **light**, a title, a color,
-the keys held that show it and a query, which the plugin that owns the edges contributes to its point
+contents](#the-table-of-contents), and everything a light's step leads to from it is outlined: what it
+points to, and on from there, so a path of arrows lights as far as it goes; hold ⌥ and what points to
+it is, and hold ⌃⌥ and what it mentions and what mentions it are, each in a color that says how, and the
+arrows between are colored too. Each shape fades with its distance; once the pointer rests the rest of
+the board dims and the reach comes in a hop at a time. The minimap fills the same shapes in the same
+colors, so what's connected off screen shows there (the rest of it dims while anything is lit, and a
+shape in two lights shows both, one inside the other), and a connected shape on another board (inside a
+subboard) lights the card that holds it. Select a shape and its panel's Connections tab lists what's one
+step away by the same ways, then what it's inside and what it holds. It's an engine: what an edge's
+owner shows its edges on. It builds on Queries (which finds the shapes), Selection (the hover, and the
+one a list sets for a shape the canvas doesn't show), Topology (when a shape's edges change), the file
+(where a shape on another board is drawn), the core's [tinted outlines](#outlines), and, for the tab,
+[the detail panel](#the-detail-panel), [FuzzyMatching](#fuzzymatching) (its search) and the
+[table of contents](#the-table-of-contents) (what a listed shape with no title is called), and it knows
+no kind, edge type or concern: what counts as connected is a **light**, a title, a color, the keys held
+that show it and a query, which the plugin that owns the edges contributes to its point
 (`registrar.neighborLight`). Arrows' two are Arrows' own (`ArrowLightsPlugin`), mentions' two are
 Mentions' (`MentionLightsPlugin`) and the two for what is of a type are Types' (`TypeLightsPlugin`),
 each a plugin value of its own, so a list without Neighbors leaves them out.
@@ -11398,19 +11397,15 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
 - **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the titled,
   colored question, and `NeighborLight.color(light:dark:)`, a color given as one sRGB value for each
   appearance; its point `NeighborLights`, filled with `registrar.neighborLight` and read as
-  `registry.neighborLights`; and `HoverLights`, the service, which holds the way a hover lights:
-  `NeighborState`, one hop, or, with View › Show Whole Reach on, `ReachState`, below; the lists have
-  their own, below) registers the service (`editor.hoverLights`; `editor.neighbors` is its
-  `NeighborState`, nil while the whole reach shows, `editor.reach` its `ReachState`, nil while it
-  doesn't), which takes the lights from the registry, `registrar.outlines { $0.hoverLights?.outlines
-  ?? Outlines() }`, and the command `.showWholeReach`; the report's line is `neighbors service
-  HoverLights · outlines · command show-whole-reach last in ViewMenu.Panels`, and each face's
-  `neighbor light · neighbor light` and its key hint. It's after the query plugins in the shipped
-  list, and the lights' plugins are after it, and the tab's after theirs. It lights nothing without `QueriesPlugin()` and
-  `TopologyPlugin()` (a hover asks nothing then), has nothing to hover without `SelectionPlugin()`,
-  and nothing to light without a light; none of them is refused, since it
-  contributes to none of their points. A light in a list without Neighbors is refused, as any
-  contribution whose point's owner isn't installed is.
+  `registry.neighborLights`) registers the service that is the hover, `ReachState` (`editor.reach`, nil
+  without it), made with the lights and the settings (`ReachSettings.app`, or a caller's through
+  `NeighborsPlugin(reach:)`), and `registrar.outlines { $0.reach?.outlines ?? Outlines() }`; the report's
+  line is `neighbors service ReachState · outlines`, and each face's `neighbor light · neighbor light` and
+  its key hint. It's after the query plugins in the shipped list, and the lights' plugins are after it,
+  and the tab's after theirs. It lights nothing without `QueriesPlugin()` and `TopologyPlugin()` (a hover
+  asks nothing then), has nothing to hover without `SelectionPlugin()`, and nothing to light without a
+  light; none of them is refused, since it contributes to none of their points. A light in a list
+  without Neighbors is refused, as any contribution whose point's owner isn't installed is.
 - **A light is a title, a color, its keys and a question.** `registrar.neighborLight(_:color:keys:query:between:caption:)`
   contributes a `NeighborLight` to the `NeighborLights` point (owner `neighbors`): `title` is what the
   panel heads the light's list with, `keys` the keys held while hovering that show it (none by
@@ -11444,7 +11439,7 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   key no light names (⇧ for a click that adds to the selection, ⌘) changes nothing; ⌃ alone shows
   none. The keys are watched with the subject, in the same tracking. Every light is still asked
   once a hover, whatever is held, so a key pressed or let go only works out again what shows from
-  the answer there is: no query, and the switch is at once. A light owner says its keys beside its
+  the answer there is: no query, and the change is at once. A light owner says its keys beside its
   lights with `registrar.keyHint(…, while: .pointer)`, so the Keyboard Shortcuts window lists them.
 - **Asking.** When the subject changes to a shape, any ask still running is let go of (the engine
   looks every 256 shapes, so it stops), and one batch asks the engine
@@ -11454,22 +11449,21 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   and each text checked once. Each light keeps the union of its views. The answer lands a frame or
   so later, and only for the shape asked about (every change of the subject lets go of the ask); a
   request the engine refuses (a shape gone since) lights nothing, and the others still do. From one shape to the
-  next, the lights of the first stay until the second's land; when the subject goes, they go at
-  once. Without the engine, or Topology, or any light, nothing is asked and nothing is lit.
+  next, the lights of the first stay until the second's land; when the subject goes, they go after
+  the release (`ReachStyle.release`, 150 ms). A second batch asks each light's reach (`queries.reaches`, one request a light, its step repeated from the shape: The reach, below), which is what the rest and the pulse show. Without the engine, or Topology, or any light, nothing is asked and nothing is lit.
 - **Asking again.** `topology.follow` tells it when a change to the edges touches the subject or a
-  shape the last answer matched (a commit's, so an arrow drawn from the hovered shape lights as it's
-  drawn, an undo, a file read afresh; or a provide's, a dynamic reference's answer arriving), and it
+  shape the last answer matched (a commit's, so an arrow drawn from the hovered shape lights once commits
+  have settled (`ReachStyle.settle`, 100 ms), an undo, a file read afresh; or a provide's, a dynamic reference's answer arriving), and it
   asks again, which lets go of an ask under way. A change lists the ends of the edges it changed,
   never the arrow that carries one, so an arrow hovered is asked about again by where it was matched:
   the end it's re-aimed away from, or the pill a provide re-points at its end. A commit asks again
   too when it names the subject other than by moving it (an arrow bound at an end it had none at,
   the undo of a re-aim: the commit changed the arrow's record, and no end of its edge was matched
-  before) or adds a shape the answer didn't match: a mention outlives the shape it names, so one of a
+  before) or adds a shape: a mention outlives the shape it names, so one of a
   shape deleted before the hover left its edge as it was, and the shape back changes no edge, but is
   what the answer left out (the lights are queries; a new shape may be what one finds). A commit
   whose change to the edges asked already asks no more. A commit that changes the edges of shapes
-  the answer didn't match, or only moves shapes, asks nothing. Another board shown clears it: the
-  hover is let go of with the switch.
+  the answer didn't match, or only moves shapes, asks nothing. Another board shown clears it: the hover is let go of at the board switch.
 - **Both views.** A reference is a [stand-in](#stand-ins-forwarding): an arrow into its pill is, in
   the resolved view, an arrow into the shape it stands for, and in the literal view one into the
   pill. Asking each light in both means the pill's own arrows count and so does what it stands for.
@@ -11478,10 +11472,10 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   the pill, and the arrows; hovering the pill lights what it stands for, and, as drawn, what has an
   arrow into it. In a file where nothing stands in the two views are the same edges, and only the
   resolved view is asked.
-- **What shows**, worked out when an answer lands and again by a commit that names a shape matched
-  or one a match is drawn as (other than by moving it), reaches another board or replaces the
-  document, never per frame; any other commit, a drag's every event or a keystroke in an unrelated
-  note, costs a look at its change set and a few set intersections. A match on the board shown is
+- **What shows**, worked out when an answer lands and at each step of the pulse, never per frame; a
+  commit that names a shape matched or one a match is drawn as (other than by moving it), reaches
+  another board or replaces the document asks again instead (`documentDidChange`), and any other commit,
+  a drag's every event or a keystroke in an unrelated note, costs a look at its change set. A match on the board shown is
   outlined itself. A match on another board is outlined as the shape on the board shown that holds
   it (`file.shape(on:holding:)`: a subboard's card, the pocket it's in, however many boards down),
   once however many of its shapes match, with one walk up the boards for each board the matches are
@@ -11504,19 +11498,16 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   again when it ends. What's kept is one `Outlines` the core is handed as it is, and the canvas is asked
   for a frame only when a new one differs from the old: an answer that lights nothing, after one that
   lit nothing, draws nothing.
-- **What it costs.** A hover is one batch: the main actor reads and resolves its four queries (eight
-  where a shape stands in; some 0.02 ms each) and takes up the file in one turn, O(1); the answer is
-  off the main actor (some 10 ms for a shape with 10,000 neighbors); the landing joins the views,
-  keeps the set of what matched and places each match, O(what's lit and the boards it's on), a hash
-  lookup or two each (some 0.8 ms for 10,000, and 12 for 100,000: every match is lit, none is cut).
-  It keeps nothing a commit must follow but what it matched and where that is drawn. A frame costs
-  handing the core what's kept; the core strokes only what's in view, and looks at the rest's kept
-  extents (10,000 lit in view at 10% add some 7 ms to a frame, as ⌘A's rings do; all out of view,
-  some 0.35 ms), and the minimap fills them (some 4 ms for 10,000); what's lit grows these as it
-  grows (99,999 lit: some 24 ms in view, 15 out of view, 60 in the minimap, reported and not held).
-  `./build.sh bench` holds them at 10,000.
-- **The whole reach** (View › Show Whole Reach, `CanvasCommand.showWholeReach`, off until it's
-  turned on; its item last in View's panels, after Show Minimap, checked while on). A hover lights
+- **What it costs.** The main actor's part of a hover is reading the subject, building the two batches and
+  swapping each landing in; the engine's walks and the landings run off it. On a 10,000-shape board a
+  hover costs the main actor some 0.35 ms for a few dozen reached and some 0.5 ms for a hub with all of
+  them lit; the engine's walk is some 50 ms at 10,000 reached and 100 at 20,000, off the main actor; a
+  pulse step is some 0.002 ms; a frame with the reach settled adds the dim's own cost, which grows with
+  the populated strength steps, not with what's lit. `./build.sh bench` holds them (`ReachBenchmarks`,
+  [benchmarks](benchmarks.md)). It keeps nothing a commit must follow but what it matched and where that is
+  drawn. A frame costs handing the core what's kept; the core strokes only what's in view.
+- **The reach** (the hover: there is no switch to it and no user default, and the one-step hover it
+  replaced is gone). A hover lights
   everything a light's step leads to from the shape and on from there: downstream on a plain hover,
   upstream with ⌥, and the same for mentions' and types' lights, Neighbors knowing no edge type. Each
   shape fades with its distance and how the reach divides: hop 1 is at strength 1, and past it each
@@ -11533,12 +11524,10 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   after the rest; the dim and the lights go 150 ms after nothing is hovered, and a drag hides them. A
   pill the reach goes into lights at what it stands for (the engine's answer has it), and a shape on
   another board lights its card at the strongest of what it holds. The panel's lists are one hop as
-  ever. `ReachSettings` is the switch (`ReachSettings.app`, in the app's user defaults; a test's own
-  through `NeighborsPlugin(reach:)`) and Reduce Motion (`reducesMotion`, the system's unless a test
-  says), and every editor made with it follows a change at once: `HoverLights` makes the other way's
-  state in place of the one it had, so the one not shown asks nothing and hands the core nothing.
-  `ReachState` asks, for a new shape, the lights' one hop (`light.lit`, in each view that can differ,
-  as `NeighborState` does), which shows first, and each light's reach (`queries.reaches`, one request
+  ever. `ReachSettings` holds Reduce Motion alone (`reducesMotion`, the system's unless a test says):
+  `ReachSettings.app` is the app's, and a test's own goes through `NeighborsPlugin(reach:)`.
+  `ReachState` asks, for a new shape, the lights' one hop (`light.lit`, in each view that can differ),
+  which shows first, and each light's reach (`queries.reaches`, one request
   a light, its step and between given `:scope`, [Queries](#queries)); each answer is landed off the
   main actor from the file as it was (`ReachLanding`: where each match is drawn, its rings in groups
   by tier, ring step and ring, made once, and the dim's focus for each step of the pulse), so a step of
@@ -11618,14 +11607,13 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   two and three lights in rings, the subject never, a pocket's card for what's on its board and two
   boards down, nothing from a board above, a shape hovered elsewhere (its card faint, never lit), the
   canvas's hover over it, the answer before staying until the next lands, a changed hover letting go
-  of the ask (the engine takes up the file once), a switch clearing it, nothing during a session, and
+  of the ask (the engine takes up the file once), another board clearing it, nothing during a session, and
   nothing without the engine; and what keeps it right: asking again when the subject's edges change
   or an edge of what's lit does (a commit, an undo, a provide), when an arrow hovered is re-aimed,
   let go of and bound again or has its end deleted, when a pill is re-pointed at its end, and when a
   shape no answer matched comes (a deleted mention's shape back); not for others' edges or a move;
-  working out what shows again, asking nothing, only for a commit that names what's lit or reaches
-  another board (a lit shape moved down a board and back, deleted and undone), never for an unrelated
-  edit, a restack or a drag; and the canvas drawing again only when what's outlined changed.
+  asking again for a commit that names what's lit or reaches another board (a lit shape moved down a
+  board and back, deleted and undone), never for an unrelated edit, a restack or a drag; and the canvas drawing again only when what's outlined changed.
   CompositionTests' NeighborsShippedTests hold the four shipped lights as the registry has them
   (arrows' from Arrows, then mentions' from Mentions; none in a list without the three plugins,
   and a list with a light and no Neighbors refused; each face's two queries, and its refusal without
@@ -11633,8 +11621,8 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   the shipped table of
   contents' rows, a reference and a subboard, an arrow re-aimed while hovered, the colors (each
   appearance's value, 3:1 against its canvas), a lit arrow covered, and the rings drawn at 4 and 8
-  points in the app's own editor. BenchmarkTests' NeighborBenchmarks hold a hover on a shape
-  with 10,000 neighbors and with ten, and the frames and the minimap with them lit.
+  points in the app's own editor. BenchmarkTests' NeighborBenchmarks hold a hover on a type with 9,999
+  instances and on one of them, and the frames out of view and the minimap with them lit.
   NeighborsTests' `listTests` (`ListTests.swift`) hold the lists over the hover's harness with the panel
   and the tab added, on a small town of notes, memos that quote, a pocket and corrals, driven with
   `watch` as a list appearing does and read with `settleList` (the `ManualScheduler`'s 100 ms, then the
@@ -11650,17 +11638,16 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   kind and its refusal without the panel; and, in a `DetailPanelView` in an unshown window, a list
   watched as it appears, a search field from twenty shapes, and 3,000 shapes all there with under 300
   rows drawn. DetailPanelTests' `listRowTests` hold `DetailGroupHeader` and `DetailSearchField`.
-  NeighborsTests' `reachTests` (`ReachTests.swift`, over `reachHarness`, the hover's harness with
-  `NeighborsPlugin(reach:)`, read as `rings`, each group's light, ring and strength from its color and
-  width, and `focus`, the dim's) hold the whole reach: off, one hop as ever; a chain's strengths and
+  NeighborsTests' `reachTests` (`ReachTests.swift`, the suite "Neighbors: the whole reach", over
+  `neighborHarness(file, lights:, settings:)`, read as `rings`, each group's light, ring and strength from its color and
+  width, and `focus`, the dim's) hold the whole reach: a chain's strengths and
   widths, its colors in both appearances, a fan's split shares and a diamond's summed, a ring under 4%
   left out, travelled, spared and other arrows, a card at the strongest of what it holds and the card
   of a shape hovered elsewhere, a pill gone into and one that isn't, hop 1 at once and the rest after
   the rest, a sweep keeping the dim, the release, the pulse's steps, Reduce Motion, ⌥ switching pole,
-  two lights' rings, commits coalesced, every landing off the main actor, a drag, a board switch, the
-  switch followed by every editor, the settings kept in defaults and the command. CompositionTests'
+  two lights' rings, commits coalesced, every landing off the main actor, a drag, a board switch, an editor let go while its answers are on their way. CompositionTests'
   `reachShippedTests` hold the shipped lights reaching (arrows both ways, a pill, mentions and a
-  subboard's card, a type's instances) and View › Show Whole Reach in a window, and
+  subboard's card, a type's instances) and
   `connectionsShippedTests` the Connections list's key walk lighting a row's reach.
 
 ## References
@@ -16122,7 +16109,7 @@ drawing-queries      query word :drawn-by("…") members key, in · query word :
 query-commands       command line query · command line query-vocabulary
 decision-commands    command line decide
 query-slash          /query → the command bar's target
-neighbors            service HoverLights · outlines · command show-whole-reach last in ViewMenu.Panels
+neighbors            service ReachState · outlines
 arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
 mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
 type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes

@@ -348,8 +348,8 @@ let package = Package(
         .target(name: "Drawings", dependencies: ["Canvas", "CanvasRPC", "Draw", "Queries"]),                          // layer: platform
         .target(name: "QueryTranslation", dependencies: ["Canvas", "DetailPanel", "LanguageModels", "Queries", "QueryLanguage", "Selection", "SlashCommands"]), // layer: platform
         // Neighbors: an engine an edge's owner shows its edges on. Hovering a shape, on the canvas or by its row in the table of contents
-        // (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a color for each
-        // way, through the core's tinted outlines, and a shape's panel lists them by the same ways, then what it's inside and what it holds
+        // (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines what its lights lead to, a hop at a time (the reach, `ReachState`), in a color for each
+        // way, through the core's tinted outlines, and a shape's panel lists what is one step away by the same ways, then what it's inside and what it holds
         // (a tab of the detail panel's, its lists searched with FuzzyMatching's matcher, a shape with no title called what the table of
         // contents calls it). What counts as connected is a light, a title, a color
         // and a query, which the plugin that owns the edges contributes (Arrows' arrows, Mentions' mentions) and Queries answers; the file

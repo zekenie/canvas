@@ -5,19 +5,39 @@ import Queries
 import Selection
 import Topology
 
-/// What's lit for the shape hovered while View › Show Whole Reach is on, one per editor, in
-/// `NeighborState`'s place: everything a light's step leads to from the shape, and on from there, each
-/// shape fading with its distance and how the reach divides, and the rest of the board dimmed.
+/// What's lit for the shape hovered, one per editor: everything a light's step leads to from the shape,
+/// and on from there, each shape fading with its distance and how the reach divides, and the rest of the
+/// board dimmed. It is the service the plugin registers (`editor.reach`): it follows the hover, asks the
+/// engine and hands the core the outlines (`outlines`). It never writes the document, and keeps
+/// nothing a commit must follow but what it matched and where that is drawn.
 ///
-/// **The subject and the keys** are `NeighborState`'s: `editor.hovered`, else `hoveredElsewhere`,
-/// watched with the keys held of those some light names, a look a turn after either changes.
+/// **The subject and the keys.** The shape hovered is the subject: what the pointer is over on the
+/// canvas (`editor.hovered`, which the select tool and any plugin that shows shapes set), else the
+/// shape whose row it's on when the canvas doesn't show it (`editor.hoveredElsewhere`, a row of a
+/// board nested under its owner's). Both are watched with the keys held (`editor.modifiersHeld`) of
+/// those some light names, a look a turn after either changes. The lights shown are those whose keys
+/// are the ones held of the keys some light names: a plain hover shows the lights with none, ⌥ those
+/// with ⌥. Every light is asked whatever is held, so a key pressed or let go only works out again what
+/// shows from the answers there are, asking nothing.
 ///
-/// **Asking.** A new subject asks twice at once, each in one batch: the lights' one hop as
-/// `NeighborState` asks it (`light.lit`, in each view that can differ), which shows as hop 1 as soon as
-/// it lands, and each light's reach (`queries.reaches`, its step and between given `:scope`, the
-/// resolved view, which the engine reads both views through), whose walk takes longer and is what the
-/// rest and the pulse show. Either answer is landed off the main actor (`ReachLanding`) from the file
-/// as it is, and the main actor swaps the landing in.
+/// **Asking.** A new subject asks twice at once, each in one batch: the lights' one hop
+/// (`light.lit`, in the edge view `.resolved` and, where some shape stands in for others, in
+/// `.literal` too: a reference's own arrows count, and so does what it stands for, since the resolved
+/// view reads an arrow into a pill as one into the shape and the literal view as drawn; with no
+/// stand-in the views are the same edges, so one is asked, and each light keeps the union of its
+/// views), which shows as hop 1 as soon as it lands, and each light's reach (`queries.reaches`, its
+/// step and between given `:scope`, the resolved view, which the engine reads both views through),
+/// whose walk takes longer and is what the rest and the pulse show. A new ask lets go of any still
+/// running. Either answer is landed off the main actor (`ReachLanding`) from the file as it is, and the
+/// main actor swaps the landing in; until it lands what shows stays as it was, and a request the engine
+/// refuses (a shape gone, say) lights nothing, a reach that failed showing the one hop in its place.
+///
+/// **Where it is drawn.** A matched shape on the board shown is outlined itself; one on another board
+/// is outlined as the shape on the board shown that holds it (`file.shape(on:holding:)`: a subboard's
+/// card, at any depth), and one on a board above is left out. The subject is never lit, nor, where the
+/// subject isn't on the board shown, its own card, which Selection outlines faintly instead (it's where
+/// the subject is). A shape matched by several lights shown is in each, in a ring of its own for each:
+/// its first light's is the first ring, the next light's the next (`ReachLanding`).
 ///
 /// **The timing.** Each new subject shows its hop 1 at once; once the pointer has rested on it
 /// (`ReachStyle.rest`) the board dims and the rest of its reach comes in a hop at a time (the pulse,
@@ -26,10 +46,15 @@ import Topology
 /// pulse after the rest. With nothing hovered the dim and the lights stay `ReachStyle.release`, then
 /// go; the shape left, hovered again meanwhile, keeps what it showed. A drag hides it all.
 ///
-/// **Asking again.** A change to the edges that touches the shape or a shape a light matched, a
-/// commit that names the shape (other than by moving it), adds a shape, or names a shape matched or
-/// drawn as a card, reaches another board or replaces the document, asks again once commits have
-/// stopped for `ReachStyle.settle`, keeping the pulse where it is. Another board shown lets go.
+/// **Asking again.** A change to the edges that touches the shape or a shape a light matched (a
+/// commit's or a provide's: `topology.follow`; an arrow hovered is an edge, which a change lists by
+/// its ends, never by the arrow), a commit that names the shape (other than by moving it: an arrow
+/// whose record changed, an end it had none at bound), adds a shape (a name outlives its shape, so a
+/// mention of one deleted before the hover lights it when it comes back, and no edge changed), or
+/// names a shape matched or drawn as a card, reaches another board or replaces the document, asks
+/// again once commits have stopped for `ReachStyle.settle`, keeping the pulse where it is. Another
+/// board shown lets go. What shows is worked out when an answer lands, the pulse steps or the keys
+/// change, never per frame, and a frame costs handing the core what's kept.
 @MainActor
 public final class ReachState {
     private unowned let editor: CanvasEditor
@@ -78,12 +103,18 @@ public final class ReachState {
     #if DEBUG
     /// How many times the engine was asked (debug builds): each ask is a one-hop batch and a reach batch.
     public private(set) var asked = 0
+    /// How many one-hop queries the asks have batched (debug builds): each light, in each edge view
+    /// that can differ, so one for each with no stand-in in the file and two with one.
+    public private(set) var requested = 0
     /// How many reach requests the asks batched (debug builds): one a light.
     public private(set) var reachRequested = 0
     /// How many answers were landed (debug builds), each off the main actor.
     public private(set) var landed = 0
     /// How many of them were worked out on the main thread (debug builds): none should be.
     public private(set) var landedOnMain = 0
+    /// How many times what shows was worked out into new outlines (debug builds): a drag's every
+    /// event, which only moves shapes, works out nothing.
+    public private(set) var composed = 0
     #endif
 
     private struct Composed: Equatable {
@@ -274,6 +305,7 @@ public final class ReachState {
         }
         #if DEBUG
         asked += 1
+        requested += hops.count
         reachRequested += reaches.count
         #endif
         let count = views.count, keys = lightKeys
@@ -344,6 +376,12 @@ public final class ReachState {
     /// Every light's reach failed: the one hop stays, and no pulse runs.
     private func reachFailed() {
         reaching = nil
+        // An older reach of the shape shown is older than the edges now: it goes, and the one hop shows.
+        if reach != nil {
+            reach = nil
+            composedFrom = nil
+            compose()
+        }
         askAgainIfEdgesChanged()
     }
 
@@ -396,6 +434,9 @@ public final class ReachState {
         let from = Composed(landing: landings, keys: keys, step: step, dims: dims)
         guard from != composedFrom else { return }
         composedFrom = from
+        #if DEBUG
+        composed += 1
+        #endif
         let lit = landing.shown[keys]
         var tinted: [TintedOutlines] = []
         let last = ReachLanding.lastTier(atStep: step), arriving = ReachLanding.arriving(atStep: step)
@@ -420,6 +461,7 @@ public final class ReachState {
     }
 
     private func show(_ next: Outlines) {
+        guard next != shown else { return }
         shown = next
         editor.setNeedsDisplay()
     }
@@ -468,12 +510,22 @@ public final class ReachState {
             || !changes.changed.intersection(shapes).isSubset(of: changes.moved)
     }
 
-    func documentDidChange(_ changes: ChangeSet) {
+}
+
+extension ReachState: EditorService {
+    /// A commit may call for a new answer (`needsAnswer`): asked again once commits have stopped, so a
+    /// run of them is one ask. It works out nothing itself; what shows is worked out when the answer
+    /// lands. Any other commit, a drag's every event and a keystroke in a note among them, costs a look
+    /// at its change set.
+    public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         guard let showing, needsAnswer(changes, about: showing) else { return }
         askSoon()
     }
 
-    func boardDidChange() {
+    /// Another board: what was lit was for the board left. The hover is let go of with the switch, and
+    /// the look it brings finds nothing. Keeps nothing per board, so the switch's change set is never
+    /// worked out.
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         subject = nil
         stop()
     }

@@ -45,10 +45,13 @@ struct ReachFound: Sendable, Equatable {
 
 /// Where a reach is drawn on the board shown, worked out once an answer lands, off the main actor,
 /// from the file as it was then: each match as itself on the board shown, else as the shape there
-/// that holds it (a subboard's card, at the strongest of what it holds), none on a board above; each
-/// light's in rings as the lights shown together take them; in groups by tier (the hop, the fourth
-/// and on together), ring step and ring, made once, so a step of the pulse only picks groups; and the
-/// dim's focus for each step of the pulse.
+/// that holds it (`file.shape(on:holding:)`: a subboard's card, at any depth, at the strongest of what
+/// it holds), none on a board above. The subject is never lit, nor, where the subject isn't on the
+/// board shown, its own card, which Selection outlines faintly instead (it's where the subject is).
+/// Each light's shapes are in rings as the lights shown together take them: a shape matched by
+/// several is in a ring of its own for each, its first light's the first ring, the next light's the
+/// next. In groups by tier (the hop, the fourth and on together), ring step and ring, made once, so a
+/// step of the pulse only picks groups; and the dim's focus for each step of the pulse.
 struct ReachLanding: Sendable {
     /// The shape it's for.
     let subject: ShapeID

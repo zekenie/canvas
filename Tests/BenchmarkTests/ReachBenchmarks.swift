@@ -13,21 +13,21 @@ import ShippedTesting
 import StickyNotes
 import TestKit
 
-// The whole reach's budgets (View › Show Whole Reach; [neighbors](neighbors.md)): what a hover costs the main actor to its hop-1 lights and to
+// The whole reach's budgets (the only hover; [neighbors](neighbors.md)): what a hover costs the main actor to its hop-1 lights and to
 // the reach landing, on a 10,000-shape board for a shape with a few dozen reached and for a hub; the engine's walk off the main actor
 // (`queries.reaches`, with the arrows between); the landing's main-actor cost with 20,000 and 200,000 lit
 // (`BENCH_SIZES=20000,200000 ./build.sh bench`, which holds no budget, the figures are said on the constants); a pulse step; and a frame of the canvas with the
 // dim, at 100% and at 10%, the reach settled in its three fade steps, over the same frame unhovered, and one drawn while the camera moves, which
 // leaves the dim out (`Style.dimCameraRest`), over the same. The lights are the shipped ones
-// (arrows' Points To, its step the arrow's own: the reach follows arrows from note to note), the switch on through settings of the
-// benchmark's own, never the app's defaults. `./build.sh bench` holds them; `./test.sh` runs them small, in debug, and only reports.
+// (arrows' Points To, its step the arrow's own: the reach follows arrows from note to note), with settings of the benchmark's own
+// (the reduced motion each test wants), never the app's. `./build.sh bench` holds them; `./test.sh` runs them small, in debug, and only reports.
 
 extension Budget {
     /// A hover's main-actor time to the hop-1 lights landing (the one-hop answer taken up, its landing, the rings) on a 10,000-shape board,
     /// for a shape with a few dozen reached and for a hub with all of them. The design's hover budget was 1 ms.
     static let reachHopOne = 1.0
-    /// The same for the hub, 10,000 lit (5,000 notes and the 5,000 arrows between): more than the 1 ms the design proposed and than today's one-hop hover
-    /// on as many (some 0.8 ms, `neighborHover`'s 2 ms), because the landing here also groups each shape by tier and ring; set to
+    /// The same for the hub, 10,000 lit (5,000 notes and the 5,000 arrows between): more than the 1 ms the design proposed and than the one-hop hover it
+    /// replaced on as many (some 0.8 ms, its 2 ms), because the landing here also groups each shape by tier and ring; set to
     /// what it measures (some 1.2 ms) with room.
     static let reachHopOneHub = 2.0
     /// The same to the reach landing too (the engine's reach answered off the main actor, landed there, the rings and the dim's focus made
@@ -44,7 +44,7 @@ extension Budget {
     static let reachLand20k = 2.0
     /// The same with 200,000 lit, run with `BENCH_SIZES=20000,200000`, which holds no budget: reported against this.
     static let reachLand200k = 4.0
-    /// A fan-out is all hop 1: every lit shape lands at once with the first answer (the hub's, as a hover's one hop does today, which is some
+    /// A fan-out is all hop 1: every lit shape lands at once with the first answer (the hub's, as the one-hop hover it replaced did, which was some
     /// 0.8 ms for 10,000 and so some 16 ms for 200,000), taken up and composed on the main actor, linear in what's lit, about 0.09 to 0.14 µs
     /// a lit shape: some 1.4 to 2 ms at 20,000 and 20 to 27 ms at 200,000 (the first hover 33), against the design's 2 and 4 ms, which a
     /// chain, whose hop 1 is one shape, meets (0.5 and 1.2 ms). Set to what it measures, with room.
@@ -101,9 +101,9 @@ private enum Reaching {
     return (CanvasDocument(shapes: shapes), ids[0])
 }
 
-/// The shipped list with the whole reach on (settled at once when `pulse` is off, as Reduce Motion shows it), the app's defaults untouched.
+/// The shipped list with the reach's settings of the benchmark's own (settled at once when `pulse` is off, as Reduce Motion shows it).
 @MainActor private func reachPlugins(_ pasteboard: NSPasteboard, pulse: Bool = false) -> [any CanvasPlugin] {
-    ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel(), reach: ReachSettings(showsWholeReach: true, reducesMotion: { !pulse }))
+    ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel(), reach: ReachSettings(reducesMotion: { !pulse }))
 }
 
 @MainActor private func reachEditor(_ document: CanvasDocument, pasteboard: NSPasteboard, pulse: Bool = false, viewport: CGSize = CGSize(width: 1200, height: 800)) throws -> EditorHarness {

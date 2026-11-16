@@ -13,7 +13,7 @@ import TestKit
 /// each plugin made by its name, with a pasteboard and three models of the test's own in place of
 /// the four that reach outside the process (`OutwardPlugin`: the clipboard's, the language model's,
 /// the decision model's and the embedding model's), and Neighbors with settings of the test's own in
-/// place of the app's user defaults (`reach`). So a test checks exactly what ships, and reaches neither
+/// place of the system's Reduce Motion (`reach`). So a test checks exactly what ships, and reaches neither
 /// the network nor the user's pasteboard, files or preferences.
 ///
 /// `model` has no default, so no test asks the real model by leaving it out: every test passes a
@@ -43,21 +43,12 @@ public enum ShippedPlugins {
 
     private static var testPasteboard: NSPasteboard?
 
-    /// The test's own Show Whole Reach (off, with the pulse, kept nowhere), which `plugins`, `registry`
-    /// and `makeEditor` take when a test passes none: made when the test first asks, so its editors
-    /// follow one setting as the app's windows do, and let go of as the test ends.
-    public static var reach: ReachSettings {
-        if let testReach { return testReach }
-        let made = ReachSettings(reducesMotion: { false })
-        testReach = made
-        afterThisTest { if testReach === made { testReach = nil } }
-        return made
-    }
-
-    private static var testReach: ReachSettings?
+    /// The test's own reach settings (the pulse on, whatever the system's Reduce Motion), which `plugins`,
+    /// `registry` and `makeEditor` take when a test passes none: so no test reads the system's setting.
+    public static var reach: ReachSettings { ReachSettings(reducesMotion: { false }) }
 
     /// The shipped list, its clipboard on `pasteboard`, its language model `model`, its decision
-    /// model `decisionModel`, its embedding model `embeddingModel` and its hover's settings `reach`.
+    /// model `decisionModel`, its embedding model `embeddingModel` and its reach's settings `reach`.
     public static func plugins(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel,
                                decisionModel: any DecisionModel = ScriptedDecisionModel(),
                                embeddingModel: any EmbeddingModel = ScriptedEmbeddingModel.hashing(),

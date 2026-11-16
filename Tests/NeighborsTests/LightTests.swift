@@ -66,12 +66,16 @@ struct Nest {
         h.settle()
         expectEqual(h.lit, [Lit(.out, 0, [star.b, star.l1]), Lit(.into, 0, [star.c, star.l2]), Lit(.quotes, 0, [star.q]), Lit(.quoted, 0, [star.m])])
         expectEqual(h.faint, [star.s], "the subject is on the board shown: Selection's faint outline is all there is of it")
-        expectEqual(h.neighbors.subject, star.s)
+        expectEqual(h.reach.subject, star.s)
+        let lit = h.lit
         h.editor.hovered = nil
         h.wait(0)
-        expectEqual(h.lit, [], "the lights go with the hover, at once")
-        expectEqual(h.neighbors.subject, nil)
-        expect(!h.neighbors.isAsking)
+        expectEqual(h.reach.subject, nil, "the subject goes with the hover")
+        expectEqual(h.lit, lit, "the lights stay for the release (the reach's own promise, ReachTests' sweep: they go after ReachStyle.release)")
+        expect(!h.reach.isAsking)
+        h.wait(150)
+        expectEqual(h.lit, [], "and then go")
+        expectEqual(h.reach.showing, nil)
     },
     test("every light is asked in one batch: the engine takes up the file once, in the one view when nothing stands in, and each shape is lit once") {
         let star = Star()
@@ -82,8 +86,8 @@ struct Nest {
         expectEqual(h.lit, [Lit(.into, 0, [star.s, star.u, star.l1, star.l3])])
         #if DEBUG
         let queries = try require(h.editor.queries)
-        expectEqual(queries.captures, 1, "one batch for the four lights")
-        expectEqual(h.neighbors.requested, 4, "each in the one view: with no stand-in the literal view is the same edges")
+        expectEqual(queries.captures, 2, "one batch for the four lights' one hop and one for their reaches")
+        expectEqual(h.reach.requested, 4, "each in the one view: with no stand-in the literal view is the same edges")
         expectEqual(queries.liveSnapshots, 0, "nothing held once it's answered")
         #endif
     },
@@ -94,17 +98,17 @@ struct Nest {
         h.settle()
         expectEqual(h.lit, [Lit(.out, 0, [n, wire])])
         #if DEBUG
-        expectEqual(h.neighbors.requested, 4)
+        expectEqual(h.reach.requested, 4)
         #endif
         // A pill standing for N, and a wire to it: A's, as drawn, ends at the pill and, as the graph reads it, at N.
         h.editor.transact("Pill") {
             $0.insert(pill(r, standingFor: [n], at: CGPoint(x: 250, y: 200)))
             $0.insert(link(into, a, r))
         }
-        h.settle()
+        h.settleCommits()
         expectEqual(h.lit, [Lit(.out, 0, [n, r, wire, into])])
         #if DEBUG
-        expectEqual(h.neighbors.requested, 4 + 8, "the four lights in the two views, once a pill stands in")
+        expectEqual(h.reach.requested, 4 + 8, "the four lights in the two views, once a pill stands in")
         #endif
     },
     test("a shape in two lights has a ring for each, the first in the first ring: its second light's is a ring further out") {
@@ -190,7 +194,7 @@ struct Nest {
         h.settle()
         expectEqual(h.lit, [Lit(.out, 0, [n]), Lit(.into, 0, [a, wire])])
         #if DEBUG
-        expectEqual(h.neighbors.requested, 3 * 8, "four lights in the two views, for each of the three hovers")
+        expectEqual(h.reach.requested, 3 * 8, "four lights in the two views, for each of the three hovers")
         #endif
     },
     test("an arrow hovered lights where it ends as what it points to, and where it starts as what points to it") {
@@ -213,38 +217,46 @@ struct Nest {
     },
     test("lights are plugins' contributions, in plugin order and each plugin's own; a list with a light and no Neighbors is refused") {
         let lights = testLights()
-        let registry = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), lightsPlugin([lights[2]]), Contributor(id: "more-lights") { registrar in
+        let registry = try Registry(plugins: [NeighborsPlugin(reach: reachSettings()), lightsPlugin([lights[2]]), Contributor(id: "more-lights") { registrar in
             registrar.neighborLight(lights[0].title, color: lights[0].color, query: lights[0].query, between: lights[0].between)
             registrar.neighborLight(lights[1].title, color: lights[1].color, query: lights[1].query, between: lights[1].between)
         }])
         expectEqual(registry.neighborLights.map(\.color), [Light.quotes.color, Light.out.color, Light.into.color])
         expectEqual(registry.neighborLights.map { $0.lit("#x") }, [lights[2], lights[0], lights[1]].map { $0.lit("#x") })
         expectEqual(registry.neighborLights.map(\.title), ["Quotes", "Wired To", "Wired From"])
-        expectEqual(try Registry(plugins: [NeighborsPlugin(reach: ReachSettings())]).neighborLights.count, 0)
+        expectEqual(try Registry(plugins: [NeighborsPlugin(reach: reachSettings())]).neighborLights.count, 0)
         expectThrows(RegistryError.ownerNotInstalled(point: "NeighborLights", owner: .neighbors, contributor: "lights")) {
             _ = try Registry(plugins: [lightsPlugin(lights)])
         }
     },
-    test("a shape deleted while lit is dropped from the lights at once: it needs no new answer") {
+    test("a shape deleted while lit is dropped from the lights once the commits have settled and the new answer is in, and back with its undo") {
         let star = Star()
         let h = try neighborHarness(star.file())
         h.editor.hovered = star.s
         h.settle()
         #if DEBUG
-        let asked = h.neighbors.asked
+        let asked = h.reach.asked
         #endif
-        // Q is quoted by the subject's memo: the name outlives it, so the quote edge is the same.
+        // Q is quoted by the subject's memo: the name outlives it, so the quote edge is the same. The reach
+        // never works out what shows from a commit: it asks again once commits have stopped, and shows the answer.
         h.editor.transact("Delete") { $0.delete([star.q]) }
+        h.wait(99)
+        expectEqual(h.lit.count, 4, "Q is lit until the answer after the commit lands")
+        #if DEBUG
+        expectEqual(h.reach.asked, asked, "nothing asked while commits may still come")
+        #endif
+        h.wait(1)
+        h.settle()
         expectEqual(h.lit, [Lit(.out, 0, [star.b, star.l1]), Lit(.into, 0, [star.c, star.l2]), Lit(.quoted, 0, [star.m])], "Q is no longer lit")
         #if DEBUG
-        expectEqual(h.neighbors.asked, asked, "nothing asked: a name outlives the shape, and the edges didn't change")
+        expectEqual(h.reach.asked, asked + 1, "a matched shape deleted asks, though a name outlives the shape and the edges didn't change")
         #endif
         h.editor.undo()
-        h.settle()
+        h.settleCommits()
         expectEqual(h.lit.count, 4, "undone, it's lit again")
         expect(h.lit.contains(Lit(.quotes, 0, [star.q])))
         #if DEBUG
-        expectEqual(h.neighbors.asked, asked, "and nothing asked: the answer had matched it")
+        expectEqual(h.reach.asked, asked + 2, "a shape came back that the answer hadn't matched")
         #endif
     },
 ])

@@ -23,7 +23,8 @@ import TestKit
         h.move(to: CGPoint(x: 600, y: 500))               // empty canvas
         h.wait(0)
         expectEqual(h.editor.hovered, nil)
-        expectEqual(h.lit, [])
+        h.wait(150)
+        expectEqual(h.lit, [], "the lights go once the release has passed")
         h.move(to: CGPoint(x: 410, y: 110))               // b's corner
         h.settle()
         expectEqual(h.lit, [Lit(.into, 0, [a, l])])
@@ -36,21 +37,22 @@ import TestKit
         h.editor.hoveredElsewhere = nest.x
         h.settle()
         expectEqual(h.editor.hovered, nil)
-        expectEqual(h.neighbors.subject, nest.x)
+        expectEqual(h.reach.subject, nest.x)
         // S, and the wire from it to X, are on the board shown. What X has a wire to (Z, the wire) is on P's board,
         // which is the card X is on: outlined faintly, never lit.
         expectEqual(h.lit, [Lit(.into, 0, [nest.s, nest.l])])
         expectEqual(h.faint, [nest.p], "where X is: Selection outlines the card that holds it")
         h.editor.hoveredElsewhere = nil
         h.wait(0)
-        expectEqual(h.lit, [])
         expectEqual(h.faint, [])
-        expectEqual(h.neighbors.subject, nil)
+        expectEqual(h.reach.subject, nil)
+        h.wait(150)
+        expectEqual(h.lit, [])
         // A shape on the board shown isn't hovered elsewhere (that's the hover): setting it names no subject.
         h.editor.hoveredElsewhere = nest.s
         h.settle()
         expectEqual(h.editor.hoveredElsewhere, nil)
-        expectEqual(h.neighbors.subject, nil)
+        expectEqual(h.reach.subject, nil)
         expectEqual(h.lit, [])
     },
     test("a shape that's two boards down is on its pocket: the nearest card on the board shown is outlined faintly") {
@@ -66,19 +68,19 @@ import TestKit
         let h = try neighborHarness(nest.file)
         h.editor.hoveredElsewhere = nest.x
         h.settle()
-        expectEqual(h.neighbors.subject, nest.x)
+        expectEqual(h.reach.subject, nest.x)
         h.editor.hovered = nest.s
         h.settle()
-        expectEqual(h.neighbors.subject, nest.s)
+        expectEqual(h.reach.subject, nest.s)
         expectEqual(h.lit, [Lit(.out, 0, [nest.p, nest.l, nest.l2])])
         expectEqual(h.faint, [nest.s], "S is on the board shown: only the hover is outlined, not a card")
         h.editor.hovered = nil
         h.settle()
-        expectEqual(h.neighbors.subject, nest.x, "the pointer is still on X's row")
+        expectEqual(h.reach.subject, nest.x, "the pointer is still on X's row")
         expectEqual(h.lit, [Lit(.into, 0, [nest.s, nest.l])])
         expectEqual(h.faint, [nest.p])
     },
-    test("the answer for the shape before stays until the next lands; the lights go when the subject does") {
+    test("the answer for the shape before stays until the next lands; the lights go when the subject does, after the release") {
         let star = Star()
         let h = try neighborHarness(star.file())
         h.editor.hovered = star.s
@@ -87,14 +89,17 @@ import TestKit
         expectEqual(before.count, 4)
         h.editor.hovered = star.b
         h.wait(0)
-        expect(h.neighbors.isAsking, "B's answer is on its way")
-        expectEqual(h.neighbors.subject, star.b)
+        expect(h.reach.isAsking, "B's answer is on its way")
+        expectEqual(h.reach.subject, star.b)
         expectEqual(h.lit, before, "S's lights stay")
         h.settle()
         expectEqual(h.lit, [Lit(.into, 0, [star.s, star.u, star.l1, star.l3])])
         h.editor.hovered = nil
         h.wait(0)
-        expectEqual(h.lit, [], "no turn of the run loop: gone at once")
+        expectEqual(h.reach.subject, nil)
+        expectEqual(h.lit, [Lit(.into, 0, [star.s, star.u, star.l1, star.l3])], "B's stay for the release")
+        h.wait(150)
+        expectEqual(h.lit, [], "no turn of the run loop: gone with the release")
         h.editor.hovered = star.c
         h.settle()
         expectEqual(h.lit, [Lit(.out, 0, [star.s, star.l2])], "and each hover after asks, as the first does")
@@ -102,18 +107,19 @@ import TestKit
     test("`landed()` returns once the answer is in, at once when none is on its way, and again after a re-ask") {
         let star = Star()
         let h = try neighborHarness(star.file())
-        let neighbors = h.neighbors
-        try awaitResult { await neighbors.landed() }          // nothing asked
+        let reach = h.reach
+        try awaitResult { await reach.landed() }          // nothing asked
         h.editor.hovered = star.s
         h.wait(0)
-        expect(neighbors.isAsking)
-        try awaitResult { await neighbors.landed() }
-        expect(!neighbors.isAsking)
+        expect(reach.isAsking)
+        try awaitResult { await reach.landed() }
+        expect(!reach.isAsking)
         expectEqual(h.lit.count, 4, "the lights are in when it returns")
         // A commit to the subject's edges asks again, which landed() waits out as well.
         let added = ShapeID()
         h.editor.transact("Link") { $0.insert(link(added, star.s, star.u)) }
-        try awaitResult { await neighbors.landed() }
+        h.wait(100)                                           // commits have stopped: it asks
+        try awaitResult { await reach.landed() }
         expectEqual(h.lit.first, Lit(.out, 0, [star.b, star.u, star.l1, added]))
     },
     test("a hover that changes lets go of the ask running: only the new subject's answer lands, and the engine takes up the file once") {
@@ -128,24 +134,39 @@ import TestKit
         h.editor.hovered = star.b
         h.wait(0)                                         // S's is let go of, B's is out
         h.settle()
-        expectEqual(h.neighbors.subject, star.b)
+        expectEqual(h.reach.subject, star.b)
         expectEqual(h.lit, [Lit(.into, 0, [star.s, star.u, star.l1, star.l3])])
         #if DEBUG
-        expectEqual(h.neighbors.asked, 2)
-        expectEqual(queries.captures - captures, 1, "S's never took up the file")
+        expectEqual(h.reach.asked, 2)
+        expectEqual(queries.captures - captures, 2, "S's never took up the file: B's one hop and reach are the two")
         expectEqual(queries.liveSnapshots, 0)
         #endif
     },
-    test("an answer for a shape that isn't the subject any more lands nothing") {
+    test("an answer for a shape that isn't the subject any more lands nothing once the release has passed, and only keeps the shape left while it waits") {
         let star = Star()
         let h = try neighborHarness(star.file())
         h.editor.hovered = star.s
         h.wait(0)                                         // asked: the answer is for S
         h.editor.hovered = nil                            // the hover goes before it lands
         h.wait(0)
-        expect(!h.neighbors.isAsking, "the ask is let go of")
+        expectEqual(h.reach.subject, nil)
+        expect(h.reach.isAsking, "the ask goes on while the release waits: the shape may be hovered again")
+        h.wait(150)
+        expect(!h.reach.isAsking, "the ask is let go of with the release")
         h.settle()
         expectEqual(h.lit, [], "and nothing it found is kept")
+        expectEqual(h.reach.showing, nil)
+        // The answer that lands inside the release is the shape left's, shown until the release goes.
+        h.editor.hovered = star.s
+        h.wait(0)
+        h.editor.hovered = nil
+        h.wait(0)
+        h.settle()
+        expectEqual(h.lit.count, 4, "S's hop 1 lands for the shape left (the one hop only: the pointer never rested)")
+        expectEqual(h.reach.showing, star.s)
+        h.wait(150)
+        expectEqual(h.lit, [])
+        expectEqual(h.reach.showing, nil)
     },
     test("another board shown clears what's lit, and an ask out for the board left lands nothing") {
         let nest = Nest()
@@ -156,15 +177,15 @@ import TestKit
         expect(h.enter(nest.p))
         expectEqual(h.lit, [], "at once, with the switch")
         h.settle()
-        expectEqual(h.neighbors.subject, nil)
+        expectEqual(h.reach.subject, nil)
         // An ask under way as the board changes.
         h.editor.hovered = nest.x
         h.wait(0)
-        expect(h.neighbors.isAsking)
+        expect(h.reach.isAsking)
         expect(h.editor.showBoard(.root))
         h.settle()
         expectEqual(h.lit, [])
-        expectEqual(h.neighbors.subject, nil)
+        expectEqual(h.reach.subject, nil)
         // And the next hover, on the board shown now, asks as ever.
         h.editor.hovered = nest.s
         h.settle()
@@ -173,11 +194,11 @@ import TestKit
         h.editor.hoveredElsewhere = nest.x
         h.editor.hovered = nil
         h.settle()
-        expectEqual(h.neighbors.subject, nest.x)
+        expectEqual(h.reach.subject, nest.x)
         expect(h.enter(nest.p))
         h.settle()
         expectEqual(h.editor.hoveredElsewhere, nil)
-        expectEqual(h.neighbors.subject, nil)
+        expectEqual(h.reach.subject, nil)
         expectEqual(h.lit, [])
         expectEqual(h.faint, [])
     },
@@ -208,16 +229,16 @@ import TestKit
         bare.editor.hovered = star.s
         bare.settle()
         expectEqual(bare.lit, [])
-        expect(!bare.neighbors.isAsking)
+        expect(!bare.reach.isAsking)
         #if DEBUG
-        expectEqual(bare.neighbors.asked, 0)
+        expectEqual(bare.reach.asked, 0)
         #endif
         let dark = try neighborHarness(star.file(), lights: [])
         dark.editor.hovered = star.s
         dark.settle()
         expectEqual(dark.lit, [])
         #if DEBUG
-        expectEqual(dark.neighbors.asked, 0)
+        expectEqual(dark.reach.asked, 0)
         #endif
     },
 ])

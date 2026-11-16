@@ -21,7 +21,7 @@ import TestKit
 import Titles
 import Types
 
-// Neighbors over the shipped plugins: hovering a note, or its row in the table of contents, outlines
+// Neighbors over the shipped plugins: hovering a note, or its row in the table of contents, outlines at once
 // what it points to (arrows out of it, what a reference stands for), with ⌥ held what points to it
 // (and what is of a type), and with ⌃⌥ what it mentions and what mentions it, each in its color, with a
 // ring for each light shown a shape is in; the arrows between are in their light's color; a note in a
@@ -95,9 +95,20 @@ private extension EditorHarness {
     /// Lets the look at the hover happen and its answer land.
     func settleLights(file: StaticString = #fileID, line: UInt = #line) {
         wait(0)
-        guard let neighbors = editor.neighbors else { return }
-        spinRunLoop(until: { !neighbors.isAsking }, file: file, line: line)
+        guard let reach = editor.reach else { return }
+        spinRunLoop(until: { !reach.isAsking }, file: file, line: line)
     }
+
+    /// Lets a commit's change be asked about again (the reach asks once commits have stopped for 100 ms) and its
+    /// answer land, the pointer not yet at rest (150 ms): the next hop 1, and nothing past it.
+    func settleChange(file: StaticString = #fileID, line: UInt = #line) {
+        wait(100)
+        guard let reach = editor.reach else { return }
+        spinRunLoop(until: { !reach.isAsking }, file: file, line: line)
+    }
+
+    /// Lets the pointer's leaving be let go of: the reach keeps what it showed for 150 ms.
+    func release() { wait(150) }
 
     var lit: [Lit] { editor.outlines.tinted.map { Lit($0.color, $0.ring, Set($0.shapes)) } }
 }
@@ -214,7 +225,7 @@ private struct Kinds {
         let without = try Registry(plugins: all.filter { $0.id != .neighborDetails })
         expectEqual(without.neighborLights.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes"])
         let editor = CanvasEditor(registry: without, document: CanvasDocument(), scheduler: ManualScheduler())
-        expect(editor.neighbors != nil, "the hover")
+        expect(editor.reach != nil, "the hover")
         expect(editor.neighborList == nil, "the list")
         let id = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Milk"))
         expectEqual(try require(editor.detailPanel).layout(for: try require(editor.document[id])).tabs.map(\.title), ["Style"], "Colors' tab stays; the list's is gone")
@@ -266,7 +277,7 @@ private struct Kinds {
         h.wait(0)
         expectEqual(h.lit, [Lit(lights.mentions, 0, [graph.f, graph.s]), Lit(lights.mentionedBy, 0, [graph.e])])
         h.editor.hovered = nil
-        h.wait(0)
+        h.release()
         expectEqual(h.lit, [])
         // E mentions A, and nothing else is connected to it.
         h.editor.hovered = graph.e
@@ -306,7 +317,7 @@ private struct Kinds {
         expectEqual(column.filter { $0[0] < 100 && $0[1] < 100 && $0[2] < 100 }.count, 0, "none of the arrow's own line")
         // Unlit, the line is there, and wider than the tint's old 2.
         h.editor.hovered = nil
-        h.wait(0)
+        h.release()
         let unlit = renderBitmap(h.editor, size: size)
         expect((480..<520).filter { y in let p = pixel(unlit, at: CGPoint(x: 300, y: CGFloat(y))); return p[0] < 100 && p[1] < 100 && p[2] < 100 }.count >= 3,
                "the arrow's own line, dark, when nothing's lit")
@@ -342,10 +353,10 @@ private struct Kinds {
         // Re-aimed at D while it's hovered: it ends there now, and undone, back (its edge changed, which the change lists by its ends).
         let toD = ArrowTerminal.bound(ArrowBinding(shapeID: graph.d, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         h.editor.transact("Re-aim") { $0.update(graph.ba, as: Arrow.self) { $0.props.end = toD } }
-        h.settleLights()
+        h.settleChange()
         expectEqual(both(), [[Lit(lights.pointsTo, 0, [graph.d])], [Lit(lights.pointedToBy, 0, [graph.b])]])
         h.editor.undo()
-        h.settleLights()
+        h.settleChange()
         expectEqual(both(), [[Lit(lights.pointsTo, 0, [graph.a])], [Lit(lights.pointedToBy, 0, [graph.b])]])
     },
     test("hovering a type with ⌥ outlines what is of it in pink, however far: a note, what is of a type built on it and the subboard whose board holds one, and apart from them the type built on it; an instance hovered lights no type") {
@@ -362,10 +373,10 @@ private struct Kinds {
         expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.v, kinds.s]), Lit(lights.subtypes, 0, [kinds.u])])
         // A note given the type while it's hovered is lit, and with the undo, not.
         h.editor.addTypeLink(kinds.t, to: kinds.p)
-        h.settleLights()
+        h.settleChange()
         expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.v, kinds.s, kinds.p]), Lit(lights.subtypes, 0, [kinds.u])])
         h.editor.undo()
-        h.settleLights()
+        h.settleChange()
         expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.v, kinds.s]), Lit(lights.subtypes, 0, [kinds.u])])
         // The type built on it lights what is of it alone, and nothing it builds on.
         h.editor.hovered = kinds.u
@@ -387,7 +398,7 @@ private struct Kinds {
         h.settleLights()
         expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac])])
         contents.endHover(graph.a)
-        h.wait(0)
+        h.release()
         expectEqual(h.lit, [])
         // G is a row under S's, on a board the canvas doesn't show: the shape is hovered elsewhere, A mentions it (⌃⌥),
         // and S is where it is, which Selection outlines faintly. The keys reach it as they would with the list's keyboard.
@@ -399,7 +410,7 @@ private struct Kinds {
         expectEqual(h.lit, [Lit(lights.mentionedBy, 0, [graph.a])])
         expectEqual(h.editor.outlines.faintShapes, [graph.s], "the card holding it")
         contents.endHover(graph.g)
-        h.wait(0)
+        h.release()
         expectEqual(h.lit, [])
         expectEqual(h.editor.outlines.faintShapes, [])
     },
@@ -431,7 +442,7 @@ private struct Kinds {
         h.wait(0)
         expectEqual(h.lit, [Lit(lights.pointedToBy, 0, [x, into])])
     },
-    test("what's outlined is drawn: a note's first ring teal and its second lavender, 4 and 8 points off its edge, in the app's own editor") {
+    test("what's outlined is drawn: a note's first ring teal and its second lavender, 2.25 and 6.25 points off its edge, the reach's full strength 3.5 points wide, in the app's own editor") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         // A and B mention each other: with ⌃⌥ on A, B is in both lights shown, what A mentions and what mentions A.
@@ -448,30 +459,29 @@ private struct Kinds {
         editor.modifiersChangedInWindow(held: [.control, .option])
         editor.hovered = a
         scheduler.advance(by: .zero)
-        let neighbors = try require(editor.neighbors)
-        spinRunLoop(until: { !neighbors.isAsking })
+        let reach = try require(editor.reach)
+        spinRunLoop(until: { !reach.isAsking })
         let drawn = renderBitmap(editor, size: CGSize(width: 1200, height: 800))
         // B is the note at (800, 400), 200 × 200: on screen its right edge is at x = 880, and its middle at y = 480.
         let right = (800 + 200 + 100) * 0.8, middle = (400 + 100 + 100) * 0.8
         @MainActor func color(_ x: CGFloat) -> [Int] { pixel(drawn, at: CGPoint(x: right + x, y: middle)) }
-        // The lights are drawn in the light appearance's values (`renderBitmap` is aqua), each line 2 points wide: 3 to 5 out and 7 to 9.
+        // The lights are drawn in the light appearance's values (`renderBitmap` is aqua), each line (hop 1's, the reach's widest) 3.5 points wide: 2.25 to 5.75 out and 6.25 to 9.75.
         @MainActor func ink(_ color: NSColor) -> [Int] { Array(swatch(color, in: .aqua).prefix(3)) }
         let first = ink(lights.mentions), second = ink(lights.mentionedBy)
         for x in [3.5, 4.5] { expectEqual(Array(color(x).prefix(3)), first, "ring 0, in the first light's teal, \(x) out") }
         for x in [7.5, 8.5] { expectEqual(Array(color(x).prefix(3)), second, "ring 1, in the second light's lavender, \(x) out") }
-        // Where the line isn't, the canvas is the canvas's: between the rings, and past the second.
-        for x in [5.5, 6.5, 10] { expect(color(x)[0] > 230 && color(x)[1] > 230, "the canvas, \(x) out: \(color(x))") }
+        // Past the second ring the canvas is the canvas's (the 0.5 point between the rings is under a whole pixel at this zoom).
+        for x in [11.0, 12.0] { expect(color(x)[0] > 230 && color(x)[1] > 230, "the canvas, \(x) out: \(color(x))") }
     },
 ])
 
 // MARK: The whole reach, as shipped
 
-/// The shipped editor with the whole reach on (settled at once once rested: Reduce Motion), its settings `settings`.
-@MainActor private func reaching(_ file: CanvasFile, _ pasteboard: NSPasteboard,
-                                 settings: ReachSettings = ReachSettings(showsWholeReach: true, reducesMotion: { true })) throws -> EditorHarness {
+/// The shipped editor with its reach settled at once once rested (Reduce Motion).
+@MainActor private func reaching(_ file: CanvasFile, _ pasteboard: NSPasteboard) throws -> EditorHarness {
     try EditorHarness { scheduler in
-        CanvasEditor(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel(), reach: settings), file: file,
-                     scheduler: scheduler)
+        CanvasEditor(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel(), reach: ReachSettings(reducesMotion: { true })),
+                     file: file, scheduler: scheduler)
     }
 }
 
@@ -564,32 +574,5 @@ private extension EditorHarness {
         let typed = k.reached([lights.instances])
         expectEqual(Set(typed.keys), [kinds.a, kinds.v, kinds.s, kinds.u], "what is of it however far, the subboard holding one, and the type built on it")
         expect(typed.values.allSatisfy { $0.strength == 1 }, "one relation, all of it at hop 1")
-    },
-    test("View › Show Whole Reach is checked while on, runs from the window, and is kept in the app's user defaults it's given") {
-        ShippedPlugins.reach.showsWholeReach = false
-        let w = try EmptyBoardWindow()
-        defer { w.board.close() }
-        let controller = try require(w.board.windowControllers.first as? BoardWindowController)
-        let item = commandItem(.showWholeReach, title: "Show Whole Reach")
-        expect(controller.validateMenuItem(item))
-        expectEqual(item.state, .off)
-        expect(w.editor.reach == nil)
-        controller.runCommand(item)
-        expect(ShippedPlugins.reach.showsWholeReach)
-        expect(w.editor.reach != nil, "the window's hover lights the reach")
-        expect(controller.validateMenuItem(item))
-        expectEqual(item.state, .on)
-        controller.runCommand(item)
-        expect(w.editor.reach == nil)
-
-        let suite = "CompositionTests-\(UUID().uuidString)"
-        let defaults = try require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        let h = try reaching(CanvasFile(), pasteboard, settings: ReachSettings(defaults: defaults))
-        expect(h.editor.reach == nil, "off until turned on")
-        expect(h.editor.perform(.showWholeReach))
-        expect(ReachSettings(defaults: defaults).showsWholeReach, "as the next launch reads it")
     },
 ])

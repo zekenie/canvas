@@ -6,20 +6,20 @@ extension PluginID {
     public static let neighbors: PluginID = "neighbors"
 }
 
-/// Neighbors: hover a shape, on the canvas or by its row in the table of contents, and every shape
-/// connected to it is outlined in a color that says how, so in a dense graph what's connected shows at
-/// a glance, and select one and its panel lists them, by how (`NeighborDetailsPlugin`). A **light** is
-/// one color, a title, the keys held while hovering that show it and the question that finds its
-/// shapes (`NeighborLight`): the shapes it points to (a plain hover), the shapes that point to it (⌥),
-/// what it mentions and what mentions it (⌃⌥). The questions
-/// are queries, asked of the query engine for the shape hovered, so what counts as a neighbor is the
-/// graph's and the lights' to say, never this module's: it knows no kind, edge type or concern, and
-/// the plugins that own the edges contribute the lights (`registrar.neighborLight`: arrows' are
-/// Arrows', mentions' are Mentions', and each says its keys). A shape in two lights shown together
-/// has a ring for each; a shape on another
-/// board lights the card that holds it on the board shown. The core strokes the outlines
-/// (`Outlines.tinted`) and the minimap fills the same shapes, so connected shapes off screen show
-/// there too. A surface: what an edge's owner shows its edges on.
+/// Neighbors: hover a shape, on the canvas or by its row in the table of contents, and everything it
+/// leads to is outlined in a color that says how, each shape fading with its distance, and the rest of
+/// the board dimmed once the pointer rests (`ReachState`); select one and its panel lists what is
+/// connected to it, one step away and by how (`NeighborDetailsPlugin`). A **light** is one color, a
+/// title, the keys held while hovering that show it and the question that finds its shapes
+/// (`NeighborLight`): the shapes it points to (a plain hover), the shapes that point to it (⌥), what it
+/// mentions and what mentions it (⌃⌥). The questions are queries, asked of the query engine for the
+/// shape hovered (one step for the panel's lists, the step repeated for the reach), so what counts as a
+/// neighbor is the graph's and the lights' to say, never this module's: it knows no kind, edge type or
+/// concern, and the plugins that own the edges contribute the lights (`registrar.neighborLight`:
+/// arrows' are Arrows', mentions' are Mentions', and each says its keys). A shape in two lights shown
+/// together has a ring for each; a shape on another board lights the card that holds it on the board
+/// shown. The core strokes the outlines (`Outlines.tinted`) and the minimap fills the same shapes, so
+/// connected shapes off screen show there too. A surface: what an edge's owner shows its edges on.
 public struct NeighborLight: Sendable {
     /// What the panel calls the shapes it matches, as the head of their list ("Points To").
     public var title: String
@@ -30,9 +30,10 @@ public struct NeighborLight: Sendable {
     /// light names (⇧ for a click that adds to the selection) changes nothing. The panel lists every
     /// light whatever is held.
     public var keys: Modifiers
-    /// The query that finds the shapes at the other end, given the selector that names the shape
-    /// hovered or selected (`#`, then its id, as the query language writes one): what's outlined, and
-    /// what the panel lists.
+    /// The query that finds the shapes at the other end, one step, given the selector that names the
+    /// shape hovered or selected (`#`, then its id, as the query language writes one, or `:scope` for
+    /// the shape a reach steps from): what's outlined at hop 1 and what the panel lists, and the step
+    /// the reach repeats.
     public var query: @Sendable (String) -> String
     /// The query that finds what runs between the shape and those (an arrow), given the same
     /// selector: outlined with them, in the same color, and never listed. Nil for none.
@@ -99,38 +100,27 @@ extension Registry {
     public var neighborLights: [NeighborLight] { contributions(to: NeighborLights.self).map(\.value) }
 }
 
-/// The plugin: a service that follows what's hovered and asks the engine (`HoverLights`: one hop,
-/// `NeighborState`, or the whole reach, `ReachState`, as View › Show Whole Reach says), the outlines it
-/// hands the core, and the command that turns the whole reach on and off. Needs `QueriesPlugin` and
-/// `TopologyPlugin` to light anything, `SelectionPlugin` for something to hover (the table of
-/// contents' rows set Selection's hover too), and a light from some plugin; without any of them it does
-/// nothing.
+/// The plugin: a service that follows what's hovered and asks the engine (`ReachState`), and the
+/// outlines it hands the core. Needs `QueriesPlugin` and `TopologyPlugin` to light anything,
+/// `SelectionPlugin` for something to hover (the table of contents' rows set Selection's hover too),
+/// and a light from some plugin; without any of them it does nothing.
 public struct NeighborsPlugin: ListedPlugin {
-    /// The settings its editors follow; nil for the app's (`ReachSettings.app`, in its user defaults).
+    /// The settings its editors read; nil for the app's (`ReachSettings.app`, the system's).
     private let settings: ReachSettings?
 
     public init() { settings = nil }
-    /// With settings of the caller's own: a test's, kept nowhere or in a suite of its own.
+    /// With settings of the caller's own: a test's.
     public init(reach settings: ReachSettings) { self.settings = settings }
     public var id: PluginID { .neighbors }
 
     public func register(into registrar: inout PluginRegistrar) {
         let own = settings
-        registrar.service { HoverLights(editor: $0, lights: $0.registry.neighborLights, settings: own ?? .app) }
-        registrar.outlines { $0.hoverLights?.outlines ?? Outlines() }
-        registrar.command(.showWholeReach, title: ReachStyle.menuTitle, in: ViewMenu.Panels.self, placed: .last,
-                          isChecked: { _ in (own ?? .app).showsWholeReach }) { _ in
-            let settings = own ?? .app
-            settings.showsWholeReach.toggle()
-        }
+        registrar.service { ReachState(editor: $0, lights: $0.registry.neighborLights, settings: own ?? .app) }
+        registrar.outlines { $0.reach?.outlines ?? Outlines() }
     }
 }
 
 extension CanvasEditor {
-    /// How a hover lights, whichever way; nil without NeighborsPlugin.
-    public var hoverLights: HoverLights? { service(HoverLights.self) }
-    /// What's lit for the shape hovered, one hop; nil without NeighborsPlugin, and while the whole reach shows.
-    public var neighbors: NeighborState? { hoverLights?.oneHop }
-    /// What's lit for the shape hovered while the whole reach shows; nil without NeighborsPlugin, and while it's off.
-    public var reach: ReachState? { hoverLights?.reach }
+    /// What's lit for the shape hovered; nil without NeighborsPlugin.
+    public var reach: ReachState? { service(ReachState.self) }
 }

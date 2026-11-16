@@ -1,7 +1,7 @@
 import AppKit
 import Palette
 
-/// Every number of the whole reach's look and timing (View › Show Whole Reach): how a shape's strength
+/// Every number of the reach's look and timing: how a shape's strength
 /// falls with its hop and how the reach divides, the rings it is drawn with, the steps the dim's focus
 /// is snapped to, and how long the pointer rests, the pulse's steps and the release take.
 @MainActor
@@ -35,10 +35,6 @@ enum ReachStyle {
     nonisolated static let pulseTiers = 4
     /// How long commits must have stopped before the reach is asked again (as the panel's lists wait).
     nonisolated static let settle: Duration = .milliseconds(100)
-    /// The menu bar item that turns it on and off.
-    nonisolated static let menuTitle = "Show Whole Reach"
-    /// Where the app keeps whether it's on.
-    nonisolated static let defaultsKey = "ShowsWholeReach"
 
     /// A shape's strength from its hop (1 and on) and its share of the reach.
     nonisolated static func strength(hop: Int, share: Double) -> Double {

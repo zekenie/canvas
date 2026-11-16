@@ -43,6 +43,12 @@ extension BenchSizes: @MainActor RandomAccessCollection {
     /// How many times the board's growth a timing may grow: twice, room for the caches and the noise
     /// of a busy machine, never for a square.
     static let slack = 2.0
+    /// The lines held to a slack of their own, each named by the start of its template (`template(of:)`),
+    /// with why. A hover on one of a type's instances: the reach walks every light from it, at a cost in
+    /// proportion to the board though it reaches nothing (some 1.2 µs a shape from 3,000 shapes to
+    /// 100,000), which at 1,000 shapes stays in the caches (some 0.4 µs), so from 1,000 to 10,000 it grows
+    /// some 30 times; four holds that and still refuses a square.
+    static let slacks: [(line: String, slack: Double)] = [("# shapes, a hover on one of its instances:", 4)]
     /// A timing under this at the larger size is too small to judge.
     static let floor = 1.0
     /// The size the loop over `sizes` is at, nil outside one (each test starts with none).
@@ -54,6 +60,12 @@ extension BenchSizes: @MainActor RandomAccessCollection {
     /// padded to six places has a space before it at 10,000 and none at 100,000).
     static func template(of line: String) -> String {
         line.replacing(#/-?\d[\d,]*\.?\d*(?:e[-+]?\d+)?/#, with: "#").replacing(#/\s+/#, with: " ").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The slack a line is held to: its own (`slacks`), else `slack`.
+    static func slack(for line: String) -> Double {
+        let template = template(of: line)
+        return slacks.first { template.hasPrefix($0.line) }?.slack ?? slack
     }
 
     /// The timings in a line, in order: each number followed by ms.
@@ -75,22 +87,23 @@ extension BenchSizes: @MainActor RandomAccessCollection {
 }
 
 @MainActor let scalingBenchmarks = Suite("Scaling", [
-    test("what grows with the board grows no faster than it: each timing at the largest size within twice the board's growth over the smallest") {
+    test("what grows with the board grows no faster than it: each timing at the largest size within twice the board's growth over the smallest, or its line's own slack") {
         guard let small = sizes.values.min(), let large = sizes.values.max(), small < large else { return }
-        let limit = Scaling.slack * Double(large) / Double(small)
-        var worst: [(growth: Double, small: String, large: String)] = []
+        let boardGrew = Double(large) / Double(small)
+        var worst: [(growth: Double, limit: Double, small: String, large: String)] = []
         for (one, other) in Scaling.pairs(small, large) {
+            let limit = Scaling.slack(for: one) * boardGrew
             for (before, after) in zip(Scaling.timings(in: one), Scaling.timings(in: other)) where before > 0 && after >= Scaling.floor {
-                worst.append((after / before, one, other))
+                worst.append((after / before, limit, one, other))
             }
         }
         worst.sort { $0.growth > $1.growth }
         let kept = Dictionary(grouping: Scaling.lines.compactMap(\.size), by: { $0 }).mapValues(\.count)
         report("\(worst.count) timings compared, from \(kept[small] ?? 0) lines at \(small) shapes and \(kept[large] ?? 0) at \(large)")
-        for (growth, one, other) in worst.prefix(5) {
+        for (growth, limit, one, other) in worst.prefix(5) {
             report(String(format: "grew %.1f times (limit %.0f): %@  →  %@", growth, limit, one, other))
         }
-        for (growth, one, other) in worst where growth > limit {
+        for (growth, limit, one, other) in worst where growth > limit {
             expect(false, String(format: "grew %.1f times from %d to %d shapes, more than %.0f: \"%@\" became \"%@\"", growth, small, large, limit, one, other))
         }
     },

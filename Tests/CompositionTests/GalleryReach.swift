@@ -14,7 +14,7 @@ import TestKit
 import Titles
 
 // The whole reach on hover (Neighbors, [neighbors](.claude/rules/neighbors.md)): the cold first minute of
-// View › Show Whole Reach, the states of one track, added to `galleryStates` (GalleryTypesLook.swift) as
+// the hover, the states of one track, added to `galleryStates` (GalleryTypesLook.swift) as
 // `reachStates`. One board, the same in every state: an order that fans out to three, two of which meet at
 // one, four hops deep, a cycle back into it, and what leads into it for ⌥.
 
@@ -91,20 +91,14 @@ private extension GalleryStage {
 }
 
 @MainActor let reachStates: [GalleryState] = [
-    GalleryState("reach-1-menu", "the View menu with Show Whole Reach checked, after Show Minimap", isText: true, reach: true) { stage in
-        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: stage.editor.registry)
-        let view = try require(menus.main.item(withTitle: "View")?.submenu)
-        for item in view.items { if let command = BoardMenus.command(of: item) { item.state = (stage.editor.isChecked(command) ?? false) ? .on : .off } }
-        return .text(view.outline.joined(separator: "\n"))
-    },
-    GalleryState("reach-2-hover", "Orders hovered, the pointer not yet at rest: its three next steps ringed at full strength, the board not dimmed", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-1-hover", "Orders hovered, the pointer not yet at rest: its three next steps ringed at full strength, the board not dimmed", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in
             stage.hover(scene.orders)
             let lit = Lit(stage)
             expect(lit.shapes == 3 && !lit.dim, "hop 1 only, no dim: \(lit)")
         }
     },
-    GalleryState("reach-3-rested", "Orders at rest: everything downstream ringed, each ring thinner and fainter by its hop, the rest of the board dimmed, the arrows it travels lit", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-2-rested", "Orders at rest: everything downstream ringed, each ring thinner and fainter by its hop, the rest of the board dimmed, the arrows it travels lit", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in
             stage.hover(scene.orders)
             stage.settle()
@@ -112,7 +106,7 @@ private extension GalleryStage {
             expect(lit.shapes == 8 && lit.dim, "the eight downstream, the board dimmed: \(lit)")
         }
     },
-    GalleryState("reach-4-upstream", "Orders at rest with ⌥ held: what leads into it, ringed in the upstream color: Intake, Partner and Archive (the cycle's way back) at full strength, then Web, Mobile, Reports and on, each fainter", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-3-upstream", "Orders at rest with ⌥ held: what leads into it, ringed in the upstream color: Intake, Partner and Archive (the cycle's way back) at full strength, then Web, Mobile, Reports and on, each fainter", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in
             stage.hover(scene.orders, upstream: true)
             stage.settle()
@@ -120,19 +114,19 @@ private extension GalleryStage {
             expect(lit.shapes >= 4 && lit.dim, "the upstream four or more, dimmed: \(lit)")
         }
     },
-    GalleryState("reach-5-pulse-0ms", "the pulse as the pointer comes to rest, 0 ms: hop 1 and nothing past it", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-4-pulse-0ms", "the pulse as the pointer comes to rest, 0 ms: hop 1 and nothing past it", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in stage.pulse(scene, after: 0) }
     },
-    GalleryState("reach-5-pulse-80ms", "the pulse at 80 ms: the second hop arriving", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-4-pulse-80ms", "the pulse at 80 ms: the second hop arriving", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in stage.pulse(scene, after: 80) }
     },
-    GalleryState("reach-5-pulse-160ms", "the pulse at 160 ms: the third hop arriving", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-4-pulse-160ms", "the pulse at 160 ms: the third hop arriving", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in stage.pulse(scene, after: 160) }
     },
-    GalleryState("reach-5-pulse-320ms", "the pulse at 320 ms: every hop, settled", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-4-pulse-320ms", "the pulse at 320 ms: every hop, settled", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in stage.pulse(scene, after: 320) }
     },
-    GalleryState("reach-6-sweep", "the pointer moved from Orders to Pricing: the dim kept, only Pricing's next step ringed until it rests", size: CGSize(width: 1_080, height: 560), reach: true) { stage in
+    GalleryState("reach-5-sweep", "the pointer moved from Orders to Pricing: the dim kept, only Pricing's next step ringed until it rests", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in
             stage.hover(scene.orders)
             stage.settle()

@@ -13,29 +13,21 @@ import TestKit
 import Titles
 import Types
 
-// Neighbors' budgets: hovering a shape with 10,000 neighbors (and one with ten), what the main actor
-// spends from the hover to the lights landing; and what the lights add to a frame, with all 10,000 in
-// view zoomed out to 10% (each one a skeleton, its outline a ring, selected too or not) and with every
-// one out of view, on the canvas and in the minimap. The neighbors are notes that mention the hub (the shipped lights'
-// lavender, shown with ⌃⌥ held), so what the engine finds is every one of them. `./build.sh bench` holds them; `./test.sh`
-// runs them small, in debug, and only reports.
+// Neighbors' budgets, for the whole reach, the only hover (`ReachBenchmarks.swift` measures a hover on a shape with arrows
+// between it and a hub, and the lights' landing; this file holds what the reach's own lights cost, by kind): a hover on a type with
+// 10,000 instances (Types' lights, found through `:is-a`), what the main actor spends from the hover to the reach landed; and what
+// the lights add to a frame, with all 10,000 lit notes out of view, at 100% and at 10%, selected too (⌘A) or not in view, and on the
+// minimap. The lit notes mention the hub (the shipped lights' lavender, shown with ⌃⌥ held), so what the engine finds is every one of
+// them. `./build.sh bench` holds them; `./test.sh` runs them small, in debug, and only reports.
 
 extension Budget {
-    /// The main actor's time from a hover to the lights landing, on a shape with 1,000 or 10,000
-    /// neighbors: the look at the hover and the batch's reading and resolving of four queries (the one
-    /// view: nothing here stands in), the turn that takes up the file, and the landing (the answers
-    /// joined, the set of what matched made, each match placed where it's drawn, the rings); the
-    /// engine's answer is off the main actor (some 10 ms at 10,000 neighbors). The thread's CPU time;
-    /// release, some 0.2 ms at 1,000 and 0.8 at 10,000.
+    /// The main actor's time from a hover to the reach landed, on a type with 1,000 or 10,000 instances (Types' lights:
+    /// the type's `:is-a` reach, one hop, every instance lit): the look at the hover, the reach's answers taken up and
+    /// landed (the rings, each match placed where it's drawn). The engine's answer is off the main actor. The thread's
+    /// CPU time. It was the one-hop hover's before the whole reach replaced it (some 0.2 ms at 1,000, 0.8 at 10,000).
     static let neighborHover = SizedBudget(thousand: 0.5, tenThousand: 2)
-    /// The same with ten neighbors, on a board of 1,000 or 10,000 shapes: what matches, never the
-    /// board (some 0.14 ms).
+    /// The same from an instance, which the type's lights don't reach: what matches, never the board (some 0.14 ms).
     static let neighborHoverFew = 0.5
-    /// What the lights add to a frame over the same frame unlit, 10,000 of them in view zoomed out to
-    /// 10%, where each is a skeleton and its outline a ring (some 7 ms: the rings' paths and a look at
-    /// each one's kept extent, as ⌘A's outlines cost at that zoom; the unlit frame is some 16 ms).
-    /// The thread's CPU time.
-    static let neighborFrameInView = 12.0
     /// What they add with all of them out of view, at 100% and at 10%: a look at each one's kept
     /// extent (some 0.35 ms), as ⌘A's outlines cost (`offscreenBoard`).
     static let neighborFrameOffscreen = offscreenBoard
@@ -111,7 +103,7 @@ private enum Light: Int {
 }
 
 @MainActor let neighborBenchmarks = Suite("Neighbor benchmarks", [
-    test("a hover on a type with 10,000 instances costs the main actor what any hover with that many neighbors does, and a hover on one of them, what matches") {
+    test("a hover on a type with 10,000 instances costs the main actor what any hover with that many lit does, and a hover on one of them, what matches") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         for size in sizes {
@@ -120,13 +112,13 @@ private enum Light: Int {
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
             h.hold(.option)                                // what is of a type is shown with ⌥
-            let neighbors = try require(h.editor.neighbors)
+            let reach = try require(h.editor.reach)
             for (what, subject, lights) in [("a type with \(size - 1) instances", type, size - 1), ("one of its instances", instance, 0)] {
                 @MainActor func hover() throws -> (main: Double, offMain: Double) {
                     let (_, main, offMain) = try cpu {
                         h.editor.hovered = subject
                         h.wait(0)
-                        await neighbors.landed()
+                        await reach.landed()
                     }
                     return (main, offMain)
                 }
@@ -136,7 +128,7 @@ private enum Light: Int {
                 var mains: [Double] = [], offs: [Double] = []
                 for _ in 0..<measuredRuns(11) {
                     h.editor.hovered = nil
-                    h.wait(0)
+                    h.wait(200)                            // the release passes: the next hover starts from nothing shown
                     let (main, off) = try hover()
                     mains.append(main)
                     offs.append(off)
@@ -149,55 +141,17 @@ private enum Light: Int {
             }
         }
     },
-    test("a hover on a shape with 10,000 neighbors costs the main actor a few milliseconds from the hover to the lights landing; with ten neighbors, what matches") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        for size in sizes {
-            for (what, mentioning) in [("\(size - 1) neighbors", size - 1), ("10 neighbors", 10)] {
-                let (h, hub) = try hubEditor(shapes: size, mentioning: mentioning, held: [.control, .option], pasteboard: pasteboard)
-                let neighbors = try require(h.editor.neighbors)
-                @MainActor func hover() throws -> (main: Double, offMain: Double) {
-                    let (_, main, offMain) = try cpu {
-                        h.editor.hovered = hub
-                        h.wait(0)                          // the look at the hover, which asks
-                        await neighbors.landed()           // the engine answers off the main actor, and the lights land
-                    }
-                    return (main, offMain)
-                }
-                @MainActor func unhover() {
-                    h.editor.hovered = nil
-                    h.wait(0)
-                }
-                // The first hover makes the engine's vocabulary (a millisecond), and every later one is what a hover costs.
-                let first = try hover()
-                expectEqual(lit(h.editor, in: .mentionedBy), mentioning, "the notes that mention the hub are lit")
-                expectEqual(lit(h.editor, in: .pointsTo) + lit(h.editor, in: .pointedToBy) + lit(h.editor, in: .mentions), 0)
-                var mains: [Double] = [], offs: [Double] = []
-                for _ in 0..<measuredRuns(11) {
-                    unhover()
-                    let (main, off) = try hover()
-                    mains.append(main)
-                    offs.append(off)
-                }
-                let main = middle(mains)
-                let budget = mentioning > 10 ? Budget.neighborHover.at(size) : Budget.neighborHoverFew
-                report(String(format: "%6d shapes, a hover on a shape with %@: main %6.3f ms (the first %6.3f; budget %.1f), the engine's answer off the main actor %6.1f ms",
-                              size, what, main, first.main, budget, middle(offs)))
-                if holdsToBudgets { expect(main < budget, "a hover on a shape with \(what), among \(size) shapes, took \(main) ms of the main actor") }
-            }
-        }
-    },
-    test("10,000 lit shapes add little to a frame: in view zoomed out to 10%, or all out of view, on the canvas") {
+    test("10,000 lit shapes add little to a frame all out of view, at 100% and at 10%, on the canvas") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let context = try bitmapContext(viewport)
         for size in sizes {
             let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, held: [.control, .option], pasteboard: pasteboard)
-            let neighbors = try require(h.editor.neighbors)
+            let reach = try require(h.editor.reach)
             let board = h.editor.shapeBounds
-            @MainActor func place(_ zoom: CGFloat, atBoard: Bool) -> Camera {
-                atBoard ? camera(centering: board, at: zoom, in: viewport)
-                    : Camera(origin: CGPoint(x: board.maxX + 100_000, y: board.maxY + 100_000), zoom: zoom)
+            // Out of view, past the board's corner: a look at each one's kept extent, and nothing drawn.
+            @MainActor func place(_ zoom: CGFloat) -> Camera {
+                Camera(origin: CGPoint(x: board.maxX + 100_000, y: board.maxY + 100_000), zoom: zoom)
             }
             // A frame drawn again with the camera a point from the last one's, as a pan's is.
             @MainActor func frame(_ camera: Camera) -> Double {
@@ -211,27 +165,22 @@ private enum Light: Int {
                 return median(runs: 11, prepare: pan, onThread: true) { draw(h.editor, into: context, size: viewport) }
             }
             var lines: [String] = []
-            var worstInView = 0.0, worstOffscreen = 0.0
-            for (what, camera, isInView) in [("in view at 10%", place(0.1, atBoard: true), true), ("out of view at 100%", place(1, atBoard: false), false),
-                                             ("out of view at 10%", place(0.1, atBoard: false), false)] {
+            var worstOffscreen = 0.0
+            for (what, camera) in [("out of view at 100%", place(1)), ("out of view at 10%", place(0.1))] {
                 h.editor.hovered = nil
-                h.wait(0)
+                h.wait(200)
                 let unlit = frame(camera)
                 h.editor.hovered = hub
                 h.wait(0)
-                try awaitResult(timeout: 60) { await neighbors.landed() }
+                try awaitResult(timeout: 60) { await reach.landed() }
                 expectEqual(lit(h.editor, in: .mentionedBy), size - 1)
-                let drawn = frame(camera)
-                let added = drawn - unlit
+                let added = frame(camera) - unlit
                 lines.append(String(format: "%@: %6.2f ms over %6.2f unlit", what, added, unlit))
-                if isInView { worstInView = max(worstInView, added) } else { worstOffscreen = max(worstOffscreen, added) }
+                worstOffscreen = max(worstOffscreen, added)
             }
-            report(String(format: "%6d shapes, %d lit: what they add to a frame, %@ (budgets %.0f in view, %.0f out of it)",
-                          size, size - 1, lines.joined(separator: "; "), Budget.neighborFrameInView, Budget.neighborFrameOffscreen))
-            if holdsToBudgets {
-                expect(worstInView < Budget.neighborFrameInView, "\(size - 1) lit shapes in view added \(worstInView) ms to a frame")
-                expect(worstOffscreen < Budget.neighborFrameOffscreen, "\(size - 1) lit shapes out of view added \(worstOffscreen) ms to a frame")
-            }
+            report(String(format: "%6d shapes, %d lit: what they add to a frame, %@ (budget %.0f)",
+                          size, size - 1, lines.joined(separator: "; "), Budget.neighborFrameOffscreen))
+            if holdsToBudgets { expect(worstOffscreen < Budget.neighborFrameOffscreen, "\(size - 1) lit shapes out of view added \(worstOffscreen) ms to a frame") }
         }
     },
     test("10,000 lit shapes that are all selected too (⌘A) add little to a frame: each one's tint a ring further out, looked up in one set") {
@@ -240,7 +189,7 @@ private enum Light: Int {
         let context = try bitmapContext(viewport)
         for size in sizes {
             let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, held: [.control, .option], pasteboard: pasteboard)
-            let neighbors = try require(h.editor.neighbors)
+            let reach = try require(h.editor.reach)
             let board = h.editor.shapeBounds
             let camera = camera(centering: board, at: 0.1, in: viewport)
             // A frame drawn again with the camera a point from the last one's, as a pan's is.
@@ -261,7 +210,7 @@ private enum Light: Int {
             let unlit = frame()
             h.editor.hovered = hub
             h.wait(0)
-            try awaitResult(timeout: 60) { await neighbors.landed() }
+            try awaitResult(timeout: 60) { await reach.landed() }
             expectEqual(lit(h.editor, in: .mentionedBy), size - 1)
             let added = frame() - unlit
             report(String(format: "%6d shapes, %d lit and all selected: what they add to a frame at 10%%: %6.2f ms over %6.2f selected and unlit (budget %.0f)",
@@ -275,7 +224,7 @@ private enum Light: Int {
         let context = try bitmapContext(viewport)
         for size in sizes {
             let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, held: [.control, .option], pasteboard: pasteboard)
-            let neighbors = try require(h.editor.neighbors)
+            let reach = try require(h.editor.reach)
             let window = NSWindow(contentRect: CGRect(origin: .zero, size: viewport), styleMask: [.titled], backing: .buffered, defer: false)
             let canvas = CanvasView(editor: h.editor)
             window.contentView = canvas
@@ -292,18 +241,18 @@ private enum Light: Int {
             let unlit = median(runs: 11, onThread: true) { display(minimap, into: minimapContext) }
             h.editor.hovered = hub
             h.wait(0)
-            try awaitResult(timeout: 60) { await neighbors.landed() }
+            try awaitResult(timeout: 60) { await reach.landed() }
             let drawn = median(runs: 11, onThread: true) { display(minimap, into: minimapContext) }
             report(String(format: "%6d shapes, %d lit: the minimap's drawing %6.2f ms over %6.2f unlit (budget %.0f)", size, size - 1, drawn - unlit, unlit, Budget.neighborMinimap))
             if holdsToBudgets { expect(drawn - unlit < Budget.neighborMinimap, "\(size - 1) lit shapes added \(drawn - unlit) ms to the minimap's drawing") }
             // The same with every shape selected too (⌘A): each one's fill for the selection is inset inside its tint.
             h.editor.hovered = nil
-            h.wait(0)
+            h.wait(200)
             h.editor.selectAll()
             let selectedUnlit = median(runs: 11, onThread: true) { display(minimap, into: minimapContext) }
             h.editor.hovered = hub
             h.wait(0)
-            try awaitResult(timeout: 60) { await neighbors.landed() }
+            try awaitResult(timeout: 60) { await reach.landed() }
             let selectedLit = median(runs: 11, onThread: true) { display(minimap, into: minimapContext) }
             report(String(format: "%6d shapes, %d lit and all selected: the minimap's drawing %6.2f ms over %6.2f selected and unlit", size, size - 1, selectedLit - selectedUnlit, selectedUnlit))
         }

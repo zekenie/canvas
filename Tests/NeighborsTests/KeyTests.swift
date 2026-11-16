@@ -12,12 +12,15 @@ import TestKit
 // ⌃⌥. Every light is asked once a hover, so a key pressed or let go only shows another part of the answer.
 
 @MainActor let keyTests = Suite("Neighbors: the keys held choose the lights", [
-    test("a plain hover shows the lights that name no key, ⌥ those that name ⌥, ⌃⌥ those that name both; a key changes them with nothing asked") {
+    test("a plain hover shows the lights that name no key, ⌥ those that name ⌥, ⌃⌥ those that name both; a key changes them at once, with nothing asked") {
         let star = Star()
         let h = try neighborHarness(star.file(), lights: keyedLights())
         h.editor.hovered = star.s
         h.settle()
         expectEqual(h.lit, [Lit(.out, 0, [star.b, star.l1])])
+        #if DEBUG
+        let composed = h.reach.composed
+        #endif
         h.hold(.option)
         h.wait(0)
         expectEqual(h.lit, [Lit(.into, 0, [star.c, star.l2])], "what has a wire to it, with no move of the pointer")
@@ -28,8 +31,8 @@ import TestKit
         h.wait(0)
         expectEqual(h.lit, [Lit(.out, 0, [star.b, star.l1])], "let go: the plain hover's again")
         #if DEBUG
-        expectEqual(h.neighbors.asked, 1, "one ask for the hover: the keys only show another part of its answer")
-        expectEqual(h.neighbors.placed, 4)
+        expectEqual(h.reach.asked, 1, "one ask for the hover: the keys only show another part of its answer")
+        expectEqual(h.reach.composed, composed + 3, "each switch works out what shows once, from the answers there are")
         #endif
     },
     test("a key no light names changes nothing (⇧ for a click that adds, ⌘), and keys that name no light show none") {
@@ -105,14 +108,14 @@ import TestKit
         h.wait(0)
         h.hold([])
         h.wait(0)
-        expectEqual(h.neighbors.placed, 0, "nothing hovered")
+        expectEqual(h.reach.composed, 0, "nothing hovered")
         #endif
         h.editor.hovered = star.s
         h.hold(.option)
         h.settle()
         let added = ShapeID()
         h.editor.transact("Link") { $0.insert(link(added, star.u, star.s)) }
-        h.settle()
+        h.settleCommits()
         expectEqual(h.lit, [Lit(.into, 0, [star.c, star.u, star.l2, added])])
     },
     test("the canvas is asked to draw only when a key changes what's shown") {
@@ -136,7 +139,7 @@ import TestKit
     },
     test("a light's keys are the plugin's to say, kept in plugin order with the light") {
         let lights = keyedLights()
-        let registry = try Registry(plugins: [NeighborsPlugin(reach: ReachSettings()), lightsPlugin(lights)])
+        let registry = try Registry(plugins: [NeighborsPlugin(reach: reachSettings()), lightsPlugin(lights)])
         expectEqual(registry.neighborLights.map(\.keys), [[], .option, [.control, .option], [.control, .option]])
         expectEqual(NeighborLight("Plain", color: .black, query: { $0 }).keys, [], "none, a plain hover, unless said")
     },

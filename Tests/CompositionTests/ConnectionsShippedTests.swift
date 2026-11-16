@@ -692,8 +692,7 @@ extension ConnectionGroup {
         expectEqual(DetailGroupHeader.spoken(count: 1, isCollapsed: false), "1, expanded")
         expectEqual(DetailGroupHeader.spoken(count: 3, isCollapsed: true), "3, collapsed")
     },
-    test("with Show Whole Reach on, the line the Connections list's keys are on lights its shape's whole reach, and leaving the list lets it go") {
-        ShippedPlugins.reach.showsWholeReach = true
+    test("the line the Connections list's keys are on lights its shape's whole reach, and leaving the list lets it go") {
         let (a, b, c, d) = (ShapeID(), ShapeID(), ShapeID(), ShapeID())
         let w = try InspectorWindow(file: CanvasFile(root: CanvasDocument(shapes: [
             card(a, "Alpha", 1, 0), card(b, "Beta", 2, 0), card(c, "Gamma", 3, 0), card(d, "Delta", 4, 0),
