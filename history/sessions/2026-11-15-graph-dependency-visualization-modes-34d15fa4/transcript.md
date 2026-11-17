@@ -1,6 +1,6 @@
 # Graph dependency visualization modes
 
-Claude Code session `34d15fa4-1447-4bce-8237-eab1e955e9a0`, 2026-11-15 19:53 to 2026-11-16 14:38 UTC, on `claude/graph-dependency-viz-modes-ce5b8e`.
+Claude Code session `34d15fa4-1447-4bce-8237-eab1e955e9a0`, 2026-11-15 19:53 to 2026-11-17 01:20 UTC, on `claude/graph-dependency-viz-modes-ce5b8e`, `main`, `reach-pulse-no-flash`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -1052,3 +1052,159 @@ It passes alone three times out of three. The failure was a 10-second timeout wh
 
 [2026-11-16 14:38] GIT:
 cd /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-graph-dependency-viz-modes-ce5b8e/34d15fa4-1447-4bce-8237-eab1e955e9a0/scratchpad/rollout/integrate && git add -A && git commit -q -m "Scaling holds a hover on a type's instance to a slack of its own, and the benchmarks doc gives the reach's real figures" && git log --oneline -1 && git status --short | head -3 && cd /Users/zekenie/code/native-canvas/.claude/worktrees/graph-dependency-viz-modes-ce5b8e && git status --short | head -5 && git fetch -q /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-graph-dependency-viz-modes-ce5b8e/34d15fa4-1447-4bce-8237-eab1e955e9a0/scratchpad/rollout/integrate rollout && git merge --ff-only -q FETCH_HEAD && git log --oneline -3 && git rev-parse HEAD && git -C /Users/zekenie/code/native-canvas status --short | head -10 && git rev-parse main
+
+[2026-11-16 14:38] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-graph-dependency-viz-modes-ce5b8e/34d15fa4-1447-4bce-8237-eab1e955e9a0/scratchpad/land && REC=history/sessions/2026-11-15-graph-dependency-visualization-modes-34d15fa4 && sed "s#history/sessions/RECORD/#$REC/#" $S/msg-a.txt > $S/msg-a.final && sed "s#history/sessions/RECORD/#$REC/#" $S/msg-b.txt > $S/msg-b.final && grep -c "Session: $REC/" $S/msg-a.final $S/msg-b.final && export GIT_INDEX_FILE=$S/land.index && rm -f $GIT_INDEX_FILE && git read-tree eac8e21c && git add $REC && TA=$(git write-tree) && A=$(git commit-tree $TA -p main -F $S/msg-a.final) && git read-tree HEAD && git add $REC && TB=$(git write-tree) && B=$(git commit-tree $TB -p $A -F $S/msg-b.final) && unset GIT_INDEX_FILE && echo "A=$A B=$B" && echo "$A $B" > $S/shas && git diff --stat eac8e21c $A | tail -1 && git diff --stat HEAD $B | tail -1 && git log --oneline main..$B && git reset -q --soft $B && git reset -q && git status --short | head -5 && git log --oneline -3
+
+[2026-11-16 14:38] ASSISTANT:
+Both commits are built on top of main, and the branch is clean. Merging into main now.
+
+[2026-11-16 14:39] ASSISTANT:
+It's on main as two commits. Now I'm updating the "Reach on hover" doc to match: the switch question is settled, and the build section gets the commit ids.
+
+[2026-11-16 14:40] DOC update:
+{"ref": {"object": "node", "id": "59b5aab3-b8d2"}, "engine": "prose", "container": {"kind": "project", "id": "caa29381-b841-43fa-802a-b93be027622d"}, "payload": {"ops": [{"op": "replace", "target": {"kind": "find", "text": "A second way to hover, behind a switch: hover a shape"}, "with": {"from": {"kind": "inline", "content": "Hover a shape"}, "as": "text"}}, {"op": "replace", "target": {"kind": "find", "text": "View › Show Whole Reach, checked while on, kept for the app"}, "with": {"from": {"kind": "inline", "content": "None: the reach is the only hover"}, "as": "text"}}, {"op": "replace", "target": {"kind": "find", "text": "A mode to try beside today's, ready to replace it"}, "with": {"from": {"kind": "inline", "content": "Your call before it landed: “let's just go with this one. we can revert if we don't like it.” It landed as a commit of its own, so reverting that one brings the switch back"}, "as": "text"}}, {"op": "replace", "target": {"kind": "blocks", "ids": ["m2pjwsh3fzw.15753"]}, "ifHash": "09f5a11a", "ifRev": 37, "with": {"from": {"kind": "inline", "content": "`ReachState` is the hover; the one-hop `NeighborState` and the switch between them are gone."}, "as": "markdown"}}, {"op": "replace", "target": {"kind": "find", "text": "from today's own one-hop ask, so it comes as quickly as today's hover"}, "with": {"from": {"kind": "inline", "content": "from the lights' one-hop ask, so it comes as quickly as the one-hop hover did"}, "as": "text"}}, {"op": "delete", "target": {"kind": "blocks", "ids": ["m2pjwsh3fzw.16740"]}, "ifHash": "1d821974", "ifRev": 37}, {"op": "replace", "target": {"kind": "find", "text": "; the switch off leaving today's suites as they are"}, "with": {"from": {"kind": "inline", "content": "; the one-hop hover's suites, retargeted to the reach"}, "as": "text"}}, {"op": "delete", "target": {"kind": "find", "text": "; the View menu item checked and kept"}}, {"op": "replace", "target": {"kind": "blocks", "ids": ["m2pjwsh3fzw.9131"]}, "ifHash": "d4fee793", "ifRev": 37, "with": {"from": {"kind": "inline", "content": "On main as 7b387145 (the reach, behind the switch) and e7c62ce0 (the reach as the only hover; reverting it alone brings the switch and the one-hop hover back). The first review found 20 problems and I found three more; the roll-out's review found two more. All are fixed, and the whole suite passes. Panning with the dim shown dropped frames on screen, so the core leaves the dim out while the view moves and brings it back 150 ms after it stops. Tests and an offscreen benchmark hold that fix; no second on-screen run was made."}, "as": "markdown"}}, {"op": "replace", "target": {"kind": "find", "text": ", then it waits for you."}, "with": {"from": {"kind": "inline", "content": ", then the roll-out: the reach as the only hover, reviewed and landed."}, "as": "text"}}, {"op": "replace", "target": {"kind": "find", "text": "Two calls wait on seeing it on your own board"}, "with": {"from": {"kind": "inline", "content": "One […578 more chars]
+
+[2026-11-16 14:40] WRAP-UP:
+The whole reach is now the only hover, on main as 7b387145 (the reach) and e7c62ce0 (the roll-out; reverting it brings back the switch and the old hover). The worktree and branch are removed, and the "Reach on hover" doc says what landed.
+Ask:
+
+[2026-11-16 14:40] ASSISTANT:
+It's on main as 7b387145 (the reach) and e7c62ce0 (the reach replacing the old hover). Reverting e7c62ce0 alone brings back the old one-hop hover and the View › Show Whole Reach switch.
+
+- **Tests:** the whole suite passed. One unrelated timing test failed once while the machine was busy, then passed three times on its own.
+- **Not re-checked on screen:** the panning fix (the dimming hides while the view moves). Tests and an offscreen benchmark cover it.
+- **Open calls**, in the [Reach on hover](https://claude.ai/artifact/S2HpamGZo2jDSCybV2zoD6) doc: whether to keep the pulse, the dimming coming back between a notched mouse wheel's clicks, and the reach staying on a shape after a pan until the pointer moves.
+
+The worktree and branch are cleaned up.
+
+[2026-11-16 14:54] USER:
+Push to origin
+
+[2026-11-16 14:56] ASSISTANT:
+Main is three commits ahead of origin and none behind: the two from this session, plus one another session had already landed on main. Pushing.
+
+[2026-11-16 14:56] GIT:
+git push origin main 2>&1 | tail -4 && echo "ahead now: $(git rev-list --count origin/main..main)"
+
+[2026-11-16 14:56] WRAP-UP:
+Main is pushed to origin at e7c62ce0, with both reach commits and the one another session landed before them. Local main and origin now match.
+Ask:
+
+[2026-11-16 14:56] ASSISTANT:
+I pushed main to origin, so origin is now at e7c62ce0. That push carried this session's two reach commits plus one commit another session had landed on main earlier (0c3cd38b), and origin now matches your local main.
+
+[2026-11-16 23:34] USER:
+ok this basically works but there is a little flicker before it settles
+
+[2026-11-16 23:35] WRAP-UP:
+The flicker is the pulse: each hop past the first comes in at full brightness for 80 ms, then drops to its own fade. Nothing is changed yet; main is as pushed.
+Ask: How should the reach come in?
+
+[2026-11-16 23:35] ASSISTANT:
+The flicker is the pulse. When the pointer rests, the reach spreads out one hop every 80 ms. Each new hop first shows at full brightness for that 80 ms (its rings and its shapes), then drops back to its own, fainter strength. So every shape past the first hop goes dim, then bright, then faded, and across the hops that's four quick brightness changes in about 320 ms before it settles.
+
+Two ways to fix it:
+
+- **Spread, no flash (my pick):** each hop comes in already at its own strength, so a shape only ever gets brighter. The reach still spreads outward a hop every 80 ms, the way you first described it.
+- **No pulse at all:** when the pointer rests, the whole reach appears at once, in one change.
+
+Either one is a small change to the reach plus its pulse tests. If the flicker you saw was somewhere else, like while scrolling, tell me and I'll look there instead.
+
+[2026-11-16 23:36] USER:
+Spread, no flash
+
+[2026-11-16 23:37] ASSISTANT:
+Making the change now. A hop will come in at its own strength instead of flashing full first, and the pulse will end as the last hop arrives.
+
+[2026-11-16 23:40] ASSISTANT:
+The tests are building and running. Meanwhile I'm reading over the diff myself.
+
+[2026-11-16 23:40] COMMIT MESSAGE FILE msg-c.txt:
+The reach comes in a hop at a time at each hop's own strength, never at full for its step first, so nothing flickers before it settles
+
+Living with the reach as the only hover, the owner saw "a little flicker before it settles". It was the
+pulse: once the pointer rested, each hop past the first came in drawn as hop 1 is (full strength, the
+widest ring, kept at full by the dim) for its 80 ms step and dropped to its own strength at the next, so
+every shape past hop 1 went dim, bright, then faded, four brightness changes in 320 ms. Offered keeping the
+spread without that flash or dropping the pulse for the reach settled in one change, they chose "Spread,
+no flash".
+
+- A tier arrives at its own strength, its rings at their own step and the dim keeping its shapes at their
+  own fade from the step it arrives at on (`ReachLanding.arriving(atStep:)` is gone), so a shape only ever
+  brightens as the reach comes in.
+- The pulse settles as its last tier arrives, at 240 ms (`ReachStyle.settledStep`, step 3): the step after
+  it only took the last tier down from full, and would now change nothing.
+- ReachTests' pulse test holds each step and that no shape, ring or dim, is brighter at one step than at
+  the next; the pulse benchmark measures its three steps.
+
+Session: history/sessions/RECORD/
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-11-16 23:40] WRAP-UP:
+Each hop of the reach now comes in at its own strength, and the pulse settles at 240 ms instead of 320, in a new worktree off main. The pulse test now checks that no shape ever gets dimmer between steps. The tests are running; a review comes next, and nothing is committed yet.
+Ask:
+
+[2026-11-16 23:40] ASSISTANT:
+The flash is gone. Each hop now comes in at its own strength, so as the reach spreads a shape only gets brighter, never bright and then dim. The pulse also ends when the last hop arrives, at 240 ms instead of 320. The step it dropped did nothing once the flash was gone.
+
+The pulse test now also checks that no shape gets dimmer from one step to the next. The tests are running in a new worktree. A review comes after that; nothing is committed yet.
+
+[2026-11-16 23:41] NOTICE:
+background task completed: Background command "Build and run the Neighbors, Composition and Benchmark tests" completed (exit code 0)
+
+[2026-11-16 23:41] ASSISTANT:
+The new test didn't compile: a local helper inside it needs to run on the main actor. Fixing that and re-running.
+
+[2026-11-16 23:42] ASSISTANT:
+NeighborsTests pass, 90 of 90, including the new pulse checks. Now running CompositionTests and BenchmarkTests.
+
+[2026-11-16 23:42] GIT:
+git add -A && git commit -q -m "The reach comes in a hop at a time at each hop's own strength, never at full for its step first, so nothing flickers before it settles" && git log --oneline -2 && git diff --stat main HEAD | tail -1
+
+[2026-11-16 23:43] ASSISTANT:
+I'm adjusting one gallery state so it shows the new 240 ms settle, then waiting on the CompositionTests run.
+
+[2026-11-16 23:43] WRAP-UP:
+The no-flash pulse is committed on branch reach-pulse-no-flash and reviewed; the one real finding, a gallery state at the old 320 ms settle, is fixed. NeighborsTests pass; CompositionTests and BenchmarkTests are still running, and nothing is on main yet.
+Ask:
+
+[2026-11-16 23:43] ASSISTANT:
+The no-flash change is committed on its branch, and the review is done. Its one real finding was a gallery picture still taken at the old 320 ms settle point; it now shows the new 240 ms point. All 90 Neighbors tests pass. The CompositionTests and benchmark tests are still running. When they pass I'll ask you about landing.
+
+[2026-11-16 23:43] NOTICE:
+background task completed: Background command "Run CompositionTests and BenchmarkTests" completed (exit code 0)
+
+[2026-11-16 23:43] ASSISTANT:
+All passed: CompositionTests 976 of 976 and BenchmarkTests 157 of 157. The gallery edit landed after that run started, so I'm re-running the gallery test alone and committing it.
+
+[2026-11-16 23:43] GIT:
+TEST_FILTER=Gallery ./test.sh CompositionTests 2>&1 | grep -E "passed|failed|FAIL|error:" | head -8; git add -A && git commit -q -m "The gallery's settled pulse state is taken at 240 ms, where the pulse now settles" && git log --oneline main..HEAD && git status --short | head -3
+
+[2026-11-16 23:44] WRAP-UP:
+The no-flash pulse is on branch reach-pulse-no-flash: each hop comes in at its own strength and the pulse settles at 240 ms. It is reviewed, and NeighborsTests, CompositionTests and BenchmarkTests pass. Nothing is on main yet.
+Ask: Land the no-flash pulse on main?
+
+[2026-11-16 23:44] ASSISTANT:
+The flicker fix is ready on its branch. Each hop now comes in at its own strength, so a shape only gets brighter as the reach spreads, and the pulse finishes at 240 ms. It's been reviewed, and the Neighbors, Composition and benchmark tests all pass. If you want to see it in the app before it lands, I can build a separate copy of the app from the branch for you to try.
+
+[2026-11-17 00:39] COMPACTED:
+(the context was summarized here)
+
+[2026-11-17 01:18] USER:
+Land it
+
+[2026-11-17 01:19] GIT:
+echo "main: $(git rev-parse --short main)  base: $(git merge-base --short main HEAD 2>/dev/null || git merge-base main HEAD | cut -c1-8)" && git log --oneline main..HEAD && git status --short && echo "--- main checkout" && git -C /Users/zekenie/code/native-canvas branch --show-current && git -C /Users/zekenie/code/native-canvas status --short | head -20
+
+[2026-11-17 01:19] GIT:
+echo "main $(git rev-parse --short main)  merge-base $(git merge-base main HEAD | cut -c1-8)" && git log --oneline main..HEAD | cut -c1-90 && git status --short && ls history/sessions | grep 34d15fa4
+
+[2026-11-17 01:20] ASSISTANT:
+Landing it: main moved on since this branch was cut, so I'm bringing the branch up to date first, then squashing.
+
+[2026-11-17 01:20] GIT:
+git rebase main 2>&1 | tail -5
+
+[2026-11-17 01:20] GIT:
+git reset -q --soft main && git status --short

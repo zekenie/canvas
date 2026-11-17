@@ -123,8 +123,8 @@ private extension GalleryStage {
     GalleryState("reach-4-pulse-160ms", "the pulse at 160 ms: the third hop arriving", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in stage.pulse(scene, after: 160) }
     },
-    GalleryState("reach-4-pulse-320ms", "the pulse at 320 ms: every hop, settled", size: CGSize(width: 1_080, height: 560)) { stage in
-        try stage.reachPicture { scene in stage.pulse(scene, after: 320) }
+    GalleryState("reach-4-pulse-240ms", "the pulse at 240 ms: hops 4 and on arriving together, each at its own strength, settled", size: CGSize(width: 1_080, height: 560)) { stage in
+        try stage.reachPicture { scene in stage.pulse(scene, after: 240) }
     },
     GalleryState("reach-5-sweep", "the pointer moved from Orders to Pricing: the dim kept, only Pricing's next step ringed until it rests", size: CGSize(width: 1_080, height: 560)) { stage in
         try stage.reachPicture { scene in

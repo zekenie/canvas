@@ -11599,8 +11599,8 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   Once the pointer rests 150 ms the rest of the board dims (the core's `Outlines.dim`, [Outlines](#outlines)),
   keeping the shape hovered, its card, each lit shape at 1, 0.65, 0.35 or 0.12 (hop 1 always 1) and each
   arrow the reach spared (a cycle's, one within a hop) at its weaker end's, and the rest of the reach
-  comes in a hop every 80 ms (a hop arriving drawn as hop 1 is, the fourth on together, settled by
-  320 ms; at once with Reduce Motion). Before the rest a new shape shows its hop 1, at once; the dim
+  comes in a hop every 80 ms (each at its own strength, so a shape only ever brightens; the fourth on
+  together, settled as they arrive, by 240 ms; at once with Reduce Motion). Before the rest a new shape shows its hop 1, at once; the dim
   stays as the pointer goes from shape to shape; ⌥ shows the other pole's hop 1 at once and its pulse
   after the rest; the dim and the lights go 150 ms after nothing is hovered, and a drag hides them. A
   pill the reach goes into lights at what it stands for (the engine's answer has it), and a shape on

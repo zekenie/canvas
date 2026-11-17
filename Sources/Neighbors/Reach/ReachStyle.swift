@@ -28,11 +28,13 @@ enum ReachStyle {
     nonisolated static let release: Duration = .milliseconds(150)
     /// Whether the rest of the reach comes in a hop at a time (the pulse) rather than all at once.
     nonisolated static let pulses = true
-    /// The pulse: each hop past the first arrives this long after the one before, those from
-    /// `pulseTiers` on together; settled a step after the last arrives.
+    /// The pulse: each hop past the first arrives this long after the one before, at its own strength,
+    /// so a shape only ever brightens; those from `pulseTiers` on together, settled as they arrive.
     nonisolated static let pulseStep: Duration = .milliseconds(80)
     /// The tiers the pulse brings in: hops 1, 2, 3, and 4 and beyond.
     nonisolated static let pulseTiers = 4
+    /// The pulse's last step, every tier shown: settled.
+    nonisolated static let settledStep = pulseTiers - 1
     /// How long commits must have stopped before the reach is asked again (as the panel's lists wait).
     nonisolated static let settle: Duration = .milliseconds(100)
 

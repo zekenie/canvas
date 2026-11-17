@@ -72,7 +72,7 @@ struct ReachLanding: Sendable {
         /// Each group of rings: one light's shapes of one tier, at one ring step, in one ring; by light,
         /// then ring, then tier, then step.
         var groups: [Group]
-        /// The dim's focus at each step of the pulse, `0...ReachStyle.pulseTiers`.
+        /// The dim's focus at each step of the pulse, `0...ReachStyle.settledStep`.
         var focus: [[ShapeID: CGFloat]]
     }
 
@@ -88,8 +88,6 @@ struct ReachLanding: Sendable {
     static func tier(_ hop: Int) -> Int { min(max(hop, 1), ReachStyle.pulseTiers) }
     /// The last tier shown at a step of the pulse: hop 1 alone at its first.
     static func lastTier(atStep step: Int) -> Int { min(step + 1, ReachStyle.pulseTiers) }
-    /// The tier arriving at a step of the pulse, drawn as hop 1 is for that step; none at the first and once settled.
-    static func arriving(atStep step: Int) -> Int? { step >= 1 && step < ReachStyle.pulseTiers ? step + 1 : nil }
 
     /// One drawn shape of a light: its nearest hop and strongest strength.
     private struct Drawn {
@@ -159,12 +157,13 @@ struct ReachLanding: Sendable {
         struct Key: Hashable { var ring: Int, tier: Int, step: Int }
         var groups: [Group] = []
         var rings: [ShapeID: Int] = [:]
-        var steps = Array(repeating: [ShapeID: CGFloat](), count: ReachStyle.pulseTiers + 1)
+        var steps = Array(repeating: [ShapeID: CGFloat](), count: ReachStyle.settledStep + 1)
         if let subject { for step in steps.indices { steps[step][subject] = 1 } }
+        // A shape is kept at its own fade from the step its tier arrives at on, never brighter first: a hop that came in at
+        // full for its step and then dropped read as a flicker before the reach settled (the owner, 2026-11-16).
         func keep(_ shape: ShapeID, tier: Int, fade: CGFloat) {
             for step in steps.indices where tier <= lastTier(atStep: step) {
-                let strength = arriving(atStep: step) == tier ? 1 : fade
-                if strength > steps[step][shape] ?? 0 { steps[step][shape] = strength }
+                if fade > steps[step][shape] ?? 0 { steps[step][shape] = fade }
             }
         }
         for light in lights {

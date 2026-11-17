@@ -257,7 +257,7 @@ private func nanos() -> UInt64 { clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) 
         let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
         h.editor.viewportDidResize(to: viewport)
         let reach = try require(h.editor.reach)
-        var steps: [[Double]] = Array(repeating: [], count: 4)
+        var steps: [[Double]] = Array(repeating: [], count: 3)                // hops 2, 3, and 4 and on: settled as the last arrives
         for _ in 0..<measuredRuns(7) {
             h.editor.hovered = nil
             h.wait(500)
@@ -269,7 +269,7 @@ private func nanos() -> UInt64 { clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) 
                 steps[i].append(step)
             }
         }
-        expect(reach.pulseStep == 4, "the pulse ran to its end")
+        expect(reach.pulseStep == 3, "the pulse ran to its end")
         let medians = steps.map(middle)
         let worst = steps.flatMap { $0 }.max() ?? 0
         report(String(format: "%6d shapes, a pulse step: main %@ ms by step (worst %5.3f; budget %.1f)",

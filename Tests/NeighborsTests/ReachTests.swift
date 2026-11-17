@@ -275,28 +275,46 @@ extension EditorHarness {
         expectEqual(h.reach.asked, 1)
         #endif
     },
-    test("the pulse: once rested a hop arrives every 80 ms drawn as hop 1 is, at its own strength from the next, the fourth on together, settled by 320") {
+    test("the pulse: once rested a hop arrives every 80 ms at its own strength, the fourth on together, settled by 240, and no shape is ever brighter than it is a step later") {
         let chain = Chain()
         let h = try neighborHarness(chain.file(), settings: reachSettings(pulse: true))
         h.editor.hovered = chain.a
         h.settle()
         h.wait(150)
-        let hop1 = Ring(.out, 0, 1, [chain.b, chain.l1])
+        let hop1 = Ring(.out, 0, 1, [chain.b, chain.l1]), hop2 = Ring(.out, 0, 0.6, [chain.c, chain.l2])
+        let hop3 = Ring(.out, 0, 0.35, [chain.d, chain.l3])
+        // Each step's rings, a shape at its strongest, and the dim's focus: what a shape is drawn at as the reach comes in.
+        var steps: [(rings: [ShapeID: Double], focus: [ShapeID: Double])] = []
+        @MainActor func record() {
+            var strongest: [ShapeID: Double] = [:]
+            for ring in h.rings { for shape in ring.shapes { strongest[shape] = max(strongest[shape] ?? 0, ring.strength) } }
+            steps.append((strongest, h.focus ?? [:]))
+        }
         expectEqual(h.rings, [hop1], "rested: the dim, and hop 1")
         expectEqual(h.focus?[chain.c], nil)
+        record()
         h.wait(80)
-        expectEqual(h.rings, [Ring(.out, 0, 1, [chain.b, chain.l1, chain.c, chain.l2])], "hop 2 arrives as hop 1 is drawn")
-        expectEqual(h.focus?[chain.c], 1)
+        expectEqual(h.rings, [hop1, hop2], "hop 2 arrives at its own strength, never as hop 1 is drawn")
+        expectEqual(h.focus?[chain.c], 0.65, "and the dim keeps it at its fade from the step it arrives")
+        record()
         h.wait(80)
-        expectEqual(h.rings, [Ring(.out, 0, 1, [chain.b, chain.l1, chain.d, chain.l3]), Ring(.out, 0, 0.6, [chain.c, chain.l2])])
+        expectEqual(h.rings, [hop1, hop2, hop3])
+        expectEqual(h.focus?[chain.d], 0.35)
+        record()
         h.wait(80)
-        expectEqual(h.rings, [Ring(.out, 0, 1, [chain.b, chain.l1, chain.e, chain.l4, chain.f, chain.l5]), Ring(.out, 0, 0.6, [chain.c, chain.l2]),
-                              Ring(.out, 0, 0.35, [chain.d, chain.l3])], "hops 4 and on together")
-        expectEqual(h.reach.pulseStep, 3)
-        h.wait(80)
-        expectEqual(h.reach.pulseStep, 4, "settled")
+        expectEqual(h.reach.pulseStep, 3, "settled as hops 4 and on arrive, together")
         expectEqual(h.rings.count, 5)
         expectEqual(h.focus?[chain.f], 0.12)
+        record()
+        let settled = h.rings
+        h.wait(80)
+        expectEqual(h.rings, settled, "nothing comes after it")
+        expectEqual(h.reach.pulseStep, 3)
+        // A hop that came in at full for its step and then dropped to its own strength read as a flicker before the reach settled.
+        for (before, after) in zip(steps, steps.dropFirst()) {
+            for (shape, strength) in before.rings { expect(strength <= after.rings[shape] ?? 0, "\(shape) ring dimmed from \(strength)") }
+            for (shape, strength) in before.focus { expect(strength <= after.focus[shape] ?? 0, "\(shape) kept dimmer from \(strength)") }
+        }
     },
     test("with Reduce Motion the reach shows settled once the pointer rests") {
         let chain = Chain()
@@ -304,7 +322,7 @@ extension EditorHarness {
         h.editor.hovered = chain.a
         h.settle()
         h.wait(150)
-        expectEqual(h.reach.pulseStep, 4)
+        expectEqual(h.reach.pulseStep, 3)
         expectEqual(h.rings.count, 5)
     },
     test("⌥ shows the other pole's hop 1 at once and its reach after the rest, asking nothing") {

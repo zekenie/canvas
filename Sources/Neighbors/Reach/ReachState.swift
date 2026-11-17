@@ -40,11 +40,12 @@ import Topology
 /// its first light's is the first ring, the next light's the next (`ReachLanding`).
 ///
 /// **The timing.** Each new subject shows its hop 1 at once; once the pointer has rested on it
-/// (`ReachStyle.rest`) the board dims and the rest of its reach comes in a hop at a time (the pulse,
-/// settled at once with Reduce Motion), and the dim stays as the pointer goes from shape to shape, each
-/// showing its hop 1 until it rests. ⌥ held or let go shows the other pole's hop 1 at once and its
-/// pulse after the rest. With nothing hovered the dim and the lights stay `ReachStyle.release`, then
-/// go; the shape left, hovered again meanwhile, keeps what it showed. A drag hides it all.
+/// (`ReachStyle.rest`) the board dims and the rest of its reach comes in a hop at a time, each at its
+/// own strength (the pulse, settled at once with Reduce Motion), and the dim stays as the pointer goes
+/// from shape to shape, each showing its hop 1 until it rests. ⌥ held or let go shows the other pole's
+/// hop 1 at once and its pulse after the rest. With nothing hovered the dim and the lights stay
+/// `ReachStyle.release`, then go; the shape left, hovered again meanwhile, keeps what it showed. A drag
+/// hides it all.
 ///
 /// **Asking again.** A change to the edges that touches the shape or a shape a light matched (a
 /// commit's or a provide's: `topology.follow`; an arrow hovered is an edge, which a change lists by
@@ -79,7 +80,7 @@ public final class ReachState {
     private var rested = false
     /// Whether the board is dimmed: a hover rested, and nothing has been let go of since.
     public private(set) var dims = false
-    /// Whether this subject's pulse has begun, and the step it's at (`ReachStyle.pulseTiers` settled).
+    /// Whether this subject's pulse has begun, and the step it's at (`ReachStyle.settledStep` settled).
     private var pulseBegun = false
     public private(set) var pulseStep = 0
     private var shown = Outlines()
@@ -246,7 +247,7 @@ public final class ReachState {
         guard rested, !pulseBegun, hasReach else { return }
         pulseBegun = true
         if !ReachStyle.pulses || settings.reducesMotion() {
-            pulseStep = ReachStyle.pulseTiers
+            pulseStep = ReachStyle.settledStep
             return
         }
         pulseStep = 0
@@ -259,7 +260,7 @@ public final class ReachState {
             pulsing = nil
             pulseStep += 1
             compose()
-            if pulseStep < ReachStyle.pulseTiers { stepPulse() }
+            if pulseStep < ReachStyle.settledStep { stepPulse() }
         }
     }
 
@@ -439,11 +440,10 @@ public final class ReachState {
         #endif
         let lit = landing.shown[keys]
         var tinted: [TintedOutlines] = []
-        let last = ReachLanding.lastTier(atStep: step), arriving = ReachLanding.arriving(atStep: step)
+        let last = ReachLanding.lastTier(atStep: step)
         for group in lit?.groups ?? [] where group.tier <= last {
-            let ringStep = group.tier == arriving ? ReachStyle.ringSteps : group.step
-            tinted.append(TintedOutlines(color: color(group.light, ringStep), shapes: group.shapes, ring: group.ring,
-                                         width: ReachStyle.width(ReachStyle.strength(ofStep: ringStep))))
+            tinted.append(TintedOutlines(color: color(group.light, group.step), shapes: group.shapes, ring: group.ring,
+                                         width: ReachStyle.width(ReachStyle.strength(ofStep: group.step))))
         }
         // A shape that reaches nothing leaves the board as it is: there is nothing to pick out.
         var dim: Dimming?
